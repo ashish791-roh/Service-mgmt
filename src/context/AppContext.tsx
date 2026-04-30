@@ -1,3 +1,5 @@
+'use client';
+
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import type { User, Customer, Device, Job, PartRequest, InventoryItem, Notification, JobStatus, PartRequestStatus } from '../types';
 import { mockUsers, mockCustomers, mockDevices, mockJobs, mockPartRequests, mockInventory, mockNotifications } from '../data/mockData';

@@ -1,15 +1,15 @@
 import { useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
-import { LoginPage } from './pages/LoginPage';
+import { LoginPage } from './pages_components/LoginPage';
 import { Sidebar } from './components/Sidebar';
-import { AdminDashboard, UserManagement } from './pages/AdminPages';
-import { ReceptionDashboard, CustomersPage, JobsPage, AssignJobsPage, PartsRequestPage } from './pages/ReceptionPages';
-import { InventoryPage } from './pages/InventoryPage';
-import { BillingPage } from './pages/BillingPage';
-import { EngineerDashboard, MyJobsPage } from './pages/EngineersPage';
-import { AnalyticsPage } from './pages/AnalyticsPage';
-import { NotificationsPage } from './pages/NotificationsPage';
-import { ReportsPage } from './pages/ReportsPage';
+import { AdminDashboard, UserManagement } from './pages_components/AdminPages';
+import { ReceptionDashboard, CustomersPage, JobsPage, AssignJobsPage, PartsRequestPage } from './pages_components/ReceptionPages';
+import { InventoryPage } from './pages_components/InventoryPage';
+import { BillingPage } from './pages_components/BillingPage';
+import { EngineerDashboard, MyJobsPage } from './pages_components/EngineersPage';
+import { AnalyticsPage } from './pages_components/AnalyticsPage';
+import { NotificationsPage } from './pages_components/NotificationsPage';
+import { ReportsPage } from './pages_components/ReportsPage';
 
 function AppContent() {
   const { currentUser } = useApp();
