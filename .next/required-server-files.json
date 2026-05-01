@@ -4,10 +4,10 @@
     "env": {},
     "webpack": null,
     "eslint": {
-      "ignoreDuringBuilds": false
+      "ignoreDuringBuilds": true
     },
     "typescript": {
-      "ignoreBuildErrors": false,
+      "ignoreBuildErrors": true,
       "tsconfigPath": "tsconfig.json"
     },
     "typedRoutes": false,

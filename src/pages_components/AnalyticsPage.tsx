@@ -1,6 +1,6 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
-import { StatCard } from '../components/ui';
+import { StatCard, Card, CardHeader, SectionHeader } from '../components/ui';
 
 export const AnalyticsPage: React.FC = () => {
   const { jobs, users, customers, partRequests } = useApp();
@@ -41,7 +41,7 @@ export const AnalyticsPage: React.FC = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-black text-slate-800">Analytics</h1>
+        <h1 className="text-2xl font-display font-bold text-slate-900 tracking-tight">Analytics</h1>
         <p className="text-slate-500 text-sm mt-1">System-wide performance overview</p>
       </div>
 
@@ -53,8 +53,8 @@ export const AnalyticsPage: React.FC = () => {
       </div>
 
       {/* Job Status Breakdown */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-        <h2 className="font-bold text-slate-800 mb-4">Job Status Breakdown</h2>
+      <div className="bg-white rounded-2xl border border-slate-100/80 shadow-sm p-6">
+        <h2 className="font-display font-bold text-slate-800 mb-4">Job Status Breakdown</h2>
         <div className="flex h-6 rounded-full overflow-hidden gap-0.5 mb-4">
           {statusBreakdown.filter(s => s.count > 0).map(s => (
             <div key={s.status} className={`${statusColors[s.status]} flex items-center justify-center text-xs text-white font-bold`}
@@ -74,8 +74,8 @@ export const AnalyticsPage: React.FC = () => {
       </div>
 
       {/* Engineer Leaderboard */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-        <h2 className="font-bold text-slate-800 mb-4">Engineer Performance</h2>
+      <div className="bg-white rounded-2xl border border-slate-100/80 shadow-sm p-6">
+        <h2 className="font-display font-bold text-slate-800 mb-4">Engineer Performance</h2>
         <div className="space-y-4">
           {engineerStats.sort((a, b) => b.completed - a.completed).map((eng, i) => (
             <div key={eng.id} className="flex items-center gap-4">
@@ -102,8 +102,8 @@ export const AnalyticsPage: React.FC = () => {
 
       {/* Monthly snapshot */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-          <h2 className="font-bold text-slate-800 mb-4">Device Types</h2>
+        <div className="bg-white rounded-2xl border border-slate-100/80 shadow-sm p-6">
+          <h2 className="font-display font-bold text-slate-800 mb-4">Device Types</h2>
           {/* Simple donut-like breakdown */}
           {['Laptop', 'Smartphone', 'Desktop', 'Tablet'].map(type => {
             const count = Math.floor(Math.random() * 3) + 1;
@@ -119,8 +119,8 @@ export const AnalyticsPage: React.FC = () => {
           })}
         </div>
 
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-          <h2 className="font-bold text-slate-800 mb-4">Quick Metrics</h2>
+        <div className="bg-white rounded-2xl border border-slate-100/80 shadow-sm p-6">
+          <h2 className="font-display font-bold text-slate-800 mb-4">Quick Metrics</h2>
           <div className="space-y-3">
             {[
               { label: 'Completion Rate', value: `${jobs.length > 0 ? Math.round((jobs.filter(j => ['Completed', 'Delivered'].includes(j.status)).length / jobs.length) * 100) : 0}%`, color: 'text-emerald-600' },
@@ -128,7 +128,7 @@ export const AnalyticsPage: React.FC = () => {
               { label: 'Parts Approval Rate', value: `${partRequests.length > 0 ? Math.round((partRequests.filter(r => r.status === 'Approved').length / partRequests.length) * 100) : 0}%`, color: 'text-blue-600' },
               { label: 'Active Engineers', value: `${users.filter(u => u.role === 'engineer' && u.active).length}/${engineers.length}`, color: 'text-amber-600' },
             ].map(m => (
-              <div key={m.label} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
+              <div key={m.label} className="flex items-center justify-between py-2 border-b border-slate-100/80 last:border-0">
                 <span className="text-sm text-slate-600">{m.label}</span>
                 <span className={`text-sm font-black ${m.color}`}>{m.value}</span>
               </div>
