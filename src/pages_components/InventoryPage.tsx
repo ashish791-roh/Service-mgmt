@@ -1,92 +1,67 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { useApp } from '../context/AppContext';
-import { Modal, Toast, useToast } from '../components/ui';
+import { Box, AlertTriangle, DollarSign, Layers, Search, Plus, X } from 'lucide-react';
 
-// ── Icons ────────────────────────────────────────────────────────
-const Icons = {
-  Box: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>,
-  AlertTriangle: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
-  DollarSign: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>,
-  Layers: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>,
-  Search: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>,
-  Plus: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-};
-
-// ── Interactive UI Components ────────────────────────────────────
 const PageHeader = ({ title, subtitle, action }: { title: string, subtitle: string, action?: React.ReactNode }) => (
-  <motion.div 
-    initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: "easeOut" }}
-    className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8"
-  >
+  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 bg-white p-6 rounded-xl border border-gray-200">
     <div>
-      <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-slate-900 to-slate-600 tracking-tight leading-tight">{title}</h1>
-      <p className="text-sm font-bold text-violet-500 uppercase tracking-widest mt-2">{subtitle}</p>
+      <h1 className="text-[18px] font-medium text-gray-900">{title}</h1>
+      <p className="text-[13px] font-normal text-teal-500 mt-1">{subtitle}</p>
     </div>
     {action && <div>{action}</div>}
-  </motion.div>
+  </div>
 );
 
-const AnimatedCard = ({ children, delay = 0, className = "" }: any) => (
-  <motion.div
-    initial={{ opacity: 0, y: 20 }}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ duration: 0.5, delay, ease: [0.22, 1, 0.36, 1] }}
-    whileHover={{ y: -4, transition: { duration: 0.2 } }}
-    className={`bg-white rounded-[2rem] border border-slate-100/60 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_20px_40px_rgba(139,92,246,0.08)] hover:border-violet-100 transition-all duration-300 overflow-hidden ${className}`}
-  >
+const Card = ({ children, className = "" }: { children: React.ReactNode, className?: string }) => (
+  <div className={`bg-white rounded-xl border border-gray-200 overflow-hidden ${className}`}>
     {children}
-  </motion.div>
+  </div>
 );
 
-const InteractiveStatCard = ({ title, value, icon, gradient, delay, sub }: any) => (
-  <motion.div
-    initial={{ opacity: 0, scale: 0.95 }}
-    animate={{ opacity: 1, scale: 1 }}
-    transition={{ duration: 0.5, delay, ease: "easeOut" }}
-    whileHover={{ scale: 1.02 }}
-    className="relative bg-white rounded-3xl p-5 border border-slate-100 shadow-sm overflow-hidden group cursor-pointer"
-  >
-    <div className={`absolute -top-16 -right-16 w-32 h-32 bg-gradient-to-br ${gradient} opacity-10 rounded-full blur-3xl group-hover:scale-150 group-hover:opacity-20 transition-all duration-500`} />
-    
-    <div className="flex justify-between items-start mb-4 relative z-10">
-      <motion.div 
-        whileHover={{ rotate: 10, scale: 1.1 }}
-        className={`w-12 h-12 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center text-white shadow-lg`}
-      >
-        {Icons[icon as keyof typeof Icons]}
-      </motion.div>
-      {sub && <span className="bg-rose-100 text-rose-600 text-[10px] font-black px-3 py-1.5 rounded-full uppercase tracking-wider">{sub}</span>}
-    </div>
-    <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">{title}</p>
-    <div className="flex items-end gap-3 relative z-10">
-      <h3 className="text-4xl font-black text-slate-900 tracking-tighter leading-none">{value}</h3>
-    </div>
-  </motion.div>
-);
+const MetricCard = ({ title, value, icon: Icon, color, sub }: any) => {
+  const colorMap: Record<string, string> = {
+    teal: "text-teal-500 bg-teal-50",
+    cyan: "text-cyan-500 bg-cyan-50",
+    green: "text-green-500 bg-green-50",
+    orange: "text-orange-500 bg-orange-50",
+    rose: "text-rose-500 bg-rose-50",
+  };
+  const bgClass = colorMap[color] || colorMap.teal;
 
-const GlowButton = ({ icon, text, onClick, variant = 'primary', className = "" }: any) => {
+  return (
+    <div className="bg-white rounded-xl p-5 border border-gray-200 relative overflow-hidden flex flex-col gap-4">
+      <div className="flex justify-between items-start">
+        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${bgClass}`}>
+          <Icon size={18} strokeWidth={2} />
+        </div>
+        {sub && <span className="bg-rose-100 text-rose-600 text-[11px] font-medium px-2 py-1 rounded-lg">{sub}</span>}
+      </div>
+      <div>
+        <p className="text-[13px] font-medium text-gray-500">{title}</p>
+        <h3 className="text-[18px] font-medium text-gray-900 mt-1">{value}</h3>
+      </div>
+    </div>
+  );
+};
+
+const Button = ({ text, onClick, variant = 'primary', className = "", icon: Icon }: any) => {
   const styles: any = {
-    primary: "bg-slate-900 text-white hover:bg-slate-800 shadow-[0_8px_16px_rgba(0,0,0,0.15)]",
-    vivid: "bg-gradient-to-r from-violet-600 to-fuchsia-500 text-white shadow-[0_8px_20px_rgba(139,92,246,0.3)] hover:shadow-[0_12px_25px_rgba(139,92,246,0.4)]",
-    success: "bg-gradient-to-r from-emerald-500 to-teal-400 text-white shadow-[0_8px_20px_rgba(16,185,129,0.3)]",
-    danger: "bg-white border-2 border-rose-100 text-rose-500 hover:bg-rose-50 hover:border-rose-200",
+    primary: "bg-gray-900 text-white hover:bg-gray-800",
+    success: "bg-green-500 text-white hover:bg-green-600",
+    danger: "bg-rose-500 text-white hover:bg-rose-600",
+    outline: "bg-white border border-gray-200 text-gray-700 hover:bg-gray-50",
+    outline_danger: "bg-white border border-rose-200 text-rose-600 hover:bg-rose-50",
   };
   return (
-    <motion.button 
-      whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-      onClick={onClick} 
-      className={`flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl font-black text-sm transition-all ${styles[variant]} ${className}`}
-    >
-      {icon && <span className="text-lg">{Icons[icon as keyof typeof Icons]}</span>}
+    <button onClick={onClick} className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-[13px] transition-colors ${styles[variant]} ${className}`}>
+      {Icon && <Icon size={16} />}
       {text}
-    </motion.button>
+    </button>
   );
 };
 
 export const InventoryPage: React.FC = () => {
   const { inventory, updateInventory, addInventoryItem } = useApp() as any;
-  const { toast, show } = useToast();
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -108,7 +83,7 @@ export const InventoryPage: React.FC = () => {
 
   const handleAdd = () => {
     if (!addForm.name || !addForm.category || !addForm.quantity || !addForm.unitCost || !addForm.minStock) {
-      show('Fill all fields', 'error'); return;
+      alert('Fill all fields'); return;
     }
     addInventoryItem?.({
       name: addForm.name,
@@ -119,11 +94,10 @@ export const InventoryPage: React.FC = () => {
     });
     setShowAddModal(false);
     setAddForm({ name: '', category: '', quantity: '', unitCost: '', minStock: '' });
-    show('Item added to inventory!');
   };
 
   const handleStockAdjust = () => {
-    if (!stockAdjust || !stockAdjust.qty) { show('Enter quantity', 'error'); return; }
+    if (!stockAdjust || !stockAdjust.qty) { alert('Enter quantity'); return; }
     const qty = parseInt(stockAdjust.qty);
     const item = inventory.find((i: any) => i.id === stockAdjust.id);
     if (!item) return;
@@ -132,244 +106,214 @@ export const InventoryPage: React.FC = () => {
       : Math.max(0, item.quantity - qty);
     updateInventory?.(stockAdjust.id, { quantity: newQty });
     setStockAdjust(null);
-    show(`Stock ${stockAdjust.action === 'add' ? 'added' : 'removed'} successfully!`);
   };
 
   return (
-    <div className="max-w-[1400px] mx-auto pb-12 space-y-8">
+    <div className="max-w-[1400px] mx-auto pb-6 space-y-6">
       <PageHeader title="Inventory Log" subtitle="Supply chain & stock tracking" 
-        action={<GlowButton icon="Plus" text="New Item" variant="vivid" onClick={() => setShowAddModal(true)} />} />
+        action={<Button icon={Plus} text="New Item" variant="primary" onClick={() => setShowAddModal(true)} />} />
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <InteractiveStatCard title="Total Items" value={inventory.length} icon="Box" gradient="from-blue-600 to-cyan-400" delay={0.1} />
-        <InteractiveStatCard title="Low Stock" value={lowStockItems.length} icon="AlertTriangle" gradient="from-rose-500 to-orange-400" sub="Critical" delay={0.2} />
-        <InteractiveStatCard title="Total Value" value={`₹${(inventory.reduce((s: number, i: any) => s + i.quantity * i.unitCost, 0) / 1000).toFixed(1)}k`} icon="DollarSign" gradient="from-emerald-500 to-teal-400" delay={0.3} />
-        <InteractiveStatCard title="Categories" value={categories.length - 1} icon="Layers" gradient="from-violet-600 to-fuchsia-500" delay={0.4} />
+        <MetricCard title="Total Items" value={inventory.length} icon={Box} color="cyan" />
+        <MetricCard title="Low Stock" value={lowStockItems.length} icon={AlertTriangle} color="rose" sub="Critical" />
+        <MetricCard title="Total Value" value={`₹${(inventory.reduce((s: number, i: any) => s + i.quantity * i.unitCost, 0) / 1000).toFixed(1)}k`} icon={DollarSign} color="green" />
+        <MetricCard title="Categories" value={categories.length - 1} icon={Layers} color="teal" />
       </div>
 
       {/* Low stock alert */}
-      <AnimatePresence>
-        {lowStockItems.length > 0 && (
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}>
-            <AnimatedCard delay={0.5} className="bg-gradient-to-br from-rose-50 to-orange-50 border-rose-100">
-              <div className="px-6 py-5 flex items-center gap-4 border-b border-rose-100/50">
-                <div className="w-12 h-12 rounded-2xl bg-rose-500 text-white flex items-center justify-center shadow-lg shadow-rose-500/30">
-                  {Icons.AlertTriangle}
-                </div>
+      {lowStockItems.length > 0 && (
+        <Card className="bg-rose-50 border-rose-200">
+          <div className="px-6 py-4 flex items-center gap-4 border-b border-rose-100">
+            <div className="w-10 h-10 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center">
+              <AlertTriangle size={20} />
+            </div>
+            <div>
+              <h3 className="text-[13px] font-medium text-gray-900">Critical Stock Alert</h3>
+              <p className="text-[11px] font-normal text-rose-600 uppercase tracking-wide">{lowStockItems.length} Items Below Threshold</p>
+            </div>
+          </div>
+          <div className="p-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {lowStockItems.map((item: any) => (
+              <div key={item.id} className="bg-white rounded-lg p-4 border border-rose-100 flex justify-between items-center">
                 <div>
-                  <h3 className="text-lg font-black text-rose-900">Critical Stock Alert</h3>
-                  <p className="text-xs font-bold text-rose-500 uppercase tracking-widest">{lowStockItems.length} Items Below Threshold</p>
+                  <p className="text-[13px] font-medium text-gray-900 mb-0.5">{item.name}</p>
+                  <p className="text-[11px] font-medium text-rose-600 uppercase tracking-wide">{item.quantity} left in stock</p>
                 </div>
+                <button
+                  onClick={() => setStockAdjust({ id: item.id, qty: '', action: 'add' })}
+                  className="w-8 h-8 rounded-md bg-rose-50 text-rose-600 flex items-center justify-center font-medium hover:bg-rose-100 transition-colors"
+                >
+                  <Plus size={16} />
+                </button>
               </div>
-              <div className="p-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {lowStockItems.map((item: any) => (
-                  <div key={item.id} className="bg-white rounded-2xl p-4 shadow-sm border border-rose-100/50 flex justify-between items-center group">
-                    <div>
-                      <p className="text-sm font-black text-slate-900 mb-1">{item.name}</p>
-                      <p className="text-[10px] font-bold text-rose-500 uppercase tracking-widest">{item.quantity} left in stock</p>
-                    </div>
-                    <button
-                      onClick={() => setStockAdjust({ id: item.id, qty: '', action: 'add' })}
-                      className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center font-black hover:bg-rose-500 hover:text-white transition-colors"
-                    >
-                      +
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </AnimatedCard>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            ))}
+          </div>
+        </Card>
+      )}
 
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col md:flex-row gap-6">
-        <div className="relative flex-1 max-w-2xl">
-          <div className="absolute left-5 top-1/2 -translate-y-1/2 text-violet-500">{Icons.Search}</div>
+      <div className="flex flex-col md:flex-row gap-4">
+        <div className="relative flex-1 max-w-xl">
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"><Search size={18} /></div>
           <input 
             value={search} onChange={e => setSearch(e.target.value)} 
             placeholder="Search parts, screens, components..." 
-            className="w-full bg-white border-2 border-slate-100 rounded-[2rem] pl-14 pr-6 py-5 text-lg font-bold text-slate-900 placeholder-slate-400 focus:outline-none focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10 transition-all shadow-[0_8px_30px_rgb(0,0,0,0.04)]"
+            className="w-full bg-white border border-gray-200 rounded-lg pl-12 pr-4 py-3 text-[13px] font-medium text-gray-900 placeholder-gray-400 focus:outline-none focus:border-teal-500 transition-colors"
           />
         </div>
-        <div className="flex bg-white p-2 rounded-[1.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 overflow-x-auto w-fit">
+        <div className="flex bg-white p-1 rounded-lg border border-gray-200 overflow-x-auto w-fit gap-1">
           {categories.map(cat => (
             <button key={String(cat)} onClick={() => setCategoryFilter(String(cat))}
-              className={`px-6 py-3 rounded-xl text-sm font-black transition-all duration-300 whitespace-nowrap ${categoryFilter === cat ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'}`}>
+              className={`px-4 py-2 rounded-md text-[13px] font-medium transition-colors whitespace-nowrap ${categoryFilter === cat ? 'bg-gray-100 text-gray-900' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}>
               {String(cat)}
             </button>
           ))}
         </div>
-      </motion.div>
+      </div>
 
       {/* Table */}
-      <AnimatedCard delay={0.6}>
+      <Card>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-slate-50/80 border-b border-slate-100/80">
+              <tr className="bg-gray-50 border-b border-gray-200">
                 {['Item Name', 'Category', 'Quantity', 'Status', 'Unit Cost', 'Total Value', 'Actions'].map(h => (
-                  <th key={h} className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>
+                  <th key={h} className="px-6 py-3 text-[11px] font-medium text-gray-500 uppercase tracking-wide">{h}</th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100/80">
-              <AnimatePresence>
-                {filtered.map((item: any, i: number) => {
-                  const isLow = item.quantity <= item.minStock;
-                  return (
-                    <motion.tr 
-                      key={item.id} 
-                      initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-                      className={`hover:bg-slate-50/50 transition-colors group cursor-pointer ${isLow ? 'bg-rose-50/30' : ''}`}
-                    >
-                      <td className="px-8 py-6">
-                        <p className={`text-base font-black transition-colors ${isLow ? 'text-rose-600' : 'text-slate-900 group-hover:text-violet-600'}`}>{item.name}</p>
-                      </td>
-                      <td className="px-8 py-6">
-                        <span className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-xs font-bold uppercase tracking-wider">{item.category}</span>
-                      </td>
-                      <td className="px-8 py-6">
-                        <p className={`text-2xl font-black tracking-tighter ${isLow ? 'text-rose-600' : 'text-slate-900'}`}>{item.quantity}</p>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Min: {item.minStock}</p>
-                      </td>
-                      <td className="px-8 py-6">
-                        <span className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider ${isLow ? 'bg-rose-100 text-rose-600 border border-rose-200' : 'bg-emerald-100 text-emerald-600 border border-emerald-200'}`}>
-                          {isLow ? 'Critical' : 'Healthy'}
-                        </span>
-                      </td>
-                      <td className="px-8 py-6 text-sm font-bold text-slate-500">₹{item.unitCost.toLocaleString()}</td>
-                      <td className="px-8 py-6 text-lg font-black text-slate-900 tracking-tighter">₹{(item.quantity * item.unitCost).toLocaleString()}</td>
-                      <td className="px-8 py-6">
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => setStockAdjust({ id: item.id, qty: '', action: 'add' })}
-                            className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-emerald-500 text-slate-600 hover:text-white flex items-center justify-center font-black transition-colors shadow-sm"
-                          >+</button>
-                          <button
-                            onClick={() => setStockAdjust({ id: item.id, qty: '', action: 'remove' })}
-                            className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-rose-500 text-slate-600 hover:text-white flex items-center justify-center font-black transition-colors shadow-sm"
-                          >−</button>
-                        </div>
-                      </td>
-                    </motion.tr>
-                  );
-                })}
-              </AnimatePresence>
+            <tbody className="divide-y divide-gray-100">
+              {filtered.map((item: any) => {
+                const isLow = item.quantity <= item.minStock;
+                return (
+                  <tr key={item.id} className={`hover:bg-gray-50 transition-colors ${isLow ? 'bg-rose-50/50' : ''}`}>
+                    <td className="px-6 py-4">
+                      <p className={`text-[13px] font-medium ${isLow ? 'text-rose-700' : 'text-gray-900'}`}>{item.name}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-[11px] font-medium uppercase tracking-wide">{item.category}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className={`text-[18px] font-medium ${isLow ? 'text-rose-600' : 'text-gray-900'}`}>{item.quantity}</p>
+                      <p className="text-[11px] font-normal text-gray-500 uppercase tracking-wide mt-0.5">Min: {item.minStock}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2 py-1 rounded text-[11px] font-medium uppercase tracking-wide inline-block ${isLow ? 'bg-rose-100 text-rose-700 border border-rose-200' : 'bg-green-100 text-green-700 border border-green-200'}`}>
+                        {isLow ? 'Critical' : 'Healthy'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-[13px] font-medium text-gray-500">₹{item.unitCost.toLocaleString()}</td>
+                    <td className="px-6 py-4 text-[13px] font-medium text-gray-900">₹{(item.quantity * item.unitCost).toLocaleString()}</td>
+                    <td className="px-6 py-4">
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setStockAdjust({ id: item.id, qty: '', action: 'add' })}
+                          className="w-8 h-8 rounded-md bg-white border border-gray-200 hover:bg-green-50 text-gray-600 hover:text-green-600 flex items-center justify-center font-medium transition-colors"
+                        >+</button>
+                        <button
+                          onClick={() => setStockAdjust({ id: item.id, qty: '', action: 'remove' })}
+                          className="w-8 h-8 rounded-md bg-white border border-gray-200 hover:bg-rose-50 text-gray-600 hover:text-rose-600 flex items-center justify-center font-medium transition-colors"
+                        >−</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           {filtered.length === 0 && (
             <div className="p-12 text-center">
-              <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">📦</div>
-              <p className="text-lg font-black text-slate-900 mb-1">No items found</p>
-              <p className="text-sm font-bold text-slate-500">Try a different search or add new inventory items</p>
+              <div className="w-12 h-12 bg-gray-50 rounded-lg flex items-center justify-center mx-auto mb-3 text-gray-400">
+                <Box size={24} />
+              </div>
+              <p className="text-[13px] font-medium text-gray-900 mb-1">No items found</p>
+              <p className="text-[11px] font-normal text-gray-500">Try a different search or add new inventory items</p>
             </div>
           )}
         </div>
-      </AnimatedCard>
+      </Card>
 
       {/* Add Item Modal */}
-      <AnimatePresence>
-        {showAddModal && (
-          <motion.div 
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xl p-4"
-          >
-            <motion.div 
-              initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }}
-              className="bg-white rounded-[2.5rem] w-full max-w-xl p-10 shadow-2xl overflow-hidden relative"
-            >
-              <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-violet-500/10 to-transparent rounded-bl-full pointer-events-none" />
-
-              <div className="flex justify-between items-center mb-8 relative z-10">
-                <div>
-                  <h2 className="text-3xl font-black text-slate-900 tracking-tight">Add Component</h2>
-                  <p className="text-sm font-bold text-violet-600 uppercase tracking-widest mt-1">Inventory Registration</p>
-                </div>
-                <button onClick={() => setShowAddModal(false)} className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 hover:text-slate-900 transition-colors font-bold text-xl">✕</button>
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-lg shadow-xl overflow-hidden flex flex-col">
+            <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200">
+              <h2 className="text-[18px] font-medium text-gray-900">Add Component</h2>
+              <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-[11px] font-medium text-gray-700 uppercase tracking-wide mb-1">Item Name *</label>
+                <input className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500" value={addForm.name} onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. LCD Screen 15.6 inch" />
               </div>
-
-              <div className="space-y-5 relative z-10">
+              <div>
+                <label className="block text-[11px] font-medium text-gray-700 uppercase tracking-wide mb-1">Category *</label>
+                <input className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500" value={addForm.category} onChange={e => setAddForm(f => ({ ...f, category: e.target.value }))} placeholder="e.g. Screens, Batteries, Cables" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-black text-slate-900 uppercase tracking-widest mb-2">Item Name *</label>
-                  <input className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 text-base font-bold text-slate-900 focus:outline-none focus:border-violet-500 focus:bg-white transition-all" value={addForm.name} onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. LCD Screen 15.6 inch" />
+                  <label className="block text-[11px] font-medium text-gray-700 uppercase tracking-wide mb-1">Initial Qty *</label>
+                  <input className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500" type="number" value={addForm.quantity} onChange={e => setAddForm(f => ({ ...f, quantity: e.target.value }))} placeholder="0" />
                 </div>
                 <div>
-                  <label className="block text-xs font-black text-slate-900 uppercase tracking-widest mb-2">Category *</label>
-                  <input className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 text-base font-bold text-slate-900 focus:outline-none focus:border-violet-500 focus:bg-white transition-all" value={addForm.category} onChange={e => setAddForm(f => ({ ...f, category: e.target.value }))} placeholder="e.g. Screens, Batteries, Cables" />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-black text-slate-900 uppercase tracking-widest mb-2">Initial Qty *</label>
-                    <input className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 text-base font-bold text-slate-900 focus:outline-none focus:border-violet-500 focus:bg-white transition-all" type="number" value={addForm.quantity} onChange={e => setAddForm(f => ({ ...f, quantity: e.target.value }))} placeholder="0" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-black text-slate-900 uppercase tracking-widest mb-2">Min Threshold *</label>
-                    <input className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 text-base font-bold text-slate-900 focus:outline-none focus:border-violet-500 focus:bg-white transition-all" type="number" value={addForm.minStock} onChange={e => setAddForm(f => ({ ...f, minStock: e.target.value }))} placeholder="5" />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-black text-slate-900 uppercase tracking-widest mb-2">Unit Cost (₹) *</label>
-                  <input className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 text-base font-bold text-slate-900 focus:outline-none focus:border-violet-500 focus:bg-white transition-all" type="number" value={addForm.unitCost} onChange={e => setAddForm(f => ({ ...f, unitCost: e.target.value }))} placeholder="0.00" />
+                  <label className="block text-[11px] font-medium text-gray-700 uppercase tracking-wide mb-1">Min Threshold *</label>
+                  <input className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500" type="number" value={addForm.minStock} onChange={e => setAddForm(f => ({ ...f, minStock: e.target.value }))} placeholder="5" />
                 </div>
               </div>
-
-              <div className="flex gap-4 mt-10 relative z-10">
-                <GlowButton text="Cancel" variant="primary" onClick={() => setShowAddModal(false)} className="px-8 !bg-slate-100 !text-slate-700 hover:!bg-slate-200 shadow-none" />
-                <GlowButton text="Register Item" variant="vivid" onClick={handleAdd} className="flex-1" />
+              <div>
+                <label className="block text-[11px] font-medium text-gray-700 uppercase tracking-wide mb-1">Unit Cost (₹) *</label>
+                <input className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500" type="number" value={addForm.unitCost} onChange={e => setAddForm(f => ({ ...f, unitCost: e.target.value }))} placeholder="0.00" />
               </div>
-            </motion.div>
-          </motion.div>
-        )}
+            </div>
+            <div className="flex gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
+              <Button text="Cancel" variant="outline" onClick={() => setShowAddModal(false)} className="w-full" />
+              <Button text="Register Item" variant="success" onClick={handleAdd} className="w-full" />
+            </div>
+          </div>
+        </div>
+      )}
 
-        {/* Stock Adjust Modal */}
-        {stockAdjust && (() => {
-          const item = inventory.find((i: any) => i.id === stockAdjust.id);
-          return (
-            <motion.div 
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xl p-4"
-            >
-              <motion.div 
-                initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }}
-                className="bg-white rounded-[2.5rem] w-full max-w-md p-10 shadow-2xl relative overflow-hidden"
-              >
-                <div className={`absolute top-0 right-0 w-48 h-48 rounded-bl-full pointer-events-none opacity-20 ${stockAdjust.action === 'add' ? 'bg-gradient-to-bl from-emerald-500 to-transparent' : 'bg-gradient-to-bl from-rose-500 to-transparent'}`} />
+      {/* Stock Adjust Modal */}
+      {stockAdjust && (() => {
+        const item = inventory.find((i: any) => i.id === stockAdjust.id);
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 p-4">
+            <div className="bg-white rounded-xl w-full max-w-sm shadow-xl overflow-hidden flex flex-col">
+              <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200">
+                <h2 className="text-[18px] font-medium text-gray-900">{stockAdjust.action === 'add' ? 'Add Stock' : 'Remove Stock'}</h2>
+                <button onClick={() => setStockAdjust(null)} className="text-gray-400 hover:text-gray-600 transition-colors">
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="p-6 space-y-4">
+                <p className={`text-[11px] font-medium uppercase tracking-wide ${stockAdjust.action === 'add' ? 'text-green-600' : 'text-rose-600'}`}>{item?.name}</p>
 
-                <div className="mb-8 relative z-10">
-                  <h2 className="text-3xl font-black text-slate-900 tracking-tight">{stockAdjust.action === 'add' ? 'Add Stock' : 'Remove Stock'}</h2>
-                  <p className={`text-sm font-bold uppercase tracking-widest mt-1 ${stockAdjust.action === 'add' ? 'text-emerald-500' : 'text-rose-500'}`}>{item?.name}</p>
-                </div>
-
-                <div className="space-y-6 relative z-10">
-                  <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100 flex justify-between items-center">
-                    <div>
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Current Stock</p>
-                      <p className="text-3xl font-black text-slate-900 leading-none">{item?.quantity}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Minimum</p>
-                      <p className="text-xl font-black text-slate-500 leading-none">{item?.minStock}</p>
-                    </div>
-                  </div>
-
+                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 flex justify-between items-center">
                   <div>
-                    <label className="block text-xs font-black text-slate-900 uppercase tracking-widest mb-2">Quantity to {stockAdjust.action === 'add' ? 'Add' : 'Remove'} *</label>
-                    <input className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 text-2xl font-black text-slate-900 focus:outline-none focus:border-violet-500 focus:bg-white transition-all text-center" type="number" min="1" value={stockAdjust.qty} onChange={e => setStockAdjust(s => s ? { ...s, qty: e.target.value } : null)} placeholder="0" />
+                    <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1">Current Stock</p>
+                    <p className="text-[18px] font-medium text-gray-900">{item?.quantity}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1">Minimum</p>
+                    <p className="text-[13px] font-medium text-gray-700">{item?.minStock}</p>
                   </div>
                 </div>
 
-                <div className="flex gap-4 mt-10 relative z-10">
-                  <GlowButton text="Cancel" variant="primary" onClick={() => setStockAdjust(null)} className="px-6 !bg-slate-100 !text-slate-700 hover:!bg-slate-200 shadow-none" />
-                  <GlowButton text={stockAdjust.action === 'add' ? '+ Restock' : '− Deduct'} variant={stockAdjust.action === 'add' ? 'success' : 'danger'} onClick={handleStockAdjust} className="flex-1" />
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-700 uppercase tracking-wide mb-1">Quantity to {stockAdjust.action === 'add' ? 'Add' : 'Remove'} *</label>
+                  <input className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-[18px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 text-center" type="number" min="1" value={stockAdjust.qty} onChange={e => setStockAdjust(s => s ? { ...s, qty: e.target.value } : null)} placeholder="0" />
                 </div>
-              </motion.div>
-            </motion.div>
-          );
-        })()}
-      </AnimatePresence>
-
-      {toast && <Toast {...toast} />}
+              </div>
+              <div className="flex gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
+                <Button text="Cancel" variant="outline" onClick={() => setStockAdjust(null)} className="w-full" />
+                <Button text={stockAdjust.action === 'add' ? '+ Restock' : '− Deduct'} variant={stockAdjust.action === 'add' ? 'success' : 'danger'} onClick={handleStockAdjust} className="w-full" />
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

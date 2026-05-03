@@ -10,6 +10,11 @@ import { EngineerDashboard, MyJobsPage } from './pages_components/EngineersPage'
 import { AnalyticsPage } from './pages_components/AnalyticsPage';
 import { NotificationsPage } from './pages_components/NotificationsPage';
 import { ReportsPage } from './pages_components/ReportsPage';
+import { 
+  LayoutDashboard, Users, BarChart3, LineChart, 
+  UserSquare2, Wrench, Pin, Nut, Box, 
+  Wallet, ClipboardList, Bell, ChevronRight, Search 
+} from 'lucide-react';
 
 const PAGE_LABELS: Record<string, string> = {
   dashboard: 'Dashboard', users: 'User Management', analytics: 'Analytics',
@@ -18,10 +23,10 @@ const PAGE_LABELS: Record<string, string> = {
   billing: 'Billing', 'my-jobs': 'My Jobs', notifications: 'Notifications',
 };
 
-const PAGE_ICONS: Record<string, string> = {
-  dashboard: '⊞', users: '👥', analytics: '📊', reports: '📈',
-  customers: '🧑‍💼', jobs: '🔧', assign: '📌', parts: '🔩',
-  inventory: '📦', billing: '💰', 'my-jobs': '📋', notifications: '🔔',
+const PAGE_ICONS: Record<string, any> = {
+  dashboard: LayoutDashboard, users: Users, analytics: BarChart3, reports: LineChart,
+  customers: UserSquare2, jobs: Wrench, assign: Pin, parts: Nut,
+  inventory: Box, billing: Wallet, 'my-jobs': ClipboardList, notifications: Bell,
 };
 
 function AppContent() {
@@ -48,39 +53,39 @@ function AppContent() {
       case 'notifications': return <NotificationsPage />;
       case 'reports':       return <ReportsPage />;
       default:              return (
-        <div className="flex flex-col items-center justify-center h-64 text-slate-400">
-          <span className="text-4xl mb-3">🔍</span>
-          <p className="text-sm font-medium">Page not found</p>
+        <div className="flex flex-col items-center justify-center h-64 text-gray-400">
+          <Search size={48} className="mb-4 opacity-50" />
+          <p className="text-[13px] font-medium text-gray-500">Page not found</p>
         </div>
       );
     }
   };
 
+  const IconComponent = PAGE_ICONS[activePage] || LayoutDashboard;
+
   return (
-    <div className="flex min-h-screen" style={{ background: 'linear-gradient(152deg, #060c1a 0%, #0b1325 50%, #0f172a 100%)' }}>
+    <div className="flex min-h-screen bg-gray-50 text-gray-900 font-sans">
       <Sidebar activePage={activePage} onNavigate={setActivePage} />
       <div className="ml-[260px] flex-1 flex flex-col min-h-screen">
         {/* Topbar */}
-        <header className="sticky top-0 z-20 h-[60px] bg-slate-900/50 backdrop-blur-xl border-b border-white/10 flex items-center px-8 gap-4 shadow-[0_1px_0_0_rgba(0,0,0,0.4)]">
-          <div className="flex items-center gap-2.5">
-            <span className="text-base">{PAGE_ICONS[activePage] ?? '📄'}</span>
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-slate-400 font-medium">FixHub</span>
-              <svg className="w-3 h-3 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
-              </svg>
-              <span className="font-semibold text-slate-200 font-display">{PAGE_LABELS[activePage] ?? activePage}</span>
+        <header className="sticky top-0 z-20 h-[60px] bg-white border-b border-gray-200 flex items-center px-8 gap-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <IconComponent size={20} className="text-gray-500" />
+            <div className="flex items-center gap-2 text-[13px]">
+              <span className="text-gray-500 font-medium">FixHub</span>
+              <ChevronRight size={14} className="text-gray-400" />
+              <span className="font-semibold text-gray-900">{PAGE_LABELS[activePage] ?? activePage}</span>
             </div>
           </div>
           <div className="ml-auto flex items-center gap-3">
-            <div className="h-8 px-3 rounded-lg bg-slate-800/50 border border-slate-700 flex items-center gap-2 text-xs text-slate-300 font-medium">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <div className="h-8 px-3 rounded-md bg-gray-50 border border-gray-200 flex items-center gap-2 text-[11px] text-gray-600 font-medium uppercase tracking-wide">
+              <span className="w-2 h-2 rounded-full bg-green-500" />
               System Online
             </div>
           </div>
         </header>
         {/* Page content */}
-        <main className="flex-1 p-7 animate-fade-in overflow-x-hidden">
+        <main className="flex-1 p-8 overflow-x-hidden">
           {renderPage()}
         </main>
       </div>

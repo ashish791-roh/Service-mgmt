@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { useApp } from '../context/AppContext';
+import { Wrench, CheckCircle, Banknote, Hourglass, Download, User, Box } from 'lucide-react';
 
-// Simple print/export simulation for prototype
 const exportToCSV = (data: Record<string, unknown>[], filename: string) => {
   if (data.length === 0) return;
   const headers = Object.keys(data[0]);
@@ -15,84 +14,47 @@ const exportToCSV = (data: Record<string, unknown>[], filename: string) => {
   URL.revokeObjectURL(url);
 };
 
-// ── Icons ────────────────────────────────────────────────────────
-const Icons = {
-  Wrench: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>,
-  CheckCircle: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>,
-  Banknote: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/></svg>,
-  Hourglass: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg>,
-  Download: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
-  User: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
-  Box: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>,
-};
-
-// ── Interactive UI Components ────────────────────────────────────
 const PageHeader = ({ title, subtitle, action }: { title: string, subtitle: string, action?: React.ReactNode }) => (
-  <motion.div 
-    initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: "easeOut" }}
-    className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8"
-  >
+  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 bg-white p-6 rounded-xl border border-gray-200">
     <div>
-      <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-slate-900 to-slate-600 tracking-tight leading-tight">{title}</h1>
-      <p className="text-sm font-bold text-violet-500 uppercase tracking-widest mt-2">{subtitle}</p>
+      <h1 className="text-[18px] font-medium text-gray-900">{title}</h1>
+      <p className="text-[13px] font-normal text-teal-500 mt-1">{subtitle}</p>
     </div>
     {action && <div>{action}</div>}
-  </motion.div>
+  </div>
 );
 
-const AnimatedCard = ({ children, delay = 0, className = "" }: any) => (
-  <motion.div
-    initial={{ opacity: 0, y: 20 }}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ duration: 0.5, delay, ease: [0.22, 1, 0.36, 1] }}
-    whileHover={{ y: -4, transition: { duration: 0.2 } }}
-    className={`bg-white rounded-[2rem] border border-slate-100/60 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_20px_40px_rgba(139,92,246,0.08)] hover:border-violet-100 transition-all duration-300 overflow-hidden ${className}`}
-  >
+const Card = ({ children, className = "" }: any) => (
+  <div className={`bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden ${className}`}>
     {children}
-  </motion.div>
+  </div>
 );
 
-const InteractiveStatCard = ({ title, value, icon, gradient, delay, sub }: any) => (
-  <motion.div
-    initial={{ opacity: 0, scale: 0.95 }}
-    animate={{ opacity: 1, scale: 1 }}
-    transition={{ duration: 0.5, delay, ease: "easeOut" }}
-    whileHover={{ scale: 1.02 }}
-    className="relative bg-white rounded-3xl p-5 border border-slate-100 shadow-sm overflow-hidden group cursor-pointer"
-  >
-    <div className={`absolute -top-16 -right-16 w-32 h-32 bg-gradient-to-br ${gradient} opacity-10 rounded-full blur-3xl group-hover:scale-150 group-hover:opacity-20 transition-all duration-500`} />
-    
-    <div className="flex justify-between items-start mb-4 relative z-10">
-      <motion.div 
-        whileHover={{ rotate: 10, scale: 1.1 }}
-        className={`w-12 h-12 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center text-white shadow-lg`}
-      >
-        {Icons[icon as keyof typeof Icons]}
-      </motion.div>
-      {sub && <span className="bg-slate-100 text-slate-500 text-[10px] font-black px-3 py-1.5 rounded-full uppercase tracking-wider">{sub}</span>}
+const MetricCard = ({ title, value, icon: Icon, colorClass, sub }: any) => (
+  <div className="bg-white rounded-xl p-5 border border-gray-200 shadow-sm relative overflow-hidden group">
+    <div className="flex justify-between items-start mb-4">
+      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${colorClass}`}>
+        <Icon size={20} />
+      </div>
+      {sub && <span className="bg-gray-100 text-gray-500 text-[11px] font-medium px-2.5 py-1 rounded-md uppercase tracking-wide">{sub}</span>}
     </div>
-    <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">{title}</p>
-    <div className="flex items-end gap-3 relative z-10">
-      <h3 className="text-4xl lg:text-4xl font-black text-slate-900 tracking-tighter leading-none">{value}</h3>
-    </div>
-  </motion.div>
+    <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1">{title}</p>
+    <h3 className="text-[24px] font-medium text-gray-900 leading-none">{value}</h3>
+  </div>
 );
 
-const GlowButton = ({ icon, text, onClick, variant = 'primary', className = "" }: any) => {
+const Button = ({ icon: Icon, text, onClick, variant = 'primary', className = "" }: any) => {
   const styles: any = {
-    primary: "bg-slate-900 text-white hover:bg-slate-800 shadow-[0_8px_16px_rgba(0,0,0,0.15)]",
-    vivid: "bg-gradient-to-r from-violet-600 to-fuchsia-500 text-white shadow-[0_8px_20px_rgba(139,92,246,0.3)] hover:shadow-[0_12px_25px_rgba(139,92,246,0.4)]",
-    success: "bg-gradient-to-r from-emerald-500 to-teal-400 text-white shadow-[0_8px_20px_rgba(16,185,129,0.3)]",
+    primary: "bg-gray-900 text-white hover:bg-gray-800",
+    success: "bg-green-500 text-white hover:bg-green-600",
+    danger: "bg-rose-500 text-white hover:bg-rose-600",
+    outline: "bg-white border border-gray-200 text-gray-700 hover:bg-gray-50",
   };
   return (
-    <motion.button 
-      whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-      onClick={onClick} 
-      className={`flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl font-black text-sm transition-all ${styles[variant]} ${className}`}
-    >
-      {icon && <span className="text-lg">{icon}</span>}
+    <button onClick={onClick} className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-[13px] transition-colors ${styles[variant]} ${className}`}>
+      {Icon && <Icon size={16} />}
       {text}
-    </motion.button>
+    </button>
   );
 };
 
@@ -104,20 +66,17 @@ export const ReportsPage: React.FC = () => {
 
   const engineers = users.filter(u => u.role === 'engineer');
 
-  // Filtered jobs by date range
   const filteredJobs = jobs.filter(j => {
     const d = new Date(j.createdAt);
     return d >= new Date(dateFrom) && d <= new Date(dateTo + 'T23:59:59');
   });
 
-  // Revenue metrics
   const completedJobs = filteredJobs.filter(j => ['Completed', 'Delivered'].includes(j.status));
   const totalRevenue = completedJobs.reduce((s, j) => s + (j.actualCost ?? j.estimatedCost), 0);
   const pendingRevenue = filteredJobs
     .filter(j => !['Completed', 'Delivered'].includes(j.status))
     .reduce((s, j) => s + j.estimatedCost, 0);
 
-  // Engineer performance
   const engineerStats = engineers.map(eng => {
     const engJobs = filteredJobs.filter(j => j.assignedEngineerId === eng.id);
     const completed = engJobs.filter(j => ['Completed', 'Delivered'].includes(j.status));
@@ -139,8 +98,8 @@ export const ReportsPage: React.FC = () => {
   filteredJobs.forEach(j => { statusBreakdown[j.status] = (statusBreakdown[j.status] ?? 0) + 1; });
 
   const statusColors: Record<string, string> = {
-    New: 'bg-slate-300', Assigned: 'bg-blue-400',
-    'In Progress': 'bg-amber-400', Completed: 'bg-emerald-500', Delivered: 'bg-violet-500',
+    New: 'bg-gray-300', Assigned: 'bg-cyan-400',
+    'In Progress': 'bg-amber-400', Completed: 'bg-green-500', Delivered: 'bg-teal-500',
   };
 
   const handleExportJobs = () => {
@@ -179,293 +138,289 @@ export const ReportsPage: React.FC = () => {
   };
 
   const tabs = [
-    { id: 'jobs' as const, label: 'Jobs Report', icon: Icons.Wrench },
-    { id: 'engineers' as const, label: 'Engineer Performance', icon: Icons.User },
-    { id: 'inventory' as const, label: 'Inventory', icon: Icons.Box },
-    { id: 'revenue' as const, label: 'Revenue', icon: Icons.Banknote },
+    { id: 'jobs' as const, label: 'Jobs Report', icon: Wrench },
+    { id: 'engineers' as const, label: 'Engineer Performance', icon: User },
+    { id: 'inventory' as const, label: 'Inventory', icon: Box },
+    { id: 'revenue' as const, label: 'Revenue', icon: Banknote },
   ];
 
   return (
-    <div className="max-w-[1400px] mx-auto pb-12 space-y-8">
+    <div className="max-w-[1400px] mx-auto pb-8 space-y-6">
       <PageHeader title="Business Intelligence" subtitle="Export and analyze performance data" />
 
       {/* Date Filter */}
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-[2rem] border border-slate-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative overflow-hidden">
-        <div className="absolute -right-32 -top-32 w-64 h-64 bg-gradient-to-bl from-violet-500/10 to-transparent rounded-full blur-3xl pointer-events-none" />
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative overflow-hidden">
         <div>
-          <h3 className="text-xl font-black text-slate-900 tracking-tight">Reporting Period</h3>
-          <p className="text-xs font-bold text-violet-500 uppercase tracking-widest mt-1">Select date range</p>
+          <h3 className="text-[18px] font-medium text-gray-900">Reporting Period</h3>
+          <p className="text-[11px] font-medium text-teal-600 uppercase tracking-wide mt-1">Select date range</p>
         </div>
-        <div className="flex flex-col sm:flex-row items-center gap-4 w-full md:w-auto relative z-10">
-          <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-2xl border border-slate-100 w-full sm:w-auto">
-            <span className="text-xs font-black text-slate-400 uppercase tracking-widest pl-3">From</span>
+        <div className="flex flex-col sm:flex-row items-center gap-4 w-full md:w-auto">
+          <div className="flex items-center gap-3 bg-gray-50 p-1.5 rounded-lg border border-gray-200 w-full sm:w-auto">
+            <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wide pl-2">From</span>
             <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-              className="bg-white px-4 py-2.5 rounded-xl border border-slate-100 text-sm font-bold text-slate-700 focus:outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 shadow-sm" />
+              className="bg-white px-3 py-2 rounded-md border border-gray-200 text-[13px] font-medium text-gray-700 focus:outline-none focus:border-teal-500 transition-colors" />
           </div>
-          <span className="text-slate-300 font-black hidden sm:block">→</span>
-          <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-2xl border border-slate-100 w-full sm:w-auto">
-            <span className="text-xs font-black text-slate-400 uppercase tracking-widest pl-3">To</span>
+          <span className="text-gray-300 font-medium hidden sm:block">→</span>
+          <div className="flex items-center gap-3 bg-gray-50 p-1.5 rounded-lg border border-gray-200 w-full sm:w-auto">
+            <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wide pl-2">To</span>
             <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-              className="bg-white px-4 py-2.5 rounded-xl border border-slate-100 text-sm font-bold text-slate-700 focus:outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 shadow-sm" />
+              className="bg-white px-3 py-2 rounded-md border border-gray-200 text-[13px] font-medium text-gray-700 focus:outline-none focus:border-teal-500 transition-colors" />
           </div>
         </div>
-      </motion.div>
+      </div>
 
       {/* Summary Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <InteractiveStatCard title="Total Jobs" value={filteredJobs.length} icon="Wrench" gradient="from-blue-600 to-cyan-400" delay={0.1} sub="In period" />
-        <InteractiveStatCard title="Completed" value={completedJobs.length} icon="CheckCircle" gradient="from-emerald-500 to-teal-400" delay={0.2} sub="Successfully" />
-        <InteractiveStatCard title="Collected" value={`₹${(totalRevenue/1000).toFixed(1)}k`} icon="Banknote" gradient="from-violet-600 to-fuchsia-500" delay={0.3} />
-        <InteractiveStatCard title="Pending" value={`₹${(pendingRevenue/1000).toFixed(1)}k`} icon="Hourglass" gradient="from-amber-400 to-orange-500" delay={0.4} />
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <MetricCard title="Total Jobs" value={filteredJobs.length} icon={Wrench} colorClass="bg-cyan-50 text-cyan-600 border border-cyan-200" sub="In period" />
+        <MetricCard title="Completed" value={completedJobs.length} icon={CheckCircle} colorClass="bg-green-50 text-green-600 border border-green-200" sub="Successfully" />
+        <MetricCard title="Collected" value={`₹${(totalRevenue/1000).toFixed(1)}k`} icon={Banknote} colorClass="bg-teal-50 text-teal-600 border border-teal-200" />
+        <MetricCard title="Pending" value={`₹${(pendingRevenue/1000).toFixed(1)}k`} icon={Hourglass} colorClass="bg-amber-50 text-amber-600 border border-amber-200" />
       </div>
 
       {/* Tabs */}
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="flex bg-white p-2 rounded-[1.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 w-fit overflow-x-auto">
+      <div className="flex bg-white p-1 rounded-lg border border-gray-200 w-fit overflow-x-auto">
         {tabs.map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-            className={`px-6 py-3 rounded-xl text-sm font-black transition-all duration-300 whitespace-nowrap flex items-center gap-2 ${
-              activeTab === tab.id ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+            className={`px-4 py-2 rounded-md text-[13px] font-medium transition-colors whitespace-nowrap flex items-center gap-2 ${
+              activeTab === tab.id ? 'bg-gray-100 text-gray-900' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
             }`}>
-            <span className={`text-lg ${activeTab === tab.id ? 'opacity-100' : 'opacity-50'}`}>{tab.icon}</span>
+            <tab.icon size={16} className={activeTab === tab.id ? 'text-gray-900' : 'text-gray-400'} />
             {tab.label}
           </button>
         ))}
-      </motion.div>
+      </div>
 
-      {/* Jobs Report Tab */}
-      <AnimatePresence mode="wait">
-        <motion.div key={activeTab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
-          {activeTab === 'jobs' && (
-            <AnimatedCard>
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-8 py-6 border-b border-slate-100/80 bg-slate-50/50 gap-4">
-                <div>
-                  <h2 className="text-xl font-black text-slate-900 tracking-tight">Jobs Pipeline ({filteredJobs.length})</h2>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Status breakdown</p>
+      {/* Reports Content */}
+      <div className="transition-opacity duration-200">
+        {activeTab === 'jobs' && (
+          <Card>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50 gap-4">
+              <div>
+                <h2 className="text-[18px] font-medium text-gray-900">Jobs Pipeline ({filteredJobs.length})</h2>
+                <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mt-1">Status breakdown</p>
+              </div>
+              <Button icon={Download} text="Export Data" variant="primary" onClick={handleExportJobs} className="w-full sm:w-auto" />
+            </div>
+
+            {filteredJobs.length > 0 && (
+              <div className="px-6 py-4 border-b border-gray-200">
+                <div className="flex h-2 rounded-full overflow-hidden gap-0.5 mb-3 bg-gray-100">
+                  {Object.entries(statusBreakdown).map(([status, count]) => (
+                    <div key={status}
+                      className={`${statusColors[status] ?? 'bg-gray-300'} transition-all`}
+                      style={{ width: `${(count / filteredJobs.length) * 100}%` }}
+                      title={`${status}: ${count}`} />
+                  ))}
                 </div>
-                <GlowButton icon={Icons.Download} text="Export Data" variant="vivid" onClick={handleExportJobs} className="!py-2.5 w-full sm:w-auto" />
-              </div>
-
-              {/* Status breakdown bar */}
-              {filteredJobs.length > 0 && (
-                <div className="px-8 py-6 border-b border-slate-100/80">
-                  <div className="flex h-3 rounded-full overflow-hidden gap-1 mb-4 shadow-inner bg-slate-100">
-                    {Object.entries(statusBreakdown).map(([status, count]) => (
-                      <div key={status}
-                        className={`${statusColors[status] ?? 'bg-slate-300'} transition-all`}
-                        style={{ width: `${(count / filteredJobs.length) * 100}%` }}
-                        title={`${status}: ${count}`} />
-                    ))}
-                  </div>
-                  <div className="flex flex-wrap gap-5">
-                    {Object.entries(statusBreakdown).map(([status, count]) => (
-                      <div key={status} className="flex items-center gap-2">
-                        <div className={`w-3 h-3 rounded-full ${statusColors[status] ?? 'bg-slate-300'} shadow-sm`} />
-                        <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">{status}: <strong className="text-slate-900 ml-1">{count}</strong></span>
-                      </div>
-                    ))}
-                  </div>
+                <div className="flex flex-wrap gap-4">
+                  {Object.entries(statusBreakdown).map(([status, count]) => (
+                    <div key={status} className="flex items-center gap-1.5">
+                      <div className={`w-2.5 h-2.5 rounded-full ${statusColors[status] ?? 'bg-gray-300'}`} />
+                      <span className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">{status}: <strong className="text-gray-900 ml-0.5">{count}</strong></span>
+                    </div>
+                  ))}
                 </div>
-              )}
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50/50 border-b border-slate-100/80">
-                      {['ID', 'Client', 'Device', 'Assigned', 'Status', 'Cost', 'Date'].map(h => (
-                        <th key={h} className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100/80">
-                    {filteredJobs.map(job => {
-                      const customer = customers.find(c => c.id === job.customerId);
-                      const device = devices.find(d => d.id === job.deviceId);
-                      const engineer = users.find(u => u.id === job.assignedEngineerId);
-                      return (
-                        <tr key={job.id} className="hover:bg-slate-50/50 transition-colors group cursor-pointer">
-                          <td className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">#{job.id}</td>
-                          <td className="px-8 py-5">
-                            <p className="text-sm font-black text-slate-900 group-hover:text-violet-600 transition-colors">{customer?.name}</p>
-                          </td>
-                          <td className="px-8 py-5 text-sm font-bold text-slate-500">{device?.brand}</td>
-                          <td className="px-8 py-5 text-sm font-semibold text-slate-600">{engineer?.name ?? <span className="text-rose-400 italic">Unassigned</span>}</td>
-                          <td className="px-8 py-5">
-                            <span className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-black uppercase tracking-wider">{job.status}</span>
-                          </td>
-                          <td className="px-8 py-5 text-base font-black text-slate-900">₹{job.estimatedCost.toLocaleString()}</td>
-                          <td className="px-8 py-5 text-xs font-bold text-slate-400">{new Date(job.createdAt).toLocaleDateString('en-IN')}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-                {filteredJobs.length === 0 && (
-                  <div className="p-16 text-center">
-                    <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">{Icons.Wrench}</div>
-                    <p className="text-xl font-black text-slate-900 mb-1">No jobs found</p>
-                    <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">Adjust the date range above</p>
-                  </div>
-                )}
               </div>
-            </AnimatedCard>
-          )}
+            )}
 
-          {activeTab === 'engineers' && (
-            <AnimatedCard>
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-8 py-6 border-b border-slate-100/80 bg-slate-50/50 gap-4">
-                <h2 className="text-xl font-black text-slate-900 tracking-tight">Performance Matrix</h2>
-                <GlowButton icon={Icons.Download} text="Export Data" variant="vivid" onClick={handleExportEngineers} className="!py-2.5 w-full sm:w-auto" />
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50/50 border-b border-slate-100/80">
-                      {['Engineer', 'Load', 'Completed', 'Pending', 'Turnaround', 'Efficiency Score'].map(h => (
-                        <th key={h} className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100/80">
-                    {engineerStats.sort((a, b) => b.efficiency - a.efficiency).map(eng => (
-                      <tr key={eng.name} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="px-8 py-6">
-                          <div className="flex items-center gap-4">
-                            <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-black shadow-sm">
-                              {eng.name.charAt(0)}
-                            </div>
-                            <span className="text-base font-black text-slate-900">{eng.name}</span>
-                          </div>
-                        </td>
-                        <td className="px-8 py-6 text-xl font-black text-slate-900">{eng.total}</td>
-                        <td className="px-8 py-6 text-xl font-black text-emerald-500">{eng.completed}</td>
-                        <td className="px-8 py-6 text-xl font-black text-amber-500">{eng.pending}</td>
-                        <td className="px-8 py-6 text-sm font-bold text-slate-500">{eng.avgDays > 0 ? `${eng.avgDays} days` : '—'}</td>
-                        <td className="px-8 py-6">
-                          <div className="flex items-center gap-3">
-                            <div className="w-32 h-2.5 bg-slate-100 rounded-full overflow-hidden shadow-inner">
-                              <div className={`h-full rounded-full transition-all ${eng.efficiency > 80 ? 'bg-emerald-500' : eng.efficiency > 50 ? 'bg-amber-400' : 'bg-rose-500'}`} style={{ width: `${eng.efficiency}%` }} />
-                            </div>
-                            <span className="text-sm font-black text-slate-900 w-12 text-right">{eng.efficiency}%</span>
-                          </div>
-                        </td>
-                      </tr>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    {['ID', 'Client', 'Device', 'Assigned', 'Status', 'Cost', 'Date'].map(h => (
+                      <th key={h} className="px-6 py-3 text-[11px] font-medium text-gray-500 uppercase tracking-wide">{h}</th>
                     ))}
-                  </tbody>
-                </table>
-              </div>
-            </AnimatedCard>
-          )}
-
-          {activeTab === 'inventory' && (
-            <AnimatedCard>
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-8 py-6 border-b border-slate-100/80 bg-slate-50/50 gap-4">
-                <h2 className="text-xl font-black text-slate-900 tracking-tight">Inventory Valuation</h2>
-                <GlowButton icon={Icons.Download} text="Export Data" variant="vivid" onClick={handleExportInventory} className="!py-2.5 w-full sm:w-auto" />
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50/50 border-b border-slate-100/80">
-                      {['Part Name', 'Category', 'Quantity', 'Status', 'Unit Cost', 'Asset Value'].map(h => (
-                        <th key={h} className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100/80">
-                    {inventory.map(item => {
-                      const isLow = item.quantity <= item.minStock;
-                      return (
-                        <tr key={item.id} className={`hover:bg-slate-50/50 transition-colors group ${isLow ? 'bg-rose-50/30' : ''}`}>
-                          <td className="px-8 py-6 font-black text-base text-slate-900 group-hover:text-violet-600 transition-colors">{item.name}</td>
-                          <td className="px-8 py-6">
-                            <span className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-black uppercase tracking-wider">{item.category}</span>
-                          </td>
-                          <td className={`px-8 py-6 text-2xl font-black tracking-tighter ${isLow ? 'text-rose-600' : 'text-slate-900'}`}>{item.quantity}</td>
-                          <td className="px-8 py-6">
-                            <span className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider ${isLow ? 'bg-rose-100 text-rose-600 border border-rose-200' : 'bg-emerald-100 text-emerald-600 border border-emerald-200'}`}>
-                              {isLow ? 'Critical' : 'Healthy'}
-                            </span>
-                          </td>
-                          <td className="px-8 py-6 text-sm font-bold text-slate-500">₹{item.unitCost.toLocaleString()}</td>
-                          <td className="px-8 py-6 text-lg font-black text-slate-900 tracking-tighter">₹{(item.quantity * item.unitCost).toLocaleString()}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </AnimatedCard>
-          )}
-
-          {activeTab === 'revenue' && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <AnimatedCard className="bg-gradient-to-br from-emerald-500 to-teal-400 text-white p-8">
-                  <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center mb-6">
-                    {Icons.Banknote}
-                  </div>
-                  <p className="text-xs font-black text-emerald-100 uppercase tracking-widest mb-1">Total Realized</p>
-                  <p className="text-4xl font-black tracking-tighter mb-2">₹{totalRevenue.toLocaleString()}</p>
-                  <p className="text-sm font-bold text-emerald-100 bg-white/10 w-fit px-3 py-1.5 rounded-lg">{completedJobs.length} completed transactions</p>
-                </AnimatedCard>
-                <AnimatedCard className="bg-gradient-to-br from-amber-400 to-orange-500 text-white p-8">
-                  <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center mb-6">
-                    {Icons.Hourglass}
-                  </div>
-                  <p className="text-xs font-black text-amber-100 uppercase tracking-widest mb-1">Awaiting Collection</p>
-                  <p className="text-4xl font-black tracking-tighter mb-2">₹{pendingRevenue.toLocaleString()}</p>
-                  <p className="text-sm font-bold text-amber-100 bg-white/10 w-fit px-3 py-1.5 rounded-lg">{filteredJobs.length - completedJobs.length} active invoices</p>
-                </AnimatedCard>
-                <AnimatedCard className="p-8">
-                  <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mb-6 shadow-sm">
-                    {Icons.CheckCircle}
-                  </div>
-                  <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">Avg Ticket Size</p>
-                  <p className="text-4xl font-black text-slate-900 tracking-tighter mb-2">
-                    ₹{completedJobs.length > 0 ? Math.round(totalRevenue / completedJobs.length).toLocaleString() : 0}
-                  </p>
-                  <p className="text-sm font-bold text-slate-500 uppercase tracking-widest mt-3">Per transaction</p>
-                </AnimatedCard>
-              </div>
-
-              <AnimatedCard>
-                <div className="px-8 py-6 border-b border-slate-100/80 bg-slate-50/50">
-                  <h2 className="text-xl font-black text-slate-900 tracking-tight">Revenue Breakdown by Engineer</h2>
-                </div>
-                <div className="divide-y divide-slate-100/80">
-                  {engineers.map(eng => {
-                    const engCompleted = completedJobs.filter(j => j.assignedEngineerId === eng.id);
-                    const engRevenue = engCompleted.reduce((s, j) => s + (j.actualCost ?? j.estimatedCost), 0);
-                    const pct = totalRevenue > 0 ? Math.round((engRevenue / totalRevenue) * 100) : 0;
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {filteredJobs.map(job => {
+                    const customer = customers.find(c => c.id === job.customerId);
+                    const device = devices.find(d => d.id === job.deviceId);
+                    const engineer = users.find(u => u.id === job.assignedEngineerId);
                     return (
-                      <div key={eng.id} className="flex flex-col sm:flex-row sm:items-center gap-6 px-8 py-6 group hover:bg-slate-50/50 transition-colors">
-                        <div className="flex items-center gap-4 w-64">
-                          <div className="w-12 h-12 rounded-2xl bg-violet-50 flex items-center justify-center text-lg font-black text-violet-600 shadow-sm">
-                            {eng.name.charAt(0)}
-                          </div>
-                          <div>
-                            <p className="text-base font-black text-slate-900">{eng.name}</p>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{engCompleted.length} transactions</p>
-                          </div>
-                        </div>
-                        <div className="flex-1 flex items-center gap-5">
-                          <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden shadow-inner">
-                            <div className="h-full bg-emerald-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
-                          </div>
-                          <div className="text-right w-32">
-                            <span className="text-xl font-black text-slate-900 tracking-tighter block">₹{engRevenue.toLocaleString()}</span>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{pct}% of total</span>
-                          </div>
-                        </div>
-                      </div>
+                      <tr key={job.id} className="hover:bg-gray-50 transition-colors cursor-pointer">
+                        <td className="px-6 py-4 text-[11px] font-medium text-gray-400 uppercase tracking-wide">#{job.id}</td>
+                        <td className="px-6 py-4">
+                          <p className="text-[13px] font-medium text-gray-900">{customer?.name}</p>
+                        </td>
+                        <td className="px-6 py-4 text-[13px] font-normal text-gray-600">{device?.brand}</td>
+                        <td className="px-6 py-4 text-[13px] font-normal text-gray-600">{engineer?.name ?? <span className="text-rose-400 italic">Unassigned</span>}</td>
+                        <td className="px-6 py-4">
+                          <span className="px-2.5 py-1 bg-gray-100 text-gray-600 rounded-md text-[11px] font-medium uppercase tracking-wide">{job.status}</span>
+                        </td>
+                        <td className="px-6 py-4 text-[13px] font-medium text-gray-900">₹{job.estimatedCost.toLocaleString()}</td>
+                        <td className="px-6 py-4 text-[11px] font-normal text-gray-500">{new Date(job.createdAt).toLocaleDateString('en-IN')}</td>
+                      </tr>
                     );
                   })}
+                </tbody>
+              </table>
+              {filteredJobs.length === 0 && (
+                <div className="p-12 text-center">
+                  <div className="w-12 h-12 bg-gray-50 rounded-lg flex items-center justify-center mx-auto mb-3 text-gray-400"><Wrench size={24} /></div>
+                  <p className="text-[13px] font-medium text-gray-900 mb-1">No jobs found</p>
+                  <p className="text-[11px] font-normal text-gray-500 uppercase tracking-wide">Adjust the date range above</p>
                 </div>
-              </AnimatedCard>
+              )}
             </div>
-          )}
-        </motion.div>
-      </AnimatePresence>
+          </Card>
+        )}
+
+        {activeTab === 'engineers' && (
+          <Card>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50 gap-4">
+              <h2 className="text-[18px] font-medium text-gray-900">Performance Matrix</h2>
+              <Button icon={Download} text="Export Data" variant="primary" onClick={handleExportEngineers} className="w-full sm:w-auto" />
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    {['Engineer', 'Load', 'Completed', 'Pending', 'Turnaround', 'Efficiency Score'].map(h => (
+                      <th key={h} className="px-6 py-3 text-[11px] font-medium text-gray-500 uppercase tracking-wide">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {engineerStats.sort((a, b) => b.efficiency - a.efficiency).map(eng => (
+                    <tr key={eng.name} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center text-[13px] font-medium border border-teal-100">
+                            {eng.name.charAt(0)}
+                          </div>
+                          <span className="text-[13px] font-medium text-gray-900">{eng.name}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-[18px] font-medium text-gray-900">{eng.total}</td>
+                      <td className="px-6 py-4 text-[18px] font-medium text-green-500">{eng.completed}</td>
+                      <td className="px-6 py-4 text-[18px] font-medium text-amber-500">{eng.pending}</td>
+                      <td className="px-6 py-4 text-[11px] font-normal text-gray-500">{eng.avgDays > 0 ? `${eng.avgDays} days` : '—'}</td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-24 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full transition-all ${eng.efficiency > 80 ? 'bg-green-500' : eng.efficiency > 50 ? 'bg-amber-400' : 'bg-rose-500'}`} style={{ width: `${eng.efficiency}%` }} />
+                          </div>
+                          <span className="text-[11px] font-medium text-gray-900 w-8 text-right">{eng.efficiency}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
+
+        {activeTab === 'inventory' && (
+          <Card>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50 gap-4">
+              <h2 className="text-[18px] font-medium text-gray-900">Inventory Valuation</h2>
+              <Button icon={Download} text="Export Data" variant="primary" onClick={handleExportInventory} className="w-full sm:w-auto" />
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    {['Part Name', 'Category', 'Quantity', 'Status', 'Unit Cost', 'Asset Value'].map(h => (
+                      <th key={h} className="px-6 py-3 text-[11px] font-medium text-gray-500 uppercase tracking-wide">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {inventory.map(item => {
+                    const isLow = item.quantity <= item.minStock;
+                    return (
+                      <tr key={item.id} className={`hover:bg-gray-50 transition-colors ${isLow ? 'bg-rose-50/30' : ''}`}>
+                        <td className="px-6 py-4 text-[13px] font-medium text-gray-900">{item.name}</td>
+                        <td className="px-6 py-4">
+                          <span className="px-2.5 py-1 bg-gray-100 text-gray-600 rounded-md text-[11px] font-medium uppercase tracking-wide">{item.category}</span>
+                        </td>
+                        <td className={`px-6 py-4 text-[18px] font-medium ${isLow ? 'text-rose-600' : 'text-gray-900'}`}>{item.quantity}</td>
+                        <td className="px-6 py-4">
+                          <span className={`px-2.5 py-1 rounded-md text-[11px] font-medium uppercase tracking-wide ${isLow ? 'bg-rose-100 text-rose-600 border border-rose-200' : 'bg-green-100 text-green-600 border border-green-200'}`}>
+                            {isLow ? 'Critical' : 'Healthy'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-[11px] font-normal text-gray-500">₹{item.unitCost.toLocaleString()}</td>
+                        <td className="px-6 py-4 text-[13px] font-medium text-gray-900">₹{(item.quantity * item.unitCost).toLocaleString()}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
+
+        {activeTab === 'revenue' && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <Card className="bg-teal-500 text-white p-6 border-transparent">
+                <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center mb-4">
+                  <Banknote size={20} />
+                </div>
+                <p className="text-[11px] font-medium text-teal-100 uppercase tracking-wide mb-1">Total Realized</p>
+                <p className="text-[24px] font-medium mb-2">₹{totalRevenue.toLocaleString()}</p>
+                <p className="text-[11px] font-medium text-teal-100 bg-white/10 w-fit px-2.5 py-1 rounded-md">{completedJobs.length} completed transactions</p>
+              </Card>
+              <Card className="bg-amber-500 text-white p-6 border-transparent">
+                <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center mb-4">
+                  <Hourglass size={20} />
+                </div>
+                <p className="text-[11px] font-medium text-amber-100 uppercase tracking-wide mb-1">Awaiting Collection</p>
+                <p className="text-[24px] font-medium mb-2">₹{pendingRevenue.toLocaleString()}</p>
+                <p className="text-[11px] font-medium text-amber-100 bg-white/10 w-fit px-2.5 py-1 rounded-md">{filteredJobs.length - completedJobs.length} active invoices</p>
+              </Card>
+              <Card className="p-6">
+                <div className="w-10 h-10 bg-teal-50 text-teal-600 border border-teal-100 rounded-lg flex items-center justify-center mb-4">
+                  <CheckCircle size={20} />
+                </div>
+                <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide mb-1">Avg Ticket Size</p>
+                <p className="text-[24px] font-medium text-gray-900 mb-2">
+                  ₹{completedJobs.length > 0 ? Math.round(totalRevenue / completedJobs.length).toLocaleString() : 0}
+                </p>
+                <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mt-2">Per transaction</p>
+              </Card>
+            </div>
+
+            <Card>
+              <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+                <h2 className="text-[18px] font-medium text-gray-900">Revenue Breakdown by Engineer</h2>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {engineers.map(eng => {
+                  const engCompleted = completedJobs.filter(j => j.assignedEngineerId === eng.id);
+                  const engRevenue = engCompleted.reduce((s, j) => s + (j.actualCost ?? j.estimatedCost), 0);
+                  const pct = totalRevenue > 0 ? Math.round((engRevenue / totalRevenue) * 100) : 0;
+                  return (
+                    <div key={eng.id} className="flex flex-col sm:flex-row sm:items-center gap-4 px-6 py-4 hover:bg-gray-50 transition-colors">
+                      <div className="flex items-center gap-3 w-64">
+                        <div className="w-10 h-10 rounded-lg bg-teal-50 flex items-center justify-center text-[13px] font-medium text-teal-600 border border-teal-100">
+                          {eng.name.charAt(0)}
+                        </div>
+                        <div>
+                          <p className="text-[13px] font-medium text-gray-900">{eng.name}</p>
+                          <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">{engCompleted.length} transactions</p>
+                        </div>
+                      </div>
+                      <div className="flex-1 flex items-center gap-4">
+                        <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-green-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                        </div>
+                        <div className="text-right w-24">
+                          <span className="text-[13px] font-medium text-gray-900 block">₹{engRevenue.toLocaleString()}</span>
+                          <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">{pct}% of total</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
