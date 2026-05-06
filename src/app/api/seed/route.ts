@@ -58,8 +58,8 @@ async function runSeed() {
     hashed.map((u) => prisma.user.create({ data: u }))
   );
 
-  const eng1 = createdUsers.find((u) => u.email === 'eng1@fixhub.com')!;
-  const eng2 = createdUsers.find((u) => u.email === 'eng2@fixhub.com')!;
+  const eng1 = createdUsers.find((u: { email: string }) => u.email === 'eng1@fixhub.com')!;
+  const eng2 = createdUsers.find((u: { email: string }) => u.email === 'eng2@fixhub.com')!;
 
   const createdCustomers = await Promise.all(
     CUSTOMERS.map((c) => prisma.customer.create({ data: c }))
