@@ -127,3 +127,14 @@ model Notification {
 
   user User @relation(fields: [userId], references: [id])
 }
+
+model Session {
+  token     String   @id @db.VarChar(64)
+  userId    String
+  payload   Json
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}

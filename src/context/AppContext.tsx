@@ -24,14 +24,14 @@ interface AppContextType {
   partRequests: PartRequest[];
   inventory: InventoryItem[];
   notifications: Notification[];
-  addUser: (user: Omit<User, 'id'>) => void;
+  addUser: (user: Omit<User, 'id'>) => Promise<void>;
   updateUser: (userId: string, data: Partial<Pick<User, 'name' | 'email' | 'role'>> & { password?: string }) => Promise<{ ok: boolean; error?: string }>;
   deleteUser: (userId: string) => Promise<{ ok: boolean; error?: string }>;
   toggleUserActive: (userId: string) => void;
   addCustomer: (c: Omit<Customer, 'id' | 'createdAt'>) => Promise<Customer>;
   addDevice: (d: Omit<Device, 'id'>) => Promise<Device>;
   addJob: (j: Omit<Job, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Job>;
-  updateJobStatus: (jobId: string, status: JobStatus, notes?: string) => void;
+  updateJobStatus: (jobId: string, status: JobStatus, notes?: string) => Promise<{ ok: boolean; error?: string }>;
   assignEngineer: (jobId: string, engineerId: string) => void;
   addPartRequest: (r: Omit<PartRequest, 'id' | 'createdAt' | 'status'>) => void;
   updatePartRequest: (id: string, status: PartRequestStatus) => void;
@@ -44,8 +44,9 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | null>(null);
 
 // ── Session is now managed via HttpOnly cookie on the server.
-// The frontend stores only the user profile (no token) in sessionStorage
-// for UI purposes. The actual auth token is never accessible to JS.
+// The frontend stores only the user profile (no token) in localStorage
+// for UI purposes (survives page refresh). The actual auth token is
+// never accessible to JS — it lives in the HttpOnly cookie only.
 const SESSION_KEY = 'fixhub_session_user';
 
 // ── Load all app data from the real API ──────────────────────────
@@ -91,12 +92,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // ── Restore session AFTER hydration (client only) ────────────────
   // The HttpOnly cookie is sent automatically by the browser on every
-  // API request, so we just need to restore the UI user from sessionStorage
+  // API request, so we just need to restore the UI user from localStorage
   // and then verify by fetching data (which requires a valid cookie).
   useEffect(() => {
     const restore = async () => {
       try {
-        const stored = sessionStorage.getItem(SESSION_KEY);
+        const stored = localStorage.getItem(SESSION_KEY);
         if (stored) {
           const user = JSON.parse(stored) as User;
           // Verify the server-side session is still valid
@@ -107,7 +108,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             applyAppData(data, setters);
           } else {
             // Session expired on server — clear local state
-            sessionStorage.removeItem(SESSION_KEY);
+            localStorage.removeItem(SESSION_KEY);
           }
         }
       } catch { /**/ }
@@ -137,7 +138,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const user: User = data.user;
       setCurrentUser(user);
       // Store only UI profile — NOT the session token (that lives in HttpOnly cookie)
-      try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(user)); } catch (_) { /**/ }
+      try { localStorage.setItem(SESSION_KEY, JSON.stringify(user)); } catch (_) { /**/ }
 
       // Load all real data after successful login
       const appData = await loadAppData();
@@ -156,25 +157,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch { /**/ }
 
     setCurrentUser(null);
-    try { sessionStorage.removeItem(SESSION_KEY); } catch (_) { /**/ }
+    try { localStorage.removeItem(SESSION_KEY); } catch (_) { /**/ }
     setUsers([]); setCustomers([]); setDevices([]); setJobs([]);
     setPartRequests([]); setInventory([]); setNotifications([]);
   };
 
   // ── Users ────────────────────────────────────────────────────────
-  const addUser = (user: Omit<User, 'id'>) => {
-    const tempId = `tmp-${Date.now()}`;
-    const optimistic = { ...user, id: tempId, active: true } as User;
-    setUsers(prev => [...prev, optimistic]);
-
-    fetch('/api/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...user, isActive: true }),
-    })
-      .then(r => r.json())
-      .then(real => setUsers(prev => prev.map(u => u.id === tempId ? real : u)))
-      .catch(() => setUsers(prev => prev.filter(u => u.id !== tempId)));
+  const addUser = async (user: Omit<User, 'id'>) => {
+    try {
+      const res = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: user.name,
+          email: user.email,
+          password: user.password,
+          role: user.role,
+          isActive: true,
+        }),
+      });
+      const real = await res.json();
+      if (!res.ok || real.error) {
+        console.error('[addUser] API error:', real.error);
+        return;
+      }
+      // Map API response shape → frontend User shape
+      const mapped: User = {
+        id: real.id,
+        name: real.name,
+        email: real.email,
+        password: '',
+        role: real.role as User['role'],
+        active: real.active ?? real.isActive ?? true,
+        joinedAt: real.joinedAt ?? real.createdAt?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+      };
+      setUsers(prev => [...prev, mapped]);
+    } catch (err) {
+      console.error('[addUser] Network error:', err);
+    }
   };
 
   const toggleUserActive = (userId: string) => {
@@ -295,19 +315,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const updateJobStatus = (jobId: string, status: JobStatus, notes?: string) => {
+  // ── updateJobStatus ───────────────────────────────────────────────
+  // Engineers  → PATCH /api/jobs/:id  (ownership-checked, status + notes only)
+  // Admin/Reception → PUT /api/jobs/:id  (full update, existing behaviour)
+  //
+  // Both paths:
+  //   1. Optimistically update local state for instant UI feedback
+  //   2. Await the real API call
+  //   3. On error: roll back the optimistic update and return the error message
+  const updateJobStatus = async (
+    jobId: string,
+    status: JobStatus,
+    notes?: string,
+  ): Promise<{ ok: boolean; error?: string }> => {
+    // Snapshot current state for rollback
+    const previousJobs = jobs;
     const now = new Date().toISOString();
+
+    // Optimistic update
     setJobs(prev => prev.map(j => j.id === jobId ? {
-      ...j, status, updatedAt: now,
-      ...(notes ? { repairNotes: notes } : {}),
+      ...j,
+      status,
+      updatedAt: now,
+      ...(notes !== undefined ? { repairNotes: notes } : {}),
       ...(status === 'Completed' ? { completedAt: now } : {}),
     } : j));
 
-    fetch(`/api/jobs/${jobId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status, repairNotes: notes }),
-    }).catch(console.error);
+    try {
+      const isEngineer = currentUser?.role === 'engineer';
+
+      const res = await fetch(`/api/jobs/${jobId}`, {
+        method: isEngineer ? 'PATCH' : 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, repairNotes: notes }),
+      });
+
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        // Roll back optimistic update on failure
+        setJobs(previousJobs);
+        return { ok: false, error: json.error ?? 'Failed to update job status.' };
+      }
+
+      return { ok: true };
+    } catch {
+      // Roll back on network error
+      setJobs(previousJobs);
+      return { ok: false, error: 'Network error — please check your connection.' };
+    }
   };
 
   const assignEngineer = (jobId: string, engineerId: string) => {

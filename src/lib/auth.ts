@@ -1,18 +1,30 @@
 /**
  * auth.ts — server-side session helpers
  *
- * Strategy: on login, we generate a random session token, store the
- * session payload in a server-side Map (in-memory for this app, swap
- * for Redis / DB in production), and set an HttpOnly cookie on the
- * client. Every protected route calls `requireSession` which reads
- * the cookie, looks up the session, and returns the stored user info.
+ * Sessions are stored in the `Session` table in PostgreSQL via Prisma.
+ * This replaces the old in-memory Map which was wiped on every
+ * serverless cold-start / process restart in production.
  *
- * No JWT: simpler to revoke (just delete from the Map on logout).
+ * Prerequisites — your prisma/schema.prisma must include:
+ *
+ *   model Session {
+ *     token     String   @id @db.VarChar(64)
+ *     userId    String
+ *     payload   Json
+ *     expiresAt DateTime
+ *     createdAt DateTime @default(now())
+ *
+ *     @@index([userId])
+ *     @@index([expiresAt])
+ *   }
+ *
+ * Run: npx prisma migrate dev --name add-sessions
  */
 
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
+import { prisma } from '@/lib/prisma';
 
 export const COOKIE_NAME = 'fixhub_session';
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
@@ -25,53 +37,62 @@ export interface SessionUser {
   isActive: boolean;
 }
 
-interface Session {
-  user: SessionUser;
-  expiresAt: number;
-}
-
-// ── In-memory session store ──────────────────────────────────────
-// Global singleton that survives hot-reload in dev.
-declare global {
-  // eslint-disable-next-line no-var
-  var __fixhub_sessions: Map<string, Session> | undefined;
-}
-const sessions: Map<string, Session> =
-  globalThis.__fixhub_sessions ?? (globalThis.__fixhub_sessions = new Map());
-
-// Periodically evict expired sessions (lazy GC).
-function pruneExpired() {
-  const now = Date.now();
-  for (const [token, session] of sessions) {
-    if (session.expiresAt < now) sessions.delete(token);
-  }
-}
-
 // ── Public helpers ───────────────────────────────────────────────
 
-/** Create a session and return the opaque token. */
-export function createSession(user: SessionUser): string {
-  pruneExpired();
+/** Create a persistent session and return the opaque token. */
+export async function createSession(user: SessionUser): Promise<string> {
   const token = crypto.randomBytes(32).toString('hex');
-  sessions.set(token, { user, expiresAt: Date.now() + SESSION_TTL_MS });
+  const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+
+  await (prisma as any).session.create({
+    data: {
+      token,
+      userId: user.id,
+      payload: user as any,
+      expiresAt,
+    },
+  });
+
+  // Best-effort background prune of expired sessions
+  (prisma as any).session
+    .deleteMany({ where: { expiresAt: { lt: new Date() } } })
+    .catch(() => {});
+
   return token;
 }
 
-/** Destroy a session by token. */
-export function destroySession(token: string) {
-  sessions.delete(token);
+/** Destroy a session by token (logout). */
+export async function destroySession(token: string): Promise<void> {
+  try {
+    await (prisma as any).session.deleteMany({ where: { token } });
+  } catch {/**/}
 }
 
-/** Look up a session by token. Returns null if missing or expired. */
-export function getSession(token: string): SessionUser | null {
-  pruneExpired();
-  const session = sessions.get(token);
-  if (!session) return null;
-  if (session.expiresAt < Date.now()) {
-    sessions.delete(token);
+/** Destroy ALL sessions for a user (e.g. account deactivated). */
+export async function destroyAllSessionsForUser(userId: string): Promise<void> {
+  try {
+    await (prisma as any).session.deleteMany({ where: { userId } });
+  } catch { /**/ }
+}
+
+/** Look up a live session by token. Returns null if missing or expired. */
+export async function getSession(token: string): Promise<SessionUser | null> {
+  try {
+    const session = await (prisma as any).session.findUnique({
+      where: { token },
+    });
+
+    if (!session) return null;
+
+    if (new Date(session.expiresAt) < new Date()) {
+      destroySession(token).catch(() => {});
+      return null;
+    }
+
+    return session.payload as SessionUser;
+  } catch {
     return null;
   }
-  return session.user;
 }
 
 // ── Route-level guards ───────────────────────────────────────────
@@ -101,7 +122,7 @@ export async function requireSession(
     };
   }
 
-  const user = getSession(token);
+  const user = await getSession(token);
   if (!user) {
     return {
       error: NextResponse.json(
@@ -173,7 +194,7 @@ export function validateLength(
   field: string,
   max: number
 ): string | null {
-  if (typeof value !== 'string') return null; // type errors caught elsewhere
+  if (typeof value !== 'string') return null;
   if (value.length > max) {
     return `${field} must be at most ${max} characters.`;
   }

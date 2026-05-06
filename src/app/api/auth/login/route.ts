@@ -59,7 +59,7 @@ export async function POST(request: Request) {
       role: user.role as 'admin' | 'reception' | 'engineer',
       isActive: user.isActive,
     };
-    const token = createSession(sessionUser);
+    const token = await createSession(sessionUser);
 
     // Strip password before sending to client
     const { password: _, ...safeUser } = user;
@@ -85,13 +85,13 @@ export async function POST(request: Request) {
   }
 }
 
-// ── DELETE /api/auth/login  (logout) ─────────────────────────────
+// ── DELETE /api/auth/login  (logout) ─────────────────────
 
 export async function DELETE() {
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get(COOKIE_NAME)?.value;
-    if (token) destroySession(token);
+    if (token) await destroySession(token);
 
     const response = NextResponse.json({ ok: true });
     response.cookies.set(clearCookieOptions());

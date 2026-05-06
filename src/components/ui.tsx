@@ -1,4 +1,37 @@
 import React, { useState } from 'react';
+import type { JobStatus } from '../types';
+
+// ── Job age helpers ───────────────────────────────────────────────
+// Terminal statuses — a job that is Completed or Delivered is no longer
+// "pending", so age-based urgency coloring does not apply.
+const TERMINAL_STATUSES: JobStatus[] = ['Completed', 'Delivered'];
+
+/**
+ * Returns the number of calendar days since the given ISO date string.
+ * Always returns 0 for future dates (clock skew / timezone safety).
+ */
+function daysSince(isoDate: string): number {
+  return Math.max(0, Math.floor((Date.now() - new Date(isoDate).getTime()) / 86_400_000));
+}
+
+/**
+ * Classify a job's urgency level based on SRS §3.4:
+ *   🔴 red    — pending > 10 days
+ *   🟡 yellow — pending > 5 days
+ *   🟢 green  — recently active / completed
+ *
+ * Completed and Delivered jobs are always treated as green so they never
+ * appear as "overdue" just because they were closed a long time ago.
+ */
+export type JobAgeLevel = 'red' | 'yellow' | 'green';
+
+export function getJobAgeLevel(createdAt: string, status: JobStatus): JobAgeLevel {
+  if (TERMINAL_STATUSES.includes(status)) return 'green';
+  const days = daysSince(createdAt);
+  if (days > 10) return 'red';
+  if (days > 5)  return 'yellow';
+  return 'green';
+}
 
 // ── StatusBadge ──────────────────────────────────────────────
 export const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
@@ -38,11 +71,92 @@ export const PartStatusBadge: React.FC<{ status: string }> = ({ status }) => {
 };
 
 // ── UrgencyDot ────────────────────────────────────────────────
-export const UrgencyDot: React.FC<{ createdAt: string }> = ({ createdAt }) => {
-  const days = Math.floor((Date.now() - new Date(createdAt).getTime()) / 86400000);
-  if (days > 10) return <span className="inline-block w-2 h-2 rounded-full bg-red-500 mr-1.5 shadow-sm shadow-red-500/50 shrink-0" title="Pending > 10 days" />;
-  if (days > 5) return <span className="inline-block w-2 h-2 rounded-full bg-amber-400 mr-1.5 shrink-0" title="Pending > 5 days" />;
-  return <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 mr-1.5 shrink-0" title="Recently active" />;
+// Small coloured dot used in dense table rows.
+// Now status-aware: completed/delivered jobs are always green.
+export const UrgencyDot: React.FC<{ createdAt: string; status?: JobStatus }> = ({
+  createdAt,
+  status = 'New',
+}) => {
+  const level = getJobAgeLevel(createdAt, status);
+
+  if (level === 'red') {
+    return (
+      <span
+        className="inline-block w-2 h-2 rounded-full bg-red-500 mr-1.5 shadow-sm shadow-red-500/50 shrink-0"
+        title="Pending > 10 days — urgent"
+      />
+    );
+  }
+  if (level === 'yellow') {
+    return (
+      <span
+        className="inline-block w-2 h-2 rounded-full bg-amber-400 mr-1.5 shrink-0"
+        title="Pending > 5 days"
+      />
+    );
+  }
+  return (
+    <span
+      className="inline-block w-2 h-2 rounded-full bg-emerald-400 mr-1.5 shrink-0"
+      title="Recently active"
+    />
+  );
+};
+
+// ── JobAgeBadge ───────────────────────────────────────────────
+// Visible inline badge implementing SRS §3.4 color-coded job aging.
+// Shows a coloured pill with a human-readable age label for pending jobs.
+// Completed / Delivered jobs render nothing (return null) because they are
+// not "pending" and cluttering closed jobs with age labels adds no value.
+//
+// Usage:
+//   <JobAgeBadge createdAt={job.createdAt} status={job.status} />
+//
+// Drop-in alongside UrgencyDot, or use instead of it in card views where
+// there is enough horizontal space for a label.
+export const JobAgeBadge: React.FC<{ createdAt: string; status: JobStatus }> = ({
+  createdAt,
+  status,
+}) => {
+  // Don't show an age badge on closed jobs
+  if (TERMINAL_STATUSES.includes(status)) return null;
+
+  const days = daysSince(createdAt);
+  const level = getJobAgeLevel(createdAt, status);
+
+  // Label: show exact day count so the manager can see at a glance how bad it is
+  const label =
+    days === 0 ? 'Today'
+    : days === 1 ? '1 day'
+    : `${days} days`;
+
+  const styles: Record<JobAgeLevel, string> = {
+    red:    'bg-red-50 text-red-700 border border-red-200',
+    yellow: 'bg-amber-50 text-amber-700 border border-amber-200',
+    green:  'bg-emerald-50 text-emerald-700 border border-emerald-200',
+  };
+
+  const dots: Record<JobAgeLevel, string> = {
+    red:    'bg-red-500',
+    yellow: 'bg-amber-400',
+    green:  'bg-emerald-400',
+  };
+
+  const titles: Record<JobAgeLevel, string> = {
+    red:    'Pending > 10 days — urgent attention needed',
+    yellow: 'Pending > 5 days — follow up recommended',
+    green:  'Recently active',
+  };
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold ${styles[level]}`}
+      title={titles[level]}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dots[level]}`} />
+      {label}
+    </span>
+  );
 };
 
 // ── Modal ─────────────────────────────────────────────────────
@@ -115,7 +229,8 @@ export const FormSelect: React.FC<FormSelectProps> = ({ label, options, placehol
   <div>
     <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wide">{label}</label>
     <select
-      {...props}
+      {...props
+      }
       className={`w-full px-3.5 py-2.5 rounded-xl border border-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-900/50 hover:border-slate-600 transition-all text-white ${props.className ?? ''}`}
     >
       {placeholder && <option value="">{placeholder}</option>}
