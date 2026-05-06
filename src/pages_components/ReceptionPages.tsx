@@ -51,7 +51,8 @@ const Button = ({ icon: Icon, text, onClick, variant = 'primary', className = ""
 
 // ── ReceptionDashboard ─────────────────────────────────────────
 export const ReceptionDashboard: React.FC<{ onNavigate: (p: string) => void }> = ({ onNavigate }) => {
-  const { jobs, customers, users, partRequests } = useApp();
+  const { jobs, customers, users, partRequests, currentUser } = useApp();
+  const showFinancials = currentUser?.role !== 'engineer';
   const pendingParts = partRequests.filter(r => r.status === 'Pending');
   const unassigned = jobs.filter(j => !j.assignedEngineerId);
 
@@ -90,7 +91,9 @@ export const ReceptionDashboard: React.FC<{ onNavigate: (p: string) => void }> =
                       <StatusBadge status={job.status} />
                       <p className="text-[11px] font-medium text-gray-400 mt-1 uppercase tracking-wide">{engineer ? engineer.name : '— Unassigned —'}</p>
                     </div>
-                    <span className="text-[13px] font-medium text-gray-900 ml-4 w-20 text-right">₹{job.estimatedCost.toLocaleString()}</span>
+                    {showFinancials && (
+                      <span className="text-[13px] font-medium text-gray-900 ml-4 w-20 text-right">₹{(job.estimatedCost ?? 0).toLocaleString()}</span>
+                    )}
                   </div>
                 );
               })}
@@ -158,45 +161,63 @@ export const CustomersPage: React.FC = () => {
   const [deviceForm, setDeviceForm] = useState({ type: '', brand: '', model: '', serialNumber: '' });
   const [jobForm, setJobForm] = useState({ problemDescription: '', estimatedCost: '', assignedEngineerId: '' });
   const [newCustId, setNewCustId] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleNext = () => {
+  const handleNext = async () => {
+    if (submitting) return;
     if (step === 1) {
       if (!custForm.name || !custForm.phone) { show('Name and phone are required', 'error'); return; }
-      const c = addCustomer(custForm);
-      setNewCustId(c.id);
-      setStep(2);
+      setSubmitting(true);
+      try {
+        // Await the real DB id — avoids FK violations on device/job creation
+        const c = await addCustomer(custForm);
+        setNewCustId(c.id);
+        setStep(2);
+      } catch {
+        show('Failed to save customer. Please try again.', 'error');
+      } finally {
+        setSubmitting(false);
+      }
     } else if (step === 2) {
       if (!deviceForm.type || !deviceForm.brand || !deviceForm.model) { show('Device type, brand and model are required', 'error'); return; }
       setStep(3);
     } else {
       if (!jobForm.problemDescription || !jobForm.estimatedCost) { show('Problem description and cost are required', 'error'); return; }
-      const dev = addDevice({ ...deviceForm, customerId: newCustId });
-      addJob({
-        customerId: newCustId, deviceId: dev.id,
-        assignedEngineerId: jobForm.assignedEngineerId || null,
-        status: jobForm.assignedEngineerId ? 'Assigned' : 'New',
-        problemDescription: jobForm.problemDescription,
-        estimatedCost: parseFloat(jobForm.estimatedCost),
-      });
-      setShowModal(false);
-      setStep(1);
-      setCustForm({ name: '', phone: '', address: '' });
-      setDeviceForm({ type: '', brand: '', model: '', serialNumber: '' });
-      setJobForm({ problemDescription: '', estimatedCost: '', assignedEngineerId: '' });
-      show('Job registered successfully!');
+      setSubmitting(true);
+      try {
+        // Await real device id before creating job — avoids Job_deviceId_fkey FK violation
+        const dev = await addDevice({ ...deviceForm, customerId: newCustId });
+        await addJob({
+          customerId: newCustId, deviceId: dev.id,
+          assignedEngineerId: jobForm.assignedEngineerId || null,
+          status: jobForm.assignedEngineerId ? 'Assigned' : 'New',
+          problemDescription: jobForm.problemDescription,
+          estimatedCost: parseFloat(jobForm.estimatedCost),
+        });
+        setShowModal(false);
+        setStep(1);
+        setCustForm({ name: '', phone: '', address: '' });
+        setDeviceForm({ type: '', brand: '', model: '', serialNumber: '' });
+        setJobForm({ problemDescription: '', estimatedCost: '', assignedEngineerId: '' });
+        show('Job registered successfully!');
+      } catch {
+        show('Failed to register job. Please try again.', 'error');
+      } finally {
+        setSubmitting(false);
+      }
     }
   };
 
   return (
     <div className="max-w-[1400px] mx-auto pb-8 space-y-6">
-      <PageHeader title="Client Directory" subtitle="Manage and search customer records" 
+      <PageHeader title="Client Directory" subtitle="Manage and search customer records"
         action={<Button icon={Plus} text="New Registration" onClick={() => setShowModal(true)} />} />
 
       <div className="relative max-w-2xl">
         <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"><Search size={18} /></div>
-        <input 
-          value={search} onChange={e => setSearch(e.target.value)} 
-          placeholder="Search by name or phone number..." 
+        <input
+          value={search} onChange={e => setSearch(e.target.value)}
+          placeholder="Search by name or phone number..."
           className="w-full bg-white border border-gray-200 rounded-lg pl-12 pr-4 py-3 text-[13px] font-medium text-gray-900 placeholder-gray-400 focus:outline-none focus:border-teal-500 transition-colors shadow-sm"
         />
       </div>
@@ -322,7 +343,7 @@ export const CustomersPage: React.FC = () => {
 
             <div className="flex gap-3">
               {step > 1 && <Button text="Back" variant="outline" onClick={() => setStep(s => s - 1)} className="px-6" />}
-              <Button text={step < 3 ? 'Continue' : 'Register'} variant="primary" onClick={handleNext} className="flex-1" />
+              <Button text={submitting ? 'Saving...' : step < 3 ? 'Continue' : 'Register'} variant="primary" onClick={handleNext} disabled={submitting} className="flex-1" />
             </div>
           </div>
         </div>
@@ -334,7 +355,8 @@ export const CustomersPage: React.FC = () => {
 
 // ── JobsPage ───────────────────────────────────────────────────
 export const JobsPage: React.FC = () => {
-  const { jobs, customers, devices, users } = useApp();
+  const { jobs, customers, devices, users, currentUser } = useApp();
+  const showFinancials = currentUser?.role !== 'engineer';
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [engineerFilter, setEngineerFilter] = useState<string>('All');
 
@@ -372,7 +394,7 @@ export const JobsPage: React.FC = () => {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
-                {['', 'ID', 'Client & Device', 'Issue Overview', 'Assignment', 'Status', 'Quote'].map(h => (
+                {['', 'ID', 'Client & Device', 'Issue Overview', 'Assignment', 'Status', ...(showFinancials ? ['Quote'] : [])].map(h => (
                   <th key={h} className="px-6 py-3 text-[11px] font-medium text-gray-500 uppercase tracking-wide">{h}</th>
                 ))}
               </tr>
@@ -402,7 +424,9 @@ export const JobsPage: React.FC = () => {
                       )}
                     </td>
                     <td className="px-6 py-4"><StatusBadge status={job.status} /></td>
-                    <td className="px-6 py-4 text-[13px] font-medium text-gray-900">₹{job.estimatedCost.toLocaleString()}</td>
+                    {showFinancials && (
+                      <td className="px-6 py-4 text-[13px] font-medium text-gray-900">₹{(job.estimatedCost ?? 0).toLocaleString()}</td>
+                    )}
                   </tr>
                 );
               })}
@@ -419,83 +443,6 @@ export const JobsPage: React.FC = () => {
           )}
         </div>
       </Card>
-    </div>
-  );
-};
-
-// ── AssignJobsPage ─────────────────────────────────────────────
-export const AssignJobsPage: React.FC = () => {
-  const { jobs, customers, devices, users, assignEngineer } = useApp();
-  const { toast, show } = useToast();
-  const engineers = users.filter(u => u.role === 'engineer' && u.active);
-  const unassigned = jobs.filter(j => !j.assignedEngineerId || j.status === 'New');
-  
-  const handleAssign = (jobId: string, engId: string) => {
-    assignEngineer(jobId, engId);
-    show('Engineer officially assigned to task.');
-  };
-
-  return (
-    <div className="max-w-[1400px] mx-auto pb-8 space-y-6">
-      <PageHeader title="Workforce Dispatch" subtitle={`${unassigned.length} critical jobs require assignment`} />
-
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        {engineers.map((eng) => {
-          const active = jobs.filter(j => j.assignedEngineerId === eng.id && ['Assigned', 'In Progress'].includes(j.status)).length;
-          return (
-            <Card key={eng.id} className="p-4 text-center h-full">
-              <div className="w-12 h-12 mx-auto rounded-lg bg-cyan-50 text-cyan-600 flex items-center justify-center text-[18px] font-medium mb-3 border border-cyan-100">
-                {eng.name.charAt(0)}
-              </div>
-              <p className="text-[13px] font-medium text-gray-900 truncate mb-2">{eng.name}</p>
-              <div className="flex items-center justify-center gap-1.5">
-                <div className={`w-2 h-2 rounded-full ${active > 3 ? 'bg-amber-500' : 'bg-green-500'}`} />
-                <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">{active} Active</p>
-              </div>
-            </Card>
-          );
-        })}
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {unassigned.map((job) => {
-          const customer = customers.find(c => c.id === job.customerId);
-          const device = devices.find(d => d.id === job.deviceId);
-          return (
-            <Card key={job.id} className="flex flex-col h-full hover:border-teal-300 transition-colors">
-              <div className="p-5 flex-1">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <UrgencyDot createdAt={job.createdAt} />
-                    <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">#{job.id}</span>
-                  </div>
-                  <StatusBadge status={job.status} />
-                </div>
-                <h3 className="text-[18px] font-medium text-gray-900 mb-1">{customer?.name}</h3>
-                <p className="text-[11px] font-medium text-teal-600 mb-4">{device?.brand} {device?.model}</p>
-                <div className="bg-gray-50 rounded-lg p-3 mb-4 border border-gray-100">
-                  <p className="text-[11px] font-normal text-gray-600 leading-relaxed line-clamp-3">{job.problemDescription}</p>
-                </div>
-                <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">Since {new Date(job.createdAt).toLocaleDateString('en-IN')}</p>
-              </div>
-              <div className="p-4 bg-gray-50 border-t border-gray-100">
-                <select
-                  defaultValue=""
-                  onChange={e => e.target.value && handleAssign(job.id, e.target.value)}
-                  className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 transition-colors"
-                >
-                  <option value="" disabled>Select Engineer to Dispatch...</option>
-                  {engineers.map(e => {
-                    const load = jobs.filter(j => j.assignedEngineerId === e.id && ['Assigned', 'In Progress'].includes(j.status)).length;
-                    return <option key={e.id} value={e.id}>{e.name} ({load} active)</option>;
-                  })}
-                </select>
-              </div>
-            </Card>
-          );
-        })}
-      </div>
-      {toast && <Toast {...toast} />}
     </div>
   );
 };
@@ -538,7 +485,7 @@ export const PartsRequestPage: React.FC = () => {
                   <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">{new Date(req.createdAt).toLocaleDateString('en-IN')}</span>
                 </div>
                 <h3 className="text-[18px] font-medium text-gray-900 mb-2">{req.partName}</h3>
-                
+
                 <div className="bg-gray-50 rounded-lg p-4 border border-gray-100 mb-4">
                   <p className="text-[13px] font-normal text-gray-600 italic mb-2">"{req.reason}"</p>
                   <div className="flex items-center gap-3">
@@ -546,7 +493,7 @@ export const PartsRequestPage: React.FC = () => {
                     <p className="text-[11px] font-medium text-gray-500">By <span className="text-teal-600">{engineer?.name}</span></p>
                   </div>
                 </div>
-                
+
                 {job && (
                   <div className="text-[11px] font-medium text-gray-500 flex items-center gap-2 bg-gray-50 py-1.5 px-2.5 rounded-md w-fit">
                     <span className="bg-gray-200 px-1.5 py-0.5 rounded text-gray-700">#{job.id}</span>
@@ -554,7 +501,7 @@ export const PartsRequestPage: React.FC = () => {
                   </div>
                 )}
               </div>
-              
+
               {req.status === 'Pending' && (
                 <div className="flex sm:flex-col gap-2 justify-center bg-gray-50 border-t sm:border-t-0 sm:border-l border-gray-100 p-4 min-w-[140px]">
                   <Button text="Approve" variant="success" onClick={() => { updatePartRequest(req.id, 'Approved'); show('Part request approved for logistics.'); }} className="w-full" />

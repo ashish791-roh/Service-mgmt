@@ -132,7 +132,7 @@ export const AnalyticsPage: React.FC = () => {
               { label: 'Avg. Ticket Size', value: `₹${jobs.length > 0 ? Math.round(jobs.reduce((s, j) => s + j.estimatedCost, 0) / jobs.length).toLocaleString() : 0}`, color: 'text-teal-600' },
               { label: 'Parts Approval', value: `${partRequests.length > 0 ? Math.round((partRequests.filter(r => r.status === 'Approved').length / partRequests.length) * 100) : 0}%`, color: 'text-cyan-600' },
               { label: 'Active Engineers', value: `${users.filter(u => u.role === 'engineer' && u.active).length}/${engineers.length}`, color: 'text-orange-600' },
-            ].map((m, i) => (
+            ].map((m) => (
               <div key={m.label} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
                 <span className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">{m.label}</span>
                 <span className={`text-[13px] font-medium ${m.color}`}>{m.value}</span>
@@ -185,7 +185,7 @@ export const AnalyticsPage: React.FC = () => {
                 { type: 'Laptop', color: 'bg-teal-500' },
                 { type: 'Tablet', color: 'bg-green-500' },
                 { type: 'Desktop', color: 'bg-orange-500' }
-              ].map((device, i) => {
+              ].map((device) => {
                 const count = Math.floor(Math.random() * 8) + 2; // Simulated data
                 const pct = Math.round((count / 20) * 100);
                 return (

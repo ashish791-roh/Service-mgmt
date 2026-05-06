@@ -74,7 +74,18 @@ const StatusBadge = ({ status }: { status: string }) => {
 };
 
 export const BillingPage: React.FC = () => {
-  const { jobs, customers, devices, users, updateJobStatus } = useApp() as any;
+  const { jobs, customers, devices, users, updateJobStatus, currentUser } = useApp() as any;
+
+  // SRS: Engineers must NOT see financial/billing data
+  if (currentUser?.role === 'engineer') {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 text-gray-400">
+        <Banknote size={48} className="mb-4 opacity-50" />
+        <p className="text-[13px] font-medium text-gray-500">Access restricted</p>
+      </div>
+    );
+  }
+
   const [billingModal, setBillingModal] = useState<string | null>(null);
   const [actualCostInput, setActualCostInput] = useState('');
   const [filter, setFilter] = useState<'pending-billing' | 'completed' | 'delivered' | 'all'>('pending-billing');
@@ -162,7 +173,7 @@ export const BillingPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {displayJobs.map((job: any, i: number) => {
+              {displayJobs.map((job: any) => {
                 const customer = customers.find((c: any) => c.id === job.customerId);
                 const device = devices.find((d: any) => d.id === job.deviceId);
                 return (

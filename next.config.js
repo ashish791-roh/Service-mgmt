@@ -1,12 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  reactStrictMode: true,
-  eslint: {
-    ignoreDuringBuilds: true,
+  serverExternalPackages: ['@prisma/client', '@neondatabase/serverless'],
+  env: {
+    DATABASE_URL: process.env.DATABASE_URL,
   },
-  typescript: {
-    ignoreBuildErrors: true,
-  },
-}
+};
 
-module.exports = nextConfig
+module.exports = nextConfig;

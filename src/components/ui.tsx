@@ -1,16 +1,19 @@
 import React, { useState } from 'react';
-import type { JobStatus, PartRequestStatus } from '../types';
 
 // ── StatusBadge ──────────────────────────────────────────────
-export const StatusBadge: React.FC<{ status: JobStatus }> = ({ status }) => {
-  const map: Record<JobStatus, { cls: string; dot: string }> = {
-    'New':         { cls: 'bg-slate-500/10 text-slate-300 border-slate-500/20',       dot: 'bg-slate-400' },
-    'Assigned':    { cls: 'bg-blue-500/10 text-blue-300 border-blue-500/20',           dot: 'bg-blue-400' },
-    'In Progress': { cls: 'bg-amber-500/10 text-amber-300 border-amber-500/20',        dot: 'bg-amber-400' },
-    'Completed':   { cls: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20',  dot: 'bg-emerald-400' },
-    'Delivered':   { cls: 'bg-purple-500/10 text-purple-300 border-purple-500/20',     dot: 'bg-purple-400' },
+export const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
+  const map: Record<string, { cls: string; dot: string }> = {
+    'New':         { cls: 'bg-slate-500/10 text-slate-300 border-slate-500/20',      dot: 'bg-slate-400' },
+    'Assigned':    { cls: 'bg-blue-500/10 text-blue-300 border-blue-500/20',         dot: 'bg-blue-400' },
+    'In Progress': { cls: 'bg-amber-500/10 text-amber-300 border-amber-500/20',      dot: 'bg-amber-400' },
+    'Completed':   { cls: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20', dot: 'bg-emerald-400' },
+    'Delivered':   { cls: 'bg-purple-500/10 text-purple-300 border-purple-500/20',   dot: 'bg-purple-400' },
+    'Cancelled':   { cls: 'bg-red-500/10 text-red-300 border-red-500/20',            dot: 'bg-red-400' },
   };
-  const { cls, dot } = map[status];
+  const { cls, dot } = map[status] ?? {
+    cls: 'bg-gray-500/10 text-gray-300 border-gray-500/20',
+    dot: 'bg-gray-400',
+  };
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${cls}`}>
       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />
@@ -20,14 +23,15 @@ export const StatusBadge: React.FC<{ status: JobStatus }> = ({ status }) => {
 };
 
 // ── PartStatusBadge ───────────────────────────────────────────
-export const PartStatusBadge: React.FC<{ status: PartRequestStatus }> = ({ status }) => {
-  const map: Record<PartRequestStatus, string> = {
+export const PartStatusBadge: React.FC<{ status: string }> = ({ status }) => {
+  const map: Record<string, string> = {
     'Pending':  'bg-amber-500/10 text-amber-300 border-amber-500/20',
     'Approved': 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20',
     'Rejected': 'bg-red-500/10 text-red-300 border-red-500/20',
   };
+  const cls = map[status] ?? 'bg-gray-500/10 text-gray-300 border-gray-500/20';
   return (
-    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${map[status]}`}>
+    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${cls}`}>
       {status}
     </span>
   );
@@ -37,7 +41,7 @@ export const PartStatusBadge: React.FC<{ status: PartRequestStatus }> = ({ statu
 export const UrgencyDot: React.FC<{ createdAt: string }> = ({ createdAt }) => {
   const days = Math.floor((Date.now() - new Date(createdAt).getTime()) / 86400000);
   if (days > 10) return <span className="inline-block w-2 h-2 rounded-full bg-red-500 mr-1.5 shadow-sm shadow-red-500/50 shrink-0" title="Pending > 10 days" />;
-  if (days > 5)  return <span className="inline-block w-2 h-2 rounded-full bg-amber-400 mr-1.5 shrink-0" title="Pending > 5 days" />;
+  if (days > 5) return <span className="inline-block w-2 h-2 rounded-full bg-amber-400 mr-1.5 shrink-0" title="Pending > 5 days" />;
   return <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 mr-1.5 shrink-0" title="Recently active" />;
 };
 
@@ -51,7 +55,7 @@ export const Modal: React.FC<ModalProps> = ({ title, onClose, children }) => (
         <h3 className="text-base font-bold text-white font-display">{title}</h3>
         <button
           onClick={onClose}
-          className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-700 text-slate-400 hover:text-slate-200 transition-colors"
+          className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-700 text-slate-400 hover:text-slate-300 transition-colors"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
@@ -65,7 +69,7 @@ export const Modal: React.FC<ModalProps> = ({ title, onClose, children }) => (
 
 // ── StatCard ──────────────────────────────────────────────────
 interface StatCardProps { label: string; value: number | string; icon: string; color: string; sub?: string; }
-export const StatCard: React.FC<StatCardProps> = ({ label, value, icon, color, sub }) => (
+export const StatCard: React.FC<StatCardProps> = ({ label, value, icon, color: _color, sub }) => (
   <div className="bg-slate-900/50 rounded-2xl p-5 border border-slate-700/50 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 cursor-default relative overflow-hidden group hover:border-slate-600">
     <div className="absolute inset-0 bg-gradient-to-br from-slate-800/20 to-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
     <div className="relative flex items-start justify-between gap-3">
@@ -199,7 +203,7 @@ export const CardHeader: React.FC<{ title: string; action?: React.ReactNode }> =
 export const PrimaryButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & { children: React.ReactNode }> = ({ children, className = '', ...props }) => (
   <button
     {...props}
-    className={`bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-4 py-2.5 rounded-xl text-sm flex items-center gap-2 transition-all shadow-sm shadow-indigo-500/20 hover:shadow-indigo-500/30 disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
+    className={`bg-slate-700 hover:bg-slate-600 text-white font-medium px-4 py-2.5 rounded-lg text-sm flex items-center gap-2 transition-colors border border-slate-600 hover:border-slate-500 disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
   >
     {children}
   </button>
@@ -209,7 +213,7 @@ export const PrimaryButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElemen
 export const SecondaryButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & { children: React.ReactNode }> = ({ children, className = '', ...props }) => (
   <button
     {...props}
-    className={`px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-all ${className}`}
+    className={`px-4 py-2.5 rounded-lg border border-slate-600 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:border-slate-500 transition-colors ${className}`}
   >
     {children}
   </button>

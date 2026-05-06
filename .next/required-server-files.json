@@ -1,13 +1,15 @@
 {
   "version": 1,
   "config": {
-    "env": {},
+    "env": {
+      "DATABASE_URL": "postgresql://neondb_owner:npg_JBZI0TQfCl1g@ep-lingering-river-aonhwaad.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require"
+    },
     "webpack": null,
     "eslint": {
-      "ignoreDuringBuilds": true
+      "ignoreDuringBuilds": false
     },
     "typescript": {
-      "ignoreBuildErrors": true,
+      "ignoreBuildErrors": false,
       "tsconfigPath": "tsconfig.json"
     },
     "typedRoutes": false,
@@ -82,7 +84,7 @@
     "serverRuntimeConfig": {},
     "publicRuntimeConfig": {},
     "reactProductionProfiling": false,
-    "reactStrictMode": true,
+    "reactStrictMode": null,
     "reactMaxHeadersLength": 6000,
     "httpAgentOptions": {
       "keepAlive": true
@@ -288,6 +290,10 @@
     "htmlLimitedBots": "[\\w-]+-Google|Google-[\\w-]+|Chrome-Lighthouse|Slurp|DuckDuckBot|baiduspider|yandex|sogou|bitlybot|tumblr|vkShare|quora link preview|redditbot|ia_archiver|Bingbot|BingPreview|applebot|facebookexternalhit|facebookcatalog|Twitterbot|LinkedInBot|Slackbot|Discordbot|WhatsApp|SkypeUriPreview|Yeti|googleweblight",
     "bundlePagesRouterDependencies": false,
     "configFileName": "next.config.js",
+    "serverExternalPackages": [
+      "@prisma/client",
+      "@neondatabase/serverless"
+    ],
     "turbopack": {
       "root": "C:\\Users\\pkad0\\Documents\\Project\\service-mgmt"
     }

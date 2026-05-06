@@ -1,20 +1,22 @@
 'use client';
 
-import React, { createContext, useContext, useState } from 'react';
-import type { User, Customer, Device, Job, PartRequest, InventoryItem, Notification, Role, JobStatus, PartRequestStatus } from '../types';
-import {
-  mockUsers, mockCustomers, mockDevices, mockJobs,
-  mockPartRequests, mockInventory, mockNotifications,
-} from '../data/mockData';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import type {
+  User, Customer, Device, Job, PartRequest,
+  InventoryItem, Notification, JobStatus, PartRequestStatus,
+} from '../types';
 
-// ── Context shape ─────────────────────────────────────────────
+// ── Login result type (what LoginPage expects) ────────────────────
+interface LoginResult {
+  ok: boolean;
+  error?: string;
+}
+
 interface AppContextType {
-  // Auth
   currentUser: User | null;
-  login: (email: string, password: string) => boolean;
+  hydrated: boolean;
+  login: (email: string, password: string) => Promise<LoginResult>;
   logout: () => void;
-
-  // Data
   users: User[];
   customers: Customer[];
   devices: Device[];
@@ -22,111 +24,290 @@ interface AppContextType {
   partRequests: PartRequest[];
   inventory: InventoryItem[];
   notifications: Notification[];
-
-  // Users
   addUser: (user: Omit<User, 'id'>) => void;
+  updateUser: (userId: string, data: Partial<Pick<User, 'name' | 'email' | 'role'>> & { password?: string }) => Promise<{ ok: boolean; error?: string }>;
+  deleteUser: (userId: string) => Promise<{ ok: boolean; error?: string }>;
   toggleUserActive: (userId: string) => void;
-
-  // Customers / Devices / Jobs
-  addCustomer: (c: Omit<Customer, 'id' | 'createdAt'>) => Customer;
-  addDevice: (d: Omit<Device, 'id'>) => Device;
-  addJob: (j: Omit<Job, 'id' | 'createdAt' | 'updatedAt'>) => Job;
+  addCustomer: (c: Omit<Customer, 'id' | 'createdAt'>) => Promise<Customer>;
+  addDevice: (d: Omit<Device, 'id'>) => Promise<Device>;
+  addJob: (j: Omit<Job, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Job>;
   updateJobStatus: (jobId: string, status: JobStatus, notes?: string) => void;
   assignEngineer: (jobId: string, engineerId: string) => void;
-
-  // Parts
   addPartRequest: (r: Omit<PartRequest, 'id' | 'createdAt' | 'status'>) => void;
   updatePartRequest: (id: string, status: PartRequestStatus) => void;
-
-  // Inventory
   addInventoryItem: (item: Omit<InventoryItem, 'id'>) => void;
   updateInventory: (id: string, quantity: number) => void;
-
-  // Notifications
   markNotificationRead: (id: string) => void;
   getUnreadCount: (userId: string) => number;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
 
-let userIdCounter   = 100;
-let custIdCounter   = 100;
-let devIdCounter    = 100;
-let jobIdCounter    = 100;
-let partIdCounter   = 100;
-let invIdCounter    = 100;
-let notifIdCounter  = 100;
+// ── Session is now managed via HttpOnly cookie on the server.
+// The frontend stores only the user profile (no token) in sessionStorage
+// for UI purposes. The actual auth token is never accessible to JS.
+const SESSION_KEY = 'fixhub_session_user';
+
+// ── Load all app data from the real API ──────────────────────────
+async function loadAppData() {
+  const res = await fetch('/api/data');
+  if (!res.ok) throw new Error('Failed to fetch app data');
+  return res.json();
+}
+
+function applyAppData(data: any, setters: {
+  setUsers: React.Dispatch<React.SetStateAction<User[]>>;
+  setCustomers: React.Dispatch<React.SetStateAction<Customer[]>>;
+  setDevices: React.Dispatch<React.SetStateAction<Device[]>>;
+  setJobs: React.Dispatch<React.SetStateAction<Job[]>>;
+  setPartRequests: React.Dispatch<React.SetStateAction<PartRequest[]>>;
+  setInventory: React.Dispatch<React.SetStateAction<InventoryItem[]>>;
+  setNotifications: React.Dispatch<React.SetStateAction<Notification[]>>;
+}) {
+  setters.setUsers(data.users);
+  setters.setCustomers(data.customers);
+  setters.setDevices(data.devices);
+  setters.setJobs(data.jobs);
+  setters.setPartRequests(data.partRequests);
+  setters.setInventory(data.inventory);
+  setters.setNotifications(data.notifications);
+}
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // ── Always start with null on both server and client ─────────────
+  // Session is restored in useEffect AFTER hydration to avoid mismatch
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [users, setUsers]             = useState<User[]>(mockUsers);
-  const [customers, setCustomers]     = useState<Customer[]>(mockCustomers);
-  const [devices, setDevices]         = useState<Device[]>(mockDevices);
-  const [jobs, setJobs]               = useState<Job[]>(mockJobs);
-  const [partRequests, setPartRequests] = useState<PartRequest[]>(mockPartRequests);
-  const [inventory, setInventory]     = useState<InventoryItem[]>(mockInventory);
-  const [notifications, setNotifications] = useState<Notification[]>(mockNotifications);
+  const [hydrated, setHydrated] = useState(false);
 
-  // ── Auth ──────────────────────────────────────────────────
-  const login = (email: string, password: string): boolean => {
-    const user = users.find(u => u.email === email && u.password === password && u.active);
-    if (user) { setCurrentUser(user); return true; }
-    return false;
-  };
-  const logout = () => setCurrentUser(null);
+  const [users, setUsers] = useState<User[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [partRequests, setPartRequests] = useState<PartRequest[]>([]);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
 
-  // ── Users ────────────────────────────────────────────────
-  const addUser = (user: Omit<User, 'id'>) => {
-    const newUser: User = { ...user, id: `u${++userIdCounter}` };
-    setUsers(prev => [...prev, newUser]);
-  };
-  const toggleUserActive = (userId: string) => {
-    setUsers(prev => prev.map(u => u.id === userId ? { ...u, active: !u.active } : u));
-  };
+  const setters = { setUsers, setCustomers, setDevices, setJobs, setPartRequests, setInventory, setNotifications };
 
-  // ── Customers / Devices / Jobs ───────────────────────────
-  const addCustomer = (c: Omit<Customer, 'id' | 'createdAt'>): Customer => {
-    const newCust: Customer = { ...c, id: `c${++custIdCounter}`, createdAt: new Date().toISOString() };
-    setCustomers(prev => [...prev, newCust]);
-    return newCust;
-  };
-  const addDevice = (d: Omit<Device, 'id'>): Device => {
-    const newDev: Device = { ...d, id: `d${++devIdCounter}` };
-    setDevices(prev => [...prev, newDev]);
-    return newDev;
-  };
-  const addJob = (j: Omit<Job, 'id' | 'createdAt' | 'updatedAt'>): Job => {
-    const now = new Date().toISOString();
-    const newJob: Job = { ...j, id: `j${++jobIdCounter}`, createdAt: now, updatedAt: now };
-    setJobs(prev => [...prev, newJob]);
+  // ── Restore session AFTER hydration (client only) ────────────────
+  // The HttpOnly cookie is sent automatically by the browser on every
+  // API request, so we just need to restore the UI user from sessionStorage
+  // and then verify by fetching data (which requires a valid cookie).
+  useEffect(() => {
+    const restore = async () => {
+      try {
+        const stored = sessionStorage.getItem(SESSION_KEY);
+        if (stored) {
+          const user = JSON.parse(stored) as User;
+          // Verify the server-side session is still valid
+          const res = await fetch('/api/data');
+          if (res.ok) {
+            setCurrentUser(user);
+            const data = await res.json();
+            applyAppData(data, setters);
+          } else {
+            // Session expired on server — clear local state
+            sessionStorage.removeItem(SESSION_KEY);
+          }
+        }
+      } catch { /**/ }
+      setHydrated(true);
+    };
+    restore();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-    // Notify engineer if assigned
-    if (j.assignedEngineerId) {
-      const eng = users.find(u => u.id === j.assignedEngineerId);
-      if (eng) {
-        const notif: Notification = {
-          id: `n${++notifIdCounter}`,
-          userId: j.assignedEngineerId,
-          message: `New job assigned: ${j.problemDescription.substring(0, 50)}`,
-          read: false,
-          createdAt: now,
-          jobId: newJob.id,
-        };
-        setNotifications(prev => [...prev, notif]);
+  // ── Auth ─────────────────────────────────────────────────────────
+  const login = async (email: string, password: string): Promise<LoginResult> => {
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // credentials: 'same-origin' is the default for same-origin fetches.
+        // The server will set the HttpOnly session cookie in the response.
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        return { ok: false, error: data.error ?? 'Invalid credentials — please try again.' };
       }
+
+      const user: User = data.user;
+      setCurrentUser(user);
+      // Store only UI profile — NOT the session token (that lives in HttpOnly cookie)
+      try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(user)); } catch (_) { /**/ }
+
+      // Load all real data after successful login
+      const appData = await loadAppData();
+      applyAppData(appData, setters);
+
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: 'Network error — please check your connection.' };
     }
-    return newJob;
+  };
+
+  const logout = async () => {
+    // Tell the server to destroy the session and clear the cookie
+    try {
+      await fetch('/api/auth/login', { method: 'DELETE' });
+    } catch { /**/ }
+
+    setCurrentUser(null);
+    try { sessionStorage.removeItem(SESSION_KEY); } catch (_) { /**/ }
+    setUsers([]); setCustomers([]); setDevices([]); setJobs([]);
+    setPartRequests([]); setInventory([]); setNotifications([]);
+  };
+
+  // ── Users ────────────────────────────────────────────────────────
+  const addUser = (user: Omit<User, 'id'>) => {
+    const tempId = `tmp-${Date.now()}`;
+    const optimistic = { ...user, id: tempId, active: true } as User;
+    setUsers(prev => [...prev, optimistic]);
+
+    fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...user, isActive: true }),
+    })
+      .then(r => r.json())
+      .then(real => setUsers(prev => prev.map(u => u.id === tempId ? real : u)))
+      .catch(() => setUsers(prev => prev.filter(u => u.id !== tempId)));
+  };
+
+  const toggleUserActive = (userId: string) => {
+    const target = users.find(u => u.id === userId);
+    if (!target) return;
+    const newStatus = !target.active;
+
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, active: newStatus } : u));
+
+    fetch(`/api/users/${userId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isActive: newStatus }),
+    }).catch(() =>
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, active: !newStatus } : u))
+    );
+  };
+
+  const updateUser = async (userId: string, data: Partial<Pick<User, 'name' | 'email' | 'role'>> & { password?: string }): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const res = await fetch(`/api/users/${userId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const json = await res.json();
+      if (!res.ok) return { ok: false, error: json.error ?? 'Failed to update user.' };
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, ...json } : u));
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'Network error.' };
+    }
+  };
+
+  const deleteUser = async (userId: string): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const res = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const json = await res.json();
+        return { ok: false, error: json.error ?? 'Failed to delete user.' };
+      }
+      setUsers(prev => prev.filter(u => u.id !== userId));
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'Network error.' };
+    }
+  };
+
+  // ── Customers ────────────────────────────────────────────────────
+  const addCustomer = async (c: Omit<Customer, 'id' | 'createdAt'>): Promise<Customer> => {
+    const tempId = `tmp-${Date.now()}`;
+    const optimistic: Customer = { ...c, id: tempId, createdAt: new Date().toISOString() };
+    setCustomers(prev => [...prev, optimistic]);
+
+    try {
+      const res = await fetch('/api/customers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(c),
+      });
+      const real = await res.json();
+      if (!real?.id) throw new Error('Invalid customer response');
+      setCustomers(prev => prev.map(x => x.id === tempId ? real : x));
+      return real;
+    } catch (err) {
+      setCustomers(prev => prev.filter(x => x.id !== tempId));
+      throw err;
+    }
+  };
+
+  // ── Devices ──────────────────────────────────────────────────────
+  const addDevice = async (d: Omit<Device, 'id'>): Promise<Device> => {
+    const tempId = `tmp-${Date.now()}`;
+    const optimistic: Device = { ...d, id: tempId };
+    setDevices(prev => [...prev, optimistic]);
+
+    try {
+      const res = await fetch('/api/devices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(d),
+      });
+      const real = await res.json();
+      if (!real?.id) throw new Error('Invalid device response');
+      setDevices(prev => prev.map(x => x.id === tempId ? real : x));
+      return real;
+    } catch (err) {
+      setDevices(prev => prev.filter(x => x.id !== tempId));
+      throw err;
+    }
+  };
+
+  // ── Jobs ─────────────────────────────────────────────────────────
+  const addJob = async (j: Omit<Job, 'id' | 'createdAt' | 'updatedAt'>): Promise<Job> => {
+    const now = new Date().toISOString();
+    const tempId = `tmp-${Date.now()}`;
+    const optimistic: Job = { ...j, id: tempId, createdAt: now, updatedAt: now };
+    setJobs(prev => [...prev, optimistic]);
+
+    try {
+      const res = await fetch('/api/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(j),
+      });
+      const real = await res.json();
+      if (!real?.id) {
+        console.error('[addJob] API returned invalid job:', real);
+        setJobs(prev => prev.filter(x => x.id !== tempId));
+        throw new Error(real?.error ?? 'Failed to create job');
+      }
+      setJobs(prev => prev.map(x => x.id === tempId ? real : x));
+      loadAppData().then(data => setNotifications(data.notifications)).catch(() => { });
+      return real;
+    } catch (err) {
+      setJobs(prev => prev.filter(x => x.id !== tempId));
+      throw err;
+    }
   };
 
   const updateJobStatus = (jobId: string, status: JobStatus, notes?: string) => {
     const now = new Date().toISOString();
     setJobs(prev => prev.map(j => j.id === jobId ? {
-      ...j,
-      status,
-      updatedAt: now,
+      ...j, status, updatedAt: now,
       ...(notes ? { repairNotes: notes } : {}),
-      ...(status === 'Completed' || status === 'Delivered' ? { completedAt: now } : {}),
+      ...(status === 'Completed' ? { completedAt: now } : {}),
     } : j));
+
+    fetch(`/api/jobs/${jobId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status, repairNotes: notes }),
+    }).catch(console.error);
   };
 
   const assignEngineer = (jobId: string, engineerId: string) => {
@@ -135,66 +316,95 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ? { ...j, assignedEngineerId: engineerId, status: 'Assigned' as JobStatus, updatedAt: now }
       : j
     ));
-    const eng = users.find(u => u.id === engineerId);
-    const job = jobs.find(j => j.id === jobId);
-    if (eng && job) {
-      const notif: Notification = {
-        id: `n${++notifIdCounter}`,
-        userId: engineerId,
-        message: `New job assigned: ${job.problemDescription.substring(0, 50)}`,
-        read: false,
-        createdAt: now,
-        jobId,
-      };
-      setNotifications(prev => [...prev, notif]);
-    }
+
+    fetch(`/api/jobs/${jobId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assignedEngineerId: engineerId, status: 'Assigned' }),
+    })
+      .then(() => loadAppData().then(data => setNotifications(data.notifications)))
+      .catch(console.error);
   };
 
-  // ── Part Requests ────────────────────────────────────────
+  // ── Part Requests ────────────────────────────────────────────────
   const addPartRequest = (r: Omit<PartRequest, 'id' | 'createdAt' | 'status'>) => {
-    const newReq: PartRequest = { ...r, id: `pr${++partIdCounter}`, createdAt: new Date().toISOString(), status: 'Pending' };
-    setPartRequests(prev => [...prev, newReq]);
+    const tempId = `tmp-${Date.now()}`;
+    const optimistic: PartRequest = { ...r, id: tempId, createdAt: new Date().toISOString(), status: 'Pending' };
+    setPartRequests(prev => [...prev, optimistic]);
+
+    fetch('/api/parts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(r),
+    })
+      .then(res => res.json())
+      .then(real => setPartRequests(prev => prev.map(x => x.id === tempId ? real : x)))
+      .catch(() => setPartRequests(prev => prev.filter(x => x.id !== tempId)));
   };
 
   const updatePartRequest = (id: string, status: PartRequestStatus) => {
-    const now = new Date().toISOString();
-    setPartRequests(prev => prev.map(r => r.id === id ? { ...r, status, reviewedAt: now } : r));
+    setPartRequests(prev => prev.map(r => r.id === id
+      ? { ...r, status, reviewedAt: new Date().toISOString() }
+      : r
+    ));
 
-    // Notify engineer
-    const req = partRequests.find(r => r.id === id);
-    if (req) {
-      const notif: Notification = {
-        id: `n${++notifIdCounter}`,
-        userId: req.engineerId,
-        message: `Part request ${status.toLowerCase()}: ${req.partName}`,
-        read: false,
-        createdAt: now,
-      };
-      setNotifications(prev => [...prev, notif]);
-    }
+    fetch(`/api/parts/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    })
+      .then(() => loadAppData().then(data => setNotifications(data.notifications)))
+      .catch(console.error);
   };
 
-  // ── Inventory ────────────────────────────────────────────
+  // ── Inventory ────────────────────────────────────────────────────
   const addInventoryItem = (item: Omit<InventoryItem, 'id'>) => {
-    const newItem: InventoryItem = { ...item, id: `i${++invIdCounter}` };
-    setInventory(prev => [...prev, newItem]);
+    const tempId = `tmp-${Date.now()}`;
+    const optimistic = { ...item, id: tempId } as InventoryItem;
+    setInventory(prev => [...prev, optimistic]);
+
+    fetch('/api/inventory', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(item),
+    })
+      .then(res => res.json())
+      .then(real => setInventory(prev => prev.map(x => x.id === tempId ? real : x)))
+      .catch(() => setInventory(prev => prev.filter(x => x.id !== tempId)));
   };
+
   const updateInventory = (id: string, quantity: number) => {
     setInventory(prev => prev.map(i => i.id === id ? { ...i, quantity } : i));
+
+    fetch('/api/inventory', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, quantity }),
+    }).catch(console.error);
   };
 
-  // ── Notifications ────────────────────────────────────────
+  // ── Notifications ────────────────────────────────────────────────
   const markNotificationRead = (id: string) => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+
+    fetch('/api/notifications', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    }).catch(() => {
+      // Revert optimistic update on failure
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: false } : n));
+    });
   };
+
   const getUnreadCount = (userId: string) =>
     notifications.filter(n => n.userId === userId && !n.read).length;
 
   return (
     <AppContext.Provider value={{
-      currentUser, login, logout,
+      currentUser, hydrated, login, logout,
       users, customers, devices, jobs, partRequests, inventory, notifications,
-      addUser, toggleUserActive,
+      addUser, toggleUserActive, updateUser, deleteUser,
       addCustomer, addDevice, addJob, updateJobStatus, assignEngineer,
       addPartRequest, updatePartRequest,
       addInventoryItem, updateInventory,

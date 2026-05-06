@@ -1,54 +1,191 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useApp } from '../context/AppContext';
-import { Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle, Check, Shield, Zap, Users, Star, CheckCircle, Wrench } from 'lucide-react';
 
-const FeatureItem: React.FC<{ text: string }> = ({ text }) => (
-  <div className="flex items-center gap-3">
-    <div className="w-5 h-5 rounded-full bg-teal-50 border border-teal-100 flex items-center justify-center text-teal-500 shrink-0">
-      <CheckCircle size={12} strokeWidth={2.5} />
-    </div>
-    <span className="text-[13px] font-normal text-gray-600">{text}</span>
-  </div>
+/* ─────────────────────────────────────────────────────────────
+   ICONS
+───────────────────────────────────────────────────────────── */
+const MailIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="2" y="4" width="20" height="16" rx="2" />
+    <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+  </svg>
+);
+const LockIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="11" width="18" height="11" rx="2" />
+    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+  </svg>
+);
+const EyeIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" />
+  </svg>
+);
+const EyeOffIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+    <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+    <line x1="1" y1="1" x2="23" y2="23" />
+  </svg>
+);
+const ArrowIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M5 12h14M12 5l7 7-7 7" />
+  </svg>
+);
+const AlertIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+  </svg>
+);
+const CheckIcon = () => (
+  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="20 6 9 17 4 12" />
+  </svg>
+);
+const WrenchIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+  </svg>
+);
+const ZapIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+  </svg>
+);
+const UsersIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
+    <path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
+  </svg>
+);
+const StarIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+  </svg>
+);
+const CheckCircleIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" />
+  </svg>
 );
 
-const StatPill: React.FC<{ icon: React.ReactNode; value: number; suffix?: string; label: string; colorClass: string }> = ({ icon, value, suffix, label, colorClass }) => (
-  <div className="flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
-    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${colorClass}`}>
+/* ─────────────────────────────────────────────────────────────
+   ANIMATED COUNTER
+───────────────────────────────────────────────────────────── */
+const Counter: React.FC<{ target: number; suffix?: string; duration?: number }> = ({
+  target, suffix = '', duration = 1400,
+}) => {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    const start = Date.now();
+    const tick = () => {
+      const elapsed = Date.now() - start;
+      const p = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - p, 3);
+      setCount(Math.round(eased * target));
+      if (p < 1) requestAnimationFrame(tick);
+    };
+    const id = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(id);
+  }, [target, duration]);
+  return <>{count}{suffix}</>;
+};
+
+/* ─────────────────────────────────────────────────────────────
+   STAT CARD (left panel) — matches screenshot style
+───────────────────────────────────────────────────────────── */
+const StatCard: React.FC<{
+  icon: React.ReactNode; value: number; suffix?: string;
+  label: string; iconColor: string; iconBg: string; delay: number;
+}> = ({ icon, value, suffix, label, iconColor, iconBg, delay }) => (
+  <motion.div
+    initial={{ opacity: 0, y: 16 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ delay, duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+    style={{
+      display: 'flex', alignItems: 'center', gap: 16,
+      padding: '16px 20px',
+      background: 'white',
+      border: '1px solid #e8edf2',
+      borderRadius: 14,
+      boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+    }}
+  >
+    <div style={{
+      width: 44, height: 44, borderRadius: 12, flexShrink: 0,
+      background: iconBg,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      color: iconColor,
+    }}>
       {icon}
     </div>
-    <div className="flex-1">
-      <div className="text-[18px] font-medium text-gray-900 leading-tight">
-        {value}{suffix}
+    <div style={{ flex: 1 }}>
+      <div style={{ color: '#111827', fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', lineHeight: 1 }}>
+        <Counter target={value} suffix={suffix ?? ''} duration={1000 + delay * 500} />
       </div>
-      <div className="text-[11px] font-medium text-gray-500 mt-0.5">
+      <div style={{ color: '#9ca3af', fontSize: 12, fontWeight: 500, marginTop: 3 }}>
         {label}
       </div>
     </div>
-    <div className="flex items-center gap-1.5">
-      <div className="w-2 h-2 rounded-full bg-green-500" />
-      <span className="text-green-500 text-[11px] font-medium tracking-wide">LIVE</span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+      <motion.div
+        animate={{ scale: [1, 1.5, 1], opacity: [0.6, 1, 0.6] }}
+        transition={{ duration: 2, repeat: Infinity, delay: delay * 0.5 }}
+        style={{ width: 7, height: 7, borderRadius: '50%', background: '#22c55e' }}
+      />
+      <span style={{ color: '#22c55e', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.05em' }}>LIVE</span>
     </div>
-  </div>
+  </motion.div>
 );
 
+/* ─────────────────────────────────────────────────────────────
+   FEATURE ITEM (right panel)
+───────────────────────────────────────────────────────────── */
+const FeatureItem: React.FC<{ text: string; delay: number }> = ({ text, delay }) => (
+  <motion.div
+    initial={{ opacity: 0, x: 10 }}
+    animate={{ opacity: 1, x: 0 }}
+    transition={{ delay, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+    style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}
+  >
+    <div style={{
+      width: 20, height: 20, borderRadius: '50%', flexShrink: 0, marginTop: 1,
+      background: 'rgba(13,148,136,0.1)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      color: '#0d9488',
+    }}>
+      <CheckCircleIcon />
+    </div>
+    <span style={{ color: '#374151', fontSize: 13, fontWeight: 500, lineHeight: 1.4 }}>{text}</span>
+  </motion.div>
+);
+
+/* ─────────────────────────────────────────────────────────────
+   MAIN LOGIN PAGE
+───────────────────────────────────────────────────────────── */
 export const LoginPage: React.FC = () => {
   const { login } = useApp();
 
-  const [email, setEmail]               = useState('');
-  const [password, setPassword]         = useState('');
-  const [error, setError]               = useState('');
-  const [loading, setLoading]           = useState(false);
-  const [showPass, setShowPass]         = useState(false);
-  const [remember, setRemember]         = useState(false);
-  const [focused, setFocused]           = useState<'email' | 'password' | null>(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [showPass, setShowPass] = useState(false);
+  const [remember, setRemember] = useState(false);
+  const [focused, setFocused] = useState<'email' | 'password' | null>(null);
   const [loginSuccess, setLoginSuccess] = useState(false);
 
   const emailRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const saved = localStorage.getItem('fixhub_user');
-    if (saved) {
-      try { const p = JSON.parse(saved); setEmail(p.email || ''); setPassword(p.password || ''); setRemember(true); } catch {}
+    // Only restore the email (never the password — storing passwords in
+    // localStorage is a security risk; sessionStorage handles the session)
+    const savedEmail = localStorage.getItem('fixhub_remembered_email');
+    if (savedEmail) {
+      setEmail(savedEmail);
+      setRemember(true);
     }
     setTimeout(() => emailRef.current?.focus(), 400);
   }, []);
@@ -56,22 +193,17 @@ export const LoginPage: React.FC = () => {
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) { setError('Please fill in both fields.'); return; }
     setError(''); setLoading(true);
-    await new Promise(r => setTimeout(r, 900));
-    const ok = login(email.trim(), password);
-    if (!ok) { setError('Invalid credentials — please try again.'); setLoading(false); return; }
-    if (remember) localStorage.setItem('fixhub_user', JSON.stringify({ email, password }));
-    else localStorage.removeItem('fixhub_user');
-    setLoginSuccess(true);
+    const result = await login(email.trim(), password);
     setLoading(false);
+    if (!result.ok) {
+      setError(result.error ?? 'Invalid credentials — please try again.');
+      return;
+    }
+    // Only remember the email, never the password
+    if (remember) localStorage.setItem('fixhub_remembered_email', email.trim());
+    else localStorage.removeItem('fixhub_remembered_email');
+    setLoginSuccess(true);
   };
-
-  const quickLogin = (e: string, p: string) => { setEmail(e); setPassword(p); setError(''); };
-
-  const quickRoles = [
-    { label: 'Admin',    sub: 'Full Access',  email: 'admin@fixhub.com',     pass: 'admin123', colorClass: 'text-amber-500 bg-amber-50 border-amber-200',  init: 'A' },
-    { label: 'Manager',  sub: 'Reception',    email: 'reception@fixhub.com', pass: 'rec123',   colorClass: 'text-green-500 bg-green-50 border-green-200',  init: 'M' },
-    { label: 'Engineer', sub: 'Field Tech',   email: 'eng1@fixhub.com',      pass: 'eng123',   colorClass: 'text-cyan-500 bg-cyan-50 border-cyan-200', init: 'E' },
-  ];
 
   const features = [
     'Real-time job tracking & dispatch',
@@ -81,93 +213,149 @@ export const LoginPage: React.FC = () => {
   ];
 
   return (
-    <div className="min-h-screen flex items-stretch bg-gray-50">
+    <div
+      className="min-h-screen flex items-stretch overflow-hidden"
+      style={{ fontFamily: "'DM Sans', 'Inter', sans-serif", background: '#f9fafb' }}
+    >
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap');
+        @keyframes fh-spin { to { transform: rotate(360deg); } }
+        input::placeholder { color: #9ca3af; }
+        input::-webkit-input-placeholder { color: #9ca3af; }
+      `}</style>
+
       {/* ══════════════════════════════════════════════
-          LEFT PANEL — Hero
+          LEFT PANEL — Light brand hero
       ══════════════════════════════════════════════ */}
-      <div className="hidden lg:flex flex-col w-1/2 p-12 justify-between border-r border-gray-200 bg-white relative overflow-hidden">
+      <div
+        className="hidden lg:flex flex-col w-1/2 relative overflow-hidden"
+        style={{ background: '#f9fafb', padding: '48px 56px', justifyContent: 'space-between', borderRight: '1px solid #e5e7eb' }}
+      >
         {/* Subtle grid pattern */}
-        <div className="absolute inset-0 pointer-events-none opacity-50" style={{
-          backgroundImage: 'radial-gradient(circle, #e5e7eb 1px, transparent 1px)',
-          backgroundSize: '24px 24px',
+        <div style={{
+          position: 'absolute', inset: 0, pointerEvents: 'none',
+          backgroundImage: 'radial-gradient(#e5e7eb 1px, transparent 1px)',
+          backgroundSize: '28px 28px',
+          opacity: 0.5,
         }} />
 
-        {/* ── Brand ── */}
-        <div className="relative z-10 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-teal-500 flex items-center justify-center text-white shrink-0 shadow-sm shadow-teal-500/20">
-            <Wrench size={20} strokeWidth={2.5} />
+        {/* Brand */}
+        <motion.div
+          initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+          className="relative z-10 flex items-center gap-3"
+        >
+          <div style={{
+            width: 44, height: 44, borderRadius: 12,
+            background: 'linear-gradient(135deg, #0f766e 0%, #0d9488 100%)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 4px 14px rgba(13,148,136,0.35)',
+          }}>
+            <span style={{ color: 'white' }}><WrenchIcon /></span>
           </div>
           <div>
-            <h1 className="text-[18px] font-medium text-gray-900 leading-none">FixHub</h1>
-            <p className="text-[11px] font-medium text-teal-600 tracking-wide uppercase mt-1">Service Platform</p>
+            <h1 style={{ color: '#111827', fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', lineHeight: 1, margin: 0 }}>FixHub</h1>
+            <p style={{ color: '#0d9488', fontSize: 9.5, fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', margin: '3px 0 0' }}>
+              SERVICE PLATFORM
+            </p>
           </div>
-        </div>
+        </motion.div>
 
-        {/* ── Hero copy ── */}
-        <div className="relative z-10 max-w-md">
-          <div className="inline-flex items-center gap-2 mb-6 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-100">
-            <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-            <span className="text-amber-600 text-[11px] font-medium tracking-wide uppercase">Trusted by 200+ Service Centers</span>
+        {/* Hero copy */}
+        <motion.div
+          initial={{ opacity: 0, y: 32 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.14, duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+          className="relative z-10"
+        >
+          {/* Badge */}
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 28,
+            padding: '7px 16px', borderRadius: 100,
+            background: '#fef9c3', border: '1px solid #fde68a',
+          }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#f59e0b', display: 'block', flexShrink: 0 }} />
+            <span style={{ color: '#92400e', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+              TRUSTED BY 200+ SERVICE CENTERS
+            </span>
           </div>
 
-          <h2 className="text-[36px] font-medium text-gray-900 leading-[1.1] tracking-tight mb-4">
+          <h2 style={{ color: '#111827', fontSize: 52, fontWeight: 800, lineHeight: 1.06, letterSpacing: '-0.04em', margin: '0 0 20px' }}>
             Repair smarter,<br />
-            <span className="text-teal-500">deliver faster.</span>
+            <span style={{ color: '#0d9488' }}>deliver faster.</span>
           </h2>
 
-          <p className="text-[13px] text-gray-500 leading-relaxed max-w-sm mb-8">
+          <p style={{ color: '#6b7280', fontSize: 15, lineHeight: 1.75, maxWidth: 400, margin: 0 }}>
             One unified workspace for your entire service operation — job intake, engineer dispatch, inventory, billing, and analytics.
           </p>
+        </motion.div>
 
-          <div className="flex flex-col gap-4">
-            <StatPill icon={<Zap size={20} />}   value={24} suffix=" jobs"   label="Completed today"        colorClass="text-amber-500 bg-amber-50" />
-            <StatPill icon={<Users size={20} />} value={6}  suffix=" online" label="Engineers active now"   colorClass="text-green-500 bg-green-50" />
-            <StatPill icon={<Star size={20} />}  value={98} suffix="%"       label="Customer satisfaction"  colorClass="text-teal-500 bg-teal-50" />
-          </div>
+        {/* Stats */}
+        <div className="relative z-10" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <StatCard icon={<ZapIcon />} value={24} suffix=" jobs" label="Completed today" iconColor="#f59e0b" iconBg="#fef3c7" delay={0.32} />
+          <StatCard icon={<UsersIcon />} value={6} suffix=" online" label="Engineers active now" iconColor="#10b981" iconBg="#d1fae5" delay={0.44} />
+          <StatCard icon={<StarIcon />} value={98} suffix="%" label="Customer satisfaction" iconColor="#6366f1" iconBg="#e0e7ff" delay={0.56} />
         </div>
 
-        {/* ── Footer ── */}
-        <div className="relative z-10 flex items-center gap-3 mt-12">
-          {['SOC 2', 'ISO 27001', 'GDPR'].map(t => (
-            <div key={t} className="px-2.5 py-1 rounded-md bg-gray-50 border border-gray-200 text-gray-500 text-[11px] font-medium tracking-wide">
-              {t}
-            </div>
-          ))}
-          <span className="ml-auto text-gray-400 text-[11px] font-medium">© 2026 FixHub Technologies</span>
-        </div>
+        {/* Footer */}
+        <motion.p
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8 }}
+          className="relative z-10"
+          style={{ color: '#d1d5db', fontSize: 11, fontWeight: 500 }}
+        >
+          © 2026 FixHub Technologies · All rights reserved
+        </motion.p>
       </div>
 
       {/* ══════════════════════════════════════════════
-          RIGHT PANEL — Form
+          RIGHT PANEL — Light form panel
       ══════════════════════════════════════════════ */}
-      <div className="flex-1 flex items-center justify-center p-6 relative">
-        <div className="w-full max-w-[420px]">
+      <div
+        className="flex-1 flex items-center justify-center relative overflow-hidden"
+        style={{ background: '#f9fafb', padding: '48px 24px' }}
+      >
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
+          className="relative w-full"
+          style={{ maxWidth: 440 }}
+        >
           {/* Mobile logo */}
-          <div className="flex lg:hidden items-center gap-3 justify-center mb-8">
-            <div className="w-10 h-10 rounded-xl bg-teal-500 flex items-center justify-center text-white shrink-0">
-              <Wrench size={20} strokeWidth={2.5} />
+          <div className="flex lg:hidden items-center gap-3 justify-center" style={{ marginBottom: 32 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 12, background: 'linear-gradient(135deg, #0f766e, #0d9488)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 14px rgba(13,148,136,0.35)' }}>
+              <span style={{ color: 'white' }}><WrenchIcon /></span>
             </div>
-            <span className="text-[18px] font-medium text-gray-900">FixHub</span>
+            <span style={{ fontSize: 22, fontWeight: 800, color: '#111827', letterSpacing: '-0.04em' }}>FixHub</span>
           </div>
 
-          {/* ── Form card ── */}
-          <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-8 mb-6">
-            <div className="mb-6">
-              <div className="flex items-center gap-3 mb-1">
-                <div className="w-1 h-6 rounded-full bg-teal-500" />
-                <h2 className="text-[18px] font-medium text-gray-900">Welcome back</h2>
+          {/* Form card */}
+          <div style={{
+            background: 'white',
+            border: '1px solid #e5e7eb',
+            borderRadius: 20,
+            padding: '36px 36px 30px',
+            boxShadow: '0 4px 24px rgba(0,0,0,0.08)',
+          }}>
+            {/* Header */}
+            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} style={{ marginBottom: 28 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                <div style={{ width: 4, height: 26, borderRadius: 2, background: '#0d9488' }} />
+                <h2 style={{ color: '#111827', fontSize: 26, fontWeight: 800, letterSpacing: '-0.04em', margin: 0 }}>Welcome back</h2>
               </div>
-              <p className="text-[13px] text-gray-500 ml-4">Sign in to your FixHub workspace</p>
-            </div>
-
-            <div className="h-px bg-gray-100 mb-6" />
+              <p style={{ color: '#9ca3af', fontSize: 13.5, fontWeight: 500, margin: '0 0 0 14px' }}>
+                Sign in to your FixHub workspace
+              </p>
+              <div style={{ height: 1, background: '#f3f4f6', marginTop: 22 }} />
+            </motion.div>
 
             {/* Email */}
-            <div className="mb-4">
-              <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-2">Email Address</label>
-              <div className="relative">
-                <div className={`absolute left-3 top-1/2 -translate-y-1/2 flex transition-colors ${focused === 'email' ? 'text-teal-500' : 'text-gray-400'}`}>
-                  <Mail size={16} />
+            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.17 }} style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 10.5, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>
+                EMAIL ADDRESS
+              </label>
+              <div style={{ position: 'relative' }}>
+                <div style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: focused === 'email' ? '#0d9488' : '#9ca3af', transition: 'color 0.2s', pointerEvents: 'none', display: 'flex' }}>
+                  <MailIcon />
                 </div>
                 <input
                   ref={emailRef}
@@ -177,20 +365,30 @@ export const LoginPage: React.FC = () => {
                   onFocus={() => setFocused('email')}
                   onBlur={() => setFocused(null)}
                   placeholder="you@fixhub.com"
-                  className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-10 pr-4 py-2.5 text-[13px] font-medium text-gray-900 placeholder-gray-400 focus:outline-none focus:border-teal-500 focus:bg-white transition-colors"
+                  style={{
+                    width: '100%', boxSizing: 'border-box',
+                    paddingLeft: 44, paddingRight: 16, paddingTop: 12, paddingBottom: 12,
+                    borderRadius: 10, fontSize: 14, fontFamily: 'inherit', color: '#111827',
+                    background: focused === 'email' ? '#f0fdfa' : '#f9fafb',
+                    border: `1.5px solid ${focused === 'email' ? '#0d9488' : '#e5e7eb'}`,
+                    boxShadow: focused === 'email' ? '0 0 0 3px rgba(13,148,136,0.1)' : 'none',
+                    outline: 'none', transition: 'all 0.2s ease',
+                  }}
                 />
               </div>
-            </div>
+            </motion.div>
 
             {/* Password */}
-            <div className="mb-5">
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Password</label>
-                <button className="text-[11px] font-medium text-teal-600 hover:text-teal-700 transition-colors">Forgot password?</button>
+            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.23 }} style={{ marginBottom: 18 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <label style={{ fontSize: 10.5, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.1em' }}>PASSWORD</label>
+                <button style={{ fontSize: 12.5, fontWeight: 600, color: '#0d9488', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>
+                  Forgot password?
+                </button>
               </div>
-              <div className="relative">
-                <div className={`absolute left-3 top-1/2 -translate-y-1/2 flex transition-colors ${focused === 'password' ? 'text-teal-500' : 'text-gray-400'}`}>
-                  <Lock size={16} />
+              <div style={{ position: 'relative' }}>
+                <div style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: focused === 'password' ? '#0d9488' : '#9ca3af', transition: 'color 0.2s', pointerEvents: 'none', display: 'flex' }}>
+                  <LockIcon />
                 </div>
                 <input
                   type={showPass ? 'text' : 'password'}
@@ -200,93 +398,119 @@ export const LoginPage: React.FC = () => {
                   onBlur={() => setFocused(null)}
                   onKeyDown={e => e.key === 'Enter' && handleLogin()}
                   placeholder="Enter your password"
-                  className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-10 pr-10 py-2.5 text-[13px] font-medium text-gray-900 placeholder-gray-400 focus:outline-none focus:border-teal-500 focus:bg-white transition-colors"
+                  style={{
+                    width: '100%', boxSizing: 'border-box',
+                    paddingLeft: 44, paddingRight: 50, paddingTop: 12, paddingBottom: 12,
+                    borderRadius: 10, fontSize: 14, fontFamily: 'inherit', color: '#111827',
+                    background: focused === 'password' ? '#f0fdfa' : '#f9fafb',
+                    border: `1.5px solid ${focused === 'password' ? '#0d9488' : '#e5e7eb'}`,
+                    boxShadow: focused === 'password' ? '0 0 0 3px rgba(13,148,136,0.1)' : 'none',
+                    outline: 'none', transition: 'all 0.2s ease',
+                  }}
                 />
                 <button
                   onClick={() => setShowPass(v => !v)}
                   tabIndex={-1}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors flex"
+                  style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', padding: 6, borderRadius: 8, display: 'flex' }}
                 >
-                  {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
+                  {showPass ? <EyeOffIcon /> : <EyeIcon />}
                 </button>
               </div>
-            </div>
+            </motion.div>
 
             {/* Remember me */}
-            <div className="flex items-center gap-2 mb-6 cursor-pointer" onClick={() => setRemember(v => !v)}>
-              <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${remember ? 'bg-teal-500 border-teal-500 text-white' : 'bg-white border-gray-300 text-transparent'}`}>
-                <Check size={12} strokeWidth={3} />
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.29 }}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', marginBottom: 6 }}
+              onClick={() => setRemember(v => !v)}
+            >
+              <div style={{
+                width: 18, height: 18, borderRadius: 5, flexShrink: 0,
+                background: remember ? '#0d9488' : 'white',
+                border: `1.5px solid ${remember ? '#0d9488' : '#d1d5db'}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s',
+              }}>
+                {remember && <span style={{ color: 'white' }}><CheckIcon /></span>}
               </div>
-              <span className="text-[13px] font-medium text-gray-600 select-none">Keep me signed in</span>
-            </div>
+              <span style={{ fontSize: 13.5, color: '#374151', fontWeight: 500, userSelect: 'none' }}>Keep me signed in</span>
+            </motion.div>
 
             {/* Error */}
-            {error && (
-              <div className="mb-6 flex items-center gap-2 p-3 rounded-lg bg-rose-50 border border-rose-100 text-rose-600 text-[13px] font-medium">
-                <AlertCircle size={16} className="shrink-0" />
-                {error}
-              </div>
-            )}
+            <AnimatePresence>
+              {error && (
+                <motion.div
+                  initial={{ opacity: 0, y: -6, height: 0, marginTop: 0 }}
+                  animate={{ opacity: 1, y: 0, height: 'auto', marginTop: 14 }}
+                  exit={{ opacity: 0, y: -6, height: 0, marginTop: 0 }}
+                  transition={{ duration: 0.22 }}
+                  style={{ overflow: 'hidden' }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 14px', borderRadius: 10, background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', fontSize: 13, fontWeight: 500 }}>
+                    <AlertIcon />{error}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* Sign In Button */}
-            <button
-              onClick={handleLogin}
-              disabled={loading}
-              className={`w-full flex items-center justify-center gap-2 py-3 rounded-lg text-[13px] font-medium text-white transition-colors ${loading ? 'bg-teal-400 cursor-not-allowed' : loginSuccess ? 'bg-green-500' : 'bg-gray-900 hover:bg-gray-800'}`}
-            >
-              {loading ? (
-                <>Signing in…</>
-              ) : loginSuccess ? (
-                <><Check size={16} /> Authenticated!</>
-              ) : (
-                <>Sign In to Workspace <ArrowRight size={16} /></>
-              )}
-            </button>
-          </div>
-
-          {/* ── Features strip ── */}
-          <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6 grid grid-cols-1 sm:grid-cols-2 gap-y-3 gap-x-4 shadow-sm">
-            {features.map(f => (
-              <FeatureItem key={f} text={f} />
-            ))}
-          </div>
-
-          {/* ── Demo divider ── */}
-          <div className="flex items-center gap-3 mb-4">
-            <div className="flex-1 h-px bg-gray-200" />
-            <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">Quick Demo Access</span>
-            <div className="flex-1 h-px bg-gray-200" />
-          </div>
-
-          {/* ── Role cards ── */}
-          <div className="grid grid-cols-3 gap-3 mb-4">
-            {quickRoles.map(role => (
-              <button
-                key={role.label}
-                onClick={() => quickLogin(role.email, role.pass)}
-                className="flex flex-col items-center gap-2 p-3 bg-white border border-gray-200 rounded-xl hover:border-teal-500 transition-colors shadow-sm"
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }} style={{ marginTop: 22 }}>
+              <motion.button
+                whileHover={!loading ? { scale: 1.015, y: -1 } : {}}
+                whileTap={!loading ? { scale: 0.985 } : {}}
+                onClick={handleLogin}
+                disabled={loading}
+                style={{
+                  width: '100%', padding: '14px 0', borderRadius: 12, border: 'none',
+                  background: loginSuccess
+                    ? 'linear-gradient(135deg, #059669 0%, #10b981 100%)'
+                    : '#111827',
+                  color: 'white', fontSize: 15, fontWeight: 700,
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  opacity: loading ? 0.8 : 1,
+                  transition: 'all 0.3s ease',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                  fontFamily: 'inherit', letterSpacing: '-0.01em',
+                  boxShadow: loading ? 'none' : loginSuccess
+                    ? '0 6px 20px rgba(16,185,129,0.4)'
+                    : '0 4px 14px rgba(17,24,39,0.25)',
+                }}
               >
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[13px] font-medium border ${role.colorClass}`}>
-                  {role.init}
-                </div>
-                <div className="text-center">
-                  <p className="text-[11px] font-medium text-gray-900 leading-tight">{role.label}</p>
-                  <p className="text-[11px] text-gray-500 mt-0.5">{role.sub}</p>
-                </div>
-              </button>
-            ))}
+                {loading ? (
+                  <>
+                    <svg style={{ animation: 'fh-spin 1s linear infinite', width: 16, height: 16, flexShrink: 0 }} viewBox="0 0 24 24" fill="none">
+                      <circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.25)" strokeWidth="3" />
+                      <path fill="white" d="M4 12a8 8 0 018-8v8z" />
+                    </svg>
+                    Signing in…
+                  </>
+                ) : loginSuccess ? (
+                  <>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                    Authenticated!
+                  </>
+                ) : (
+                  <><span>Sign In to Workspace</span><ArrowIcon /></>
+                )}
+              </motion.button>
+            </motion.div>
           </div>
 
-          <p className="text-center text-[11px] font-medium text-gray-400 mb-4">
-            Select a role · credentials auto-fill · then Sign In
-          </p>
+          {/* Features strip */}
+          <motion.div
+            initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.42, duration: 0.6 }}
+            style={{
+              margin: '16px 0 0', padding: '20px 24px',
+              background: 'white', border: '1px solid #e5e7eb',
+              borderRadius: 16, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 20px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+            }}
+          >
+            {features.map((f, i) => <FeatureItem key={f} text={f} delay={0.46 + i * 0.06} />)}
+          </motion.div>
 
-          {/* Security note */}
-          <div className="flex items-center justify-center gap-2 text-[11px] font-medium text-gray-400">
-            <Shield size={12} />
-            <span>256-bit encrypted · SOC 2 compliant · Zero data sharing</span>
-          </div>
-        </div>
+        </motion.div>
       </div>
     </div>
   );

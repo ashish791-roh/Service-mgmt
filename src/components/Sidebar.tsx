@@ -4,7 +4,7 @@ import type { Role } from '../types';
 import { 
   LayoutDashboard, Users, BarChart3, LineChart, 
   UserSquare2, Wrench, Pin, Nut, Box, 
-  Wallet, ClipboardList, Bell, LogOut, Wrench as ToolIcon
+  Wallet, ClipboardList, Bell, LogOut, Wrench as ToolIcon, X
 } from 'lucide-react';
 
 interface NavItem { id: string; label: string; icon: any; roles: Role[]; }
@@ -16,7 +16,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'reports',       label: 'Reports',         icon: LineChart,        roles: ['admin', 'reception'] },
   { id: 'customers',     label: 'Customers',       icon: UserSquare2,      roles: ['admin', 'reception'] },
   { id: 'jobs',          label: 'Jobs',            icon: Wrench,           roles: ['admin', 'reception'] },
-  { id: 'assign',        label: 'Assign Jobs',     icon: Pin,              roles: ['reception'] },
+  { id: 'assign',        label: 'Assign Jobs',     icon: Pin,              roles: ['admin', 'reception'] },
   { id: 'parts',         label: 'Parts Requests',  icon: Nut,              roles: ['admin', 'reception'] },
   { id: 'inventory',     label: 'Inventory',       icon: Box,              roles: ['admin', 'reception'] },
   { id: 'billing',       label: 'Billing',         icon: Wallet,           roles: ['admin', 'reception'] },
@@ -31,14 +31,19 @@ const SECTIONS = [
   { label: 'System',      ids: ['notifications'] },
 ];
 
-interface SidebarProps { activePage: string; onNavigate: (page: string) => void; }
+interface SidebarProps {
+  activePage: string;
+  onNavigate: (page: string) => void;
+  isOpen: boolean;
+  setIsOpen: (open: boolean) => void;
+}
 
-export const Sidebar: React.FC<SidebarProps> = ({ activePage, onNavigate }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ activePage, onNavigate, isOpen, setIsOpen }) => {
   const { currentUser, logout, getUnreadCount } = useApp();
   if (!currentUser) return null;
 
   const unread = getUnreadCount(currentUser.id);
-  const filtered = NAV_ITEMS.filter(item => item.roles.includes(currentUser.role));
+  const filtered = NAV_ITEMS.filter(item => item.roles.includes(currentUser.role as Role));
 
   const roleConfig: Record<string, { bgClass: string; label: string }> = {
     admin:     { bgClass: 'bg-amber-500',    label: 'Administrator' },
@@ -47,14 +52,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ activePage, onNavigate }) => {
   };
   const role = roleConfig[currentUser.role];
 
-  return (
-    <aside className="w-[260px] min-h-screen bg-gray-900 flex flex-col fixed left-0 top-0 bottom-0 z-30">
-      
+  const handleNavigate = (page: string) => {
+    onNavigate(page);
+    setIsOpen(false); // close mobile drawer on navigation
+  };
+
+  const sidebarContent = (
+    <aside className="w-[260px] min-h-screen bg-gray-900 flex flex-col h-full">
       {/* Subtle top indicator line */}
       <div className="h-0.5 bg-teal-500" />
 
       {/* Logo */}
-      <div className="px-5 py-6 border-b border-gray-800">
+      <div className="px-5 py-6 border-b border-gray-800 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-teal-500 flex items-center justify-center text-white shrink-0">
             <ToolIcon size={20} />
@@ -64,6 +73,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ activePage, onNavigate }) => {
             <p className="text-gray-400 text-[11px] font-medium mt-0.5 uppercase tracking-wide">Service Manager</p>
           </div>
         </div>
+        {/* Close button — mobile only */}
+        <button
+          className="md:hidden text-gray-400 hover:text-white p-1"
+          onClick={() => setIsOpen(false)}
+        >
+          <X size={20} />
+        </button>
       </div>
 
       {/* Nav */}
@@ -85,7 +101,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activePage, onNavigate }) => {
                   return (
                     <button
                       key={item.id}
-                      onClick={() => onNavigate(item.id)}
+                      onClick={() => handleNavigate(item.id)}
                       className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors relative group ${
                         isActive
                           ? 'bg-gray-800 text-teal-400'
@@ -97,7 +113,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activePage, onNavigate }) => {
                       )}
                       <Icon size={18} className="shrink-0" />
                       <span className="flex-1 text-left">{item.label}</span>
-                      {(item.id === 'notifications' || item.id === 'my-jobs') && unread > 0 && (
+                      {item.id === 'notifications' && unread > 0 && (
                         <span className="bg-teal-500 text-white text-[11px] rounded-md px-1.5 py-0.5 font-bold shrink-0">
                           {unread}
                         </span>
@@ -131,5 +147,29 @@ export const Sidebar: React.FC<SidebarProps> = ({ activePage, onNavigate }) => {
         </button>
       </div>
     </aside>
+  );
+
+  return (
+    <>
+      {/* Desktop: always visible fixed sidebar */}
+      <div className="hidden md:block fixed left-0 top-0 bottom-0 z-30 w-[260px]">
+        {sidebarContent}
+      </div>
+
+      {/* Mobile: slide-in drawer with backdrop */}
+      {isOpen && (
+        <div className="md:hidden fixed inset-0 z-40 flex">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => setIsOpen(false)}
+          />
+          {/* Drawer */}
+          <div className="relative z-50 w-[260px] h-full overflow-y-auto">
+            {sidebarContent}
+          </div>
+        </div>
+      )}
+    </>
   );
 };

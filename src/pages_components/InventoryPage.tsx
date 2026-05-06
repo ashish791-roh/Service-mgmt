@@ -104,7 +104,7 @@ export const InventoryPage: React.FC = () => {
     const newQty = stockAdjust.action === 'add'
       ? item.quantity + qty
       : Math.max(0, item.quantity - qty);
-    updateInventory?.(stockAdjust.id, { quantity: newQty });
+    updateInventory?.(stockAdjust.id, newQty);
     setStockAdjust(null);
   };
 

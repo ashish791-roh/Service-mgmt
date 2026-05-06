@@ -3,12 +3,13 @@ import { AppProvider, useApp } from './context/AppContext';
 import { LoginPage } from './pages_components/LoginPage';
 import { Sidebar } from './components/Sidebar';
 import { AdminDashboard, UserManagement } from './pages_components/AdminPages';
-import { ReceptionDashboard, CustomersPage, JobsPage, AssignJobsPage, PartsRequestPage } from './pages_components/ReceptionPages';
+import { ReceptionDashboard, CustomersPage, JobsPage, PartsRequestPage } from './pages_components/ReceptionPages';
 import { InventoryPage } from './pages_components/InventoryPage';
 import { BillingPage } from './pages_components/BillingPage';
 import { EngineerDashboard, MyJobsPage } from './pages_components/EngineersPage';
 import { AnalyticsPage } from './pages_components/AnalyticsPage';
 import { NotificationsPage } from './pages_components/NotificationsPage';
+import { AssignJobsPage } from './pages_components/AssignJobsPage';
 import { ReportsPage } from './pages_components/ReportsPage';
 import { 
   LayoutDashboard, Users, BarChart3, LineChart, 
@@ -32,26 +33,39 @@ const PAGE_ICONS: Record<string, any> = {
 function AppContent() {
   const { currentUser } = useApp();
   const [activePage, setActivePage] = useState<string>('dashboard');
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
 
   if (!currentUser) return <LoginPage />;
+
+  const isAdmin     = currentUser.role === 'admin';
+  const isAdminOrReception = currentUser.role === 'admin' || currentUser.role === 'reception';
+  const isEngineer  = currentUser.role === 'engineer';
+
+  const AccessDenied = () => (
+    <div className="flex flex-col items-center justify-center h-64 text-gray-400">
+      <Search size={48} className="mb-4 opacity-50" />
+      <p className="text-[13px] font-medium text-gray-500">Access denied</p>
+    </div>
+  );
 
   const renderPage = () => {
     switch (activePage) {
       case 'dashboard':
-        if (currentUser.role === 'admin') return <AdminDashboard onNavigate={setActivePage} />;
-        if (currentUser.role === 'reception') return <ReceptionDashboard onNavigate={setActivePage} />;
+        if (isAdmin)            return <AdminDashboard onNavigate={setActivePage} />;
+        if (isAdminOrReception) return <ReceptionDashboard onNavigate={setActivePage} />;
         return <EngineerDashboard />;
-      case 'users':         return <UserManagement />;
-      case 'customers':     return <CustomersPage />;
-      case 'jobs':          return <JobsPage />;
-      case 'my-jobs':       return <MyJobsPage />;
-      case 'assign':        return <AssignJobsPage />;
-      case 'parts':         return <PartsRequestPage />;
-      case 'inventory':     return <InventoryPage />;
-      case 'billing':       return <BillingPage />;
-      case 'analytics':     return <AnalyticsPage />;
+      case 'users':         return isAdmin            ? <UserManagement />     : <AccessDenied />;
+      case 'analytics':     return isAdmin            ? <AnalyticsPage />      : <AccessDenied />;
+      case 'reports':       return isAdminOrReception ? <ReportsPage />        : <AccessDenied />;
+      case 'customers':     return isAdminOrReception ? <CustomersPage />      : <AccessDenied />;
+      case 'jobs':          return isAdminOrReception ? <JobsPage />           : <AccessDenied />;
+      case 'assign':        return isAdminOrReception ? <AssignJobsPage />     : <AccessDenied />;
+      case 'parts':         return isAdminOrReception ? <PartsRequestPage />   : <AccessDenied />;
+      case 'inventory':     return isAdminOrReception ? <InventoryPage />      : <AccessDenied />;
+      case 'billing':       return isAdminOrReception ? <BillingPage />        : <AccessDenied />;
+      case 'my-jobs':       return isEngineer         ? <MyJobsPage />         : <AccessDenied />;
       case 'notifications': return <NotificationsPage />;
-      case 'reports':       return <ReportsPage />;
+
       default:              return (
         <div className="flex flex-col items-center justify-center h-64 text-gray-400">
           <Search size={48} className="mb-4 opacity-50" />
@@ -65,7 +79,7 @@ function AppContent() {
 
   return (
     <div className="flex min-h-screen bg-gray-50 text-gray-900 font-sans">
-      <Sidebar activePage={activePage} onNavigate={setActivePage} />
+      <Sidebar activePage={activePage} onNavigate={setActivePage} isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} />
       <div className="ml-[260px] flex-1 flex flex-col min-h-screen">
         {/* Topbar */}
         <header className="sticky top-0 z-20 h-[60px] bg-white border-b border-gray-200 flex items-center px-8 gap-4 shadow-sm">
