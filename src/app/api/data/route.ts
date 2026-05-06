@@ -76,18 +76,18 @@ export async function GET() {
                 // Only the engineer themselves — no other users visible
                 users: selfUser ? [mapUser(selfUser)] : [],
                 // Customers and devices needed to render job details (read-only context)
-                customers: allCustomers.map(c => ({
+                customers: allCustomers.map((c: any) => ({
                     ...c,
                     createdAt: c.createdAt.toISOString(),
                     updatedAt: c.updatedAt.toISOString(),
                 })),
-                devices: allDevices.map(d => ({
+                devices: allDevices.map((d: any) => ({
                     ...d,
                     serialNumber: d.serialNo,
                     createdAt: d.createdAt.toISOString(),
                 })),
                 jobs: myJobs.map(mapJob),
-                partRequests: allPartRequests.map(r => ({
+                partRequests: allPartRequests.map((r: any) => ({
                     ...r,
                     createdAt: r.createdAt.toISOString(),
                     updatedAt: r.updatedAt.toISOString(),
@@ -95,7 +95,7 @@ export async function GET() {
                 })),
                 // Engineers don't see inventory
                 inventory: [],
-                notifications: myNotifications.map(n => ({
+                notifications: myNotifications.map((n: any) => ({
                     ...n,
                     createdAt: n.createdAt.toISOString(),
                 })),
@@ -130,25 +130,25 @@ export async function GET() {
 
             return NextResponse.json({
                 users: engineers.map(mapUser),
-                customers: customers.map(c => ({
+                customers: customers.map((c: any) => ({
                     ...c,
                     createdAt: c.createdAt.toISOString(),
                     updatedAt: c.updatedAt.toISOString(),
                 })),
-                devices: devices.map(d => ({
+                devices: devices.map((d: any) => ({
                     ...d,
                     serialNumber: d.serialNo,
                     createdAt: d.createdAt.toISOString(),
                 })),
                 jobs: jobs.map(mapJob),
-                partRequests: partRequests.map(r => ({
+                partRequests: partRequests.map((r: any) => ({
                     ...r,
                     createdAt: r.createdAt.toISOString(),
                     updatedAt: r.updatedAt.toISOString(),
                     reviewedAt: r.reviewedAt?.toISOString() ?? undefined,
                 })),
                 inventory: inventory.map(mapInventory),
-                notifications: notifications.map(n => ({
+                notifications: notifications.map((n: any) => ({
                     ...n,
                     createdAt: n.createdAt.toISOString(),
                 })),
@@ -169,25 +169,25 @@ export async function GET() {
 
         return NextResponse.json({
             users: users.map(mapUser),
-            customers: customers.map(c => ({
+            customers: customers.map((c: any) => ({
                 ...c,
                 createdAt: c.createdAt.toISOString(),
                 updatedAt: c.updatedAt.toISOString(),
             })),
-            devices: devices.map(d => ({
+            devices: devices.map((d: any) => ({
                 ...d,
                 serialNumber: d.serialNo,
                 createdAt: d.createdAt.toISOString(),
             })),
             jobs: jobs.map(mapJob),
-            partRequests: partRequests.map(r => ({
+            partRequests: partRequests.map((r: any) => ({
                 ...r,
                 createdAt: r.createdAt.toISOString(),
                 updatedAt: r.updatedAt.toISOString(),
                 reviewedAt: r.reviewedAt?.toISOString() ?? undefined,
             })),
             inventory: inventory.map(mapInventory),
-            notifications: notifications.map(n => ({
+            notifications: notifications.map((n: any) => ({
                 ...n,
                 createdAt: n.createdAt.toISOString(),
             })),
