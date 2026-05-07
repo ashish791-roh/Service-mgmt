@@ -1,6 +1,55 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireSession, LIMITS, checkLengths } from '@/lib/auth';
+import {
+    notifyCustomerStatusChange,
+    type NotifiableStatus,
+} from '@/lib/customerNotifications';
+
+// Statuses that trigger a customer-facing notification
+const CUSTOMER_NOTIFY_STATUSES = new Set<NotifiableStatus>([
+    'Assigned',
+    'In Progress',
+    'Completed',
+    'Delivered',
+]);
+
+// ── Helper: fetch customer + device and send notification ─────────
+async function sendCustomerNotification(
+    job: any,
+    newStatus: NotifiableStatus
+): Promise<void> {
+    try {
+        const [customer, device] = await Promise.all([
+            prisma.customer.findUnique({ where: { id: job.customerId } }),
+            prisma.device.findUnique({ where: { id: job.deviceId } }),
+        ]);
+
+        if (!customer) {
+            console.warn(`[notification] Customer not found for job ${job.id}`);
+            return;
+        }
+
+        const deviceInfo = device
+            ? `${device.brand} ${device.type} (${device.model})`
+            : undefined;
+
+        console.log(`[notification] Sending "${newStatus}" notification to ${customer.phone} for job ${job.id}`);
+
+        await notifyCustomerStatusChange({
+            customerName: customer.name,
+            phone: customer.phone,
+            email: (customer as any).email ?? null,
+            jobId: job.id,
+            newStatus,
+            deviceInfo,
+        });
+
+        console.log(`[notification] Done for job ${job.id}`);
+    } catch (err) {
+        console.error(`[notification] Failed for job ${job.id}:`, err);
+    }
+}
 
 // ── PUT /api/jobs/:id — admin or reception only ───────────────────
 // Full update: can reassign engineer, change cost, update status, etc.
@@ -22,6 +71,12 @@ export async function PUT(
             return NextResponse.json({ error: lengthError }, { status: 400 });
         }
 
+        // Fetch the current job so we can detect a status change
+        const existingJob = await prisma.job.findUnique({ where: { id: jobId } });
+        if (!existingJob) {
+            return NextResponse.json({ error: 'Job not found.' }, { status: 404 });
+        }
+
         const data: any = {};
         if (body.status !== undefined) data.status = body.status;
         if (body.assignedEngineerId !== undefined) data.engineerId = body.assignedEngineerId;
@@ -34,6 +89,7 @@ export async function PUT(
             data,
         });
 
+        // ── Internal engineer notification (unchanged) ────────────
         if (body.assignedEngineerId) {
             await prisma.notification.create({
                 data: {
@@ -42,6 +98,17 @@ export async function PUT(
                     jobId: job.id,
                 },
             });
+        }
+
+        // ── Customer SMS/email notification ───────────────────────
+        const newStatus = body.status as string | undefined;
+        const statusChanged = newStatus && newStatus !== existingJob.status;
+
+        console.log(`[PUT] jobId=${jobId} oldStatus=${existingJob.status} newStatus=${newStatus} changed=${statusChanged}`);
+
+        if (statusChanged && CUSTOMER_NOTIFY_STATUSES.has(newStatus as NotifiableStatus)) {
+            // Awaited so the notification completes before the response is sent
+            await sendCustomerNotification(job, newStatus as NotifiableStatus);
         }
 
         return NextResponse.json({
@@ -55,7 +122,7 @@ export async function PUT(
         });
     } catch (error: any) {
         if (error.code === 'P2025') {
-            return NextResponse.json({ error: 'Job not found.' }, { status: 404 });
+            return NextResponse.json({ error: 'Job not found.' }, { status: 404 })
         }
         console.error('[api/jobs/[id] PUT]', error);
         return NextResponse.json({ error: 'Failed to update job.' }, { status: 500 });
@@ -89,7 +156,7 @@ export async function PATCH(
             );
         }
 
-        // ── Validate repairNotes length ────────────────────────
+        // ── Validate repairNotes length ───────────────────────────
         const lengthError = checkLengths([
             [body.repairNotes, 'repairNotes', LIMITS.notes],
         ]);
@@ -97,7 +164,7 @@ export async function PATCH(
             return NextResponse.json({ error: lengthError }, { status: 400 });
         }
 
-        // ── Ownership check — fetch job first ──────────────────
+        // ── Ownership check — fetch job first ─────────────────────
         const existing = await prisma.job.findUnique({ where: { id: jobId } });
 
         if (!existing) {
@@ -111,7 +178,7 @@ export async function PATCH(
             );
         }
 
-        // ── Build safe update payload — engineers can only set these two fields
+        // ── Build safe update payload ─────────────────────────────
         const data: any = {};
         if (body.status !== undefined) data.status = body.status as EngineerAllowedStatus;
         if (body.repairNotes !== undefined) data.repairNotes = body.repairNotes;
@@ -121,6 +188,17 @@ export async function PATCH(
             where: { id: jobId },
             data,
         });
+
+        // ── Customer SMS/email notification ───────────────────────
+        const newStatus = body.status as string | undefined;
+        const statusChanged = newStatus && newStatus !== existing.status;
+
+        console.log(`[PATCH] jobId=${jobId} oldStatus=${existing.status} newStatus=${newStatus} changed=${statusChanged}`);
+
+        if (statusChanged && CUSTOMER_NOTIFY_STATUSES.has(newStatus as NotifiableStatus)) {
+            // Awaited so the notification completes before the response is sent
+            await sendCustomerNotification(job, newStatus as NotifiableStatus);
+        }
 
         return NextResponse.json({
             ...job,

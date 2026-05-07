@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireSession, LIMITS, checkLengths } from '@/lib/auth';
+import { notifyCustomerStatusChange } from '@/lib/customerNotifications';
 
 // POST /api/jobs — admin or reception
 export async function POST(request: Request) {
@@ -25,17 +26,20 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: lengthError }, { status: 400 });
         }
 
+        const jobStatus = body.status || 'New';
+
         const job = await prisma.job.create({
             data: {
                 customerId: body.customerId,
                 deviceId: body.deviceId,
                 engineerId: body.assignedEngineerId || null,
                 problemDesc: body.problemDescription,
-                status: body.status || 'New',
+                status: jobStatus,
                 estimatedCost: body.estimatedCost ? parseFloat(body.estimatedCost) : null,
             },
         });
 
+        // ── Internal engineer notification (unchanged) ────────────
         if (job.engineerId) {
             await prisma.notification.create({
                 data: {
@@ -44,6 +48,37 @@ export async function POST(request: Request) {
                     jobId: job.id,
                 },
             });
+        }
+
+        // ── Customer notification on job creation ─────────────────
+        // Notify the customer when the job is created with "Assigned" status
+        // (i.e. an engineer was already assigned at creation time).
+        // If no engineer is assigned yet (status = "New"), no customer notification
+        // is sent here — it will fire when reception later sets it to "Assigned".
+        if (jobStatus === 'Assigned' || (jobStatus === 'New' && job.engineerId)) {
+            const notifyStatus = 'Assigned';
+
+            const [customer, device] = await Promise.all([
+                prisma.customer.findUnique({ where: { id: job.customerId } }),
+                prisma.device.findUnique({ where: { id: job.deviceId } }),
+            ]);
+
+            if (customer) {
+                const deviceInfo = device
+                    ? `${device.brand} ${device.type} (${device.model})`
+                    : undefined;
+
+                notifyCustomerStatusChange({
+                    customerName: customer.name,
+                    phone: customer.phone,
+                    email: (customer as any).email ?? null,
+                    jobId: job.id,
+                    newStatus: notifyStatus,
+                    deviceInfo,
+                }).catch((err) =>
+                    console.error('[api/jobs POST] Notification error:', err)
+                );
+            }
         }
 
         return NextResponse.json({

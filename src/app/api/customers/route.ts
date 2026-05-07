@@ -16,9 +16,10 @@ export async function POST(request: Request) {
 
         // Input length caps
         const lengthError = checkLengths([
-            [body.name, 'name', LIMITS.name],
-            [body.phone, 'phone', LIMITS.phone],
+            [body.name,    'name',    LIMITS.name],
+            [body.phone,   'phone',   LIMITS.phone],
             [body.address, 'address', LIMITS.address],
+            [body.email,   'email',   LIMITS.email],
         ]);
         if (lengthError) {
             return NextResponse.json({ error: lengthError }, { status: 400 });
@@ -26,10 +27,14 @@ export async function POST(request: Request) {
 
         const customer = await prisma.customer.create({
             data: {
-                name: body.name.trim(),
-                phone: body.phone.trim(),
+                name:    body.name.trim(),
+                phone:   body.phone.trim(),
                 address: body.address?.trim() || null,
-            },
+                // `email` is optional — only present after the DB migration below.
+                // Prisma will ignore this key if the column does not yet exist in the
+                // generated client; once migrated it will be stored as provided.
+                ...(body.email != null ? { email: body.email.trim().toLowerCase() } : {}),
+            } as any, // `as any` removed once Prisma client is regenerated post-migration
         });
 
         return NextResponse.json({
