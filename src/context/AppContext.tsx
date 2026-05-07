@@ -75,10 +75,17 @@ function applyAppData(data: any, setters: {
 }
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // ── Always start with null on both server and client ─────────────
-  // Session is restored in useEffect AFTER hydration to avoid mismatch
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [hydrated, setHydrated] = useState(false);
+  // ── Auth state — currentUser and hydrated are set atomically ────────
+  // Using a single state object prevents any render where hydrated=true
+  // but currentUser=null for a logged-in user (which would flash LoginPage).
+  const [auth, setAuth] = useState<{ currentUser: User | null; hydrated: boolean }>({
+    currentUser: null,
+    hydrated: false,
+  });
+  const currentUser = auth.currentUser;
+  const hydrated = auth.hydrated;
+  const setCurrentUser = (user: User | null) =>
+    setAuth(prev => ({ ...prev, currentUser: user }));
 
   const [users, setUsers] = useState<User[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -91,28 +98,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const setters = { setUsers, setCustomers, setDevices, setJobs, setPartRequests, setInventory, setNotifications };
 
   // ── Restore session AFTER hydration (client only) ────────────────
-  // The HttpOnly cookie is sent automatically by the browser on every
-  // API request, so we just need to restore the UI user from localStorage
-  // and then verify by fetching data (which requires a valid cookie).
   useEffect(() => {
     const restore = async () => {
       try {
         const stored = localStorage.getItem(SESSION_KEY);
         if (stored) {
           const user = JSON.parse(stored) as User;
-          // Verify the server-side session is still valid
           const res = await fetch('/api/data');
           if (res.ok) {
-            setCurrentUser(user);
             const data = await res.json();
+            // Set currentUser + hydrated atomically — single setState,
+            // no intermediate render where hydrated=true but user=null.
+            setAuth({ currentUser: user, hydrated: true });
             applyAppData(data, setters);
+            return;
           } else {
-            // Session expired on server — clear local state
             localStorage.removeItem(SESSION_KEY);
           }
         }
       } catch { /**/ }
-      setHydrated(true);
+      // No valid session — mark hydrated so LoginPage can render
+      setAuth({ currentUser: null, hydrated: true });
     };
     restore();
   // eslint-disable-next-line react-hooks/exhaustive-deps

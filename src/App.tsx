@@ -31,9 +31,22 @@ const PAGE_ICONS: Record<string, any> = {
 };
 
 function AppContent() {
-  const { currentUser } = useApp();
+  const { currentUser, hydrated } = useApp();
   const [activePage, setActivePage] = useState<string>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
+
+  // Show spinner while session is being restored from localStorage/cookie.
+  // This prevents the login page from flashing on every refresh.
+  if (!hydrated) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-[13px] text-gray-400 font-medium">Loading…</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!currentUser) return <LoginPage />;
 

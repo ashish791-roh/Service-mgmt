@@ -28,9 +28,21 @@ const PAGE_ICONS: Record<string, string> = {
 };
 
 function AppContent() {
-  const { currentUser } = useApp();
+  const { currentUser, hydrated } = useApp();
   const [activePage, setActivePage] = useState<string>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
+
+  // Wait for session restore — prevents login page flash on refresh
+  if (!hydrated) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#eef0f6]">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-[13px] text-slate-400 font-medium">Loading…</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!currentUser) return <LoginPage />;
 

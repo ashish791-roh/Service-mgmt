@@ -103,7 +103,19 @@ export async function DELETE(
         // Kill all sessions for the user being deleted before removing the record
         await destroyAllSessionsForUser(id);
 
-        await prisma.user.delete({ where: { id } });
+        // Clean up all related records in a transaction to avoid FK constraint errors.
+        // Jobs assigned to this engineer are unassigned (engineerId → null).
+        // Notifications and part requests belonging to the user are deleted first.
+        await prisma.$transaction([
+            prisma.job.updateMany({
+                where: { engineerId: id },
+                data: { engineerId: null },
+            }),
+            prisma.partRequest.deleteMany({ where: { engineerId: id } }),
+            prisma.notification.deleteMany({ where: { userId: id } }),
+            prisma.user.delete({ where: { id } }),
+        ]);
+
         return NextResponse.json({ success: true });
     } catch (error: any) {
         if (error.code === 'P2025') {
