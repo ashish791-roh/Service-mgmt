@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { Banknote, Hourglass, CheckCircle, TrendingUp, X } from 'lucide-react';
 import type { JobStatus } from '../types';
@@ -13,10 +13,12 @@ const PageHeader = ({ title, subtitle, action }: { title: string, subtitle: stri
   </div>
 );
 
-const Card = ({ children, className = "" }: { children: React.ReactNode, className?: string }) => (
-  <div className={`bg-white rounded-xl border border-gray-200 overflow-hidden ${className}`}>
-    {children}
-  </div>
+const Card = React.forwardRef<HTMLDivElement, { children: React.ReactNode, className?: string }>(
+  ({ children, className = "" }, ref) => (
+    <div ref={ref} className={`bg-white rounded-xl border border-gray-200 overflow-hidden ${className}`}>
+      {children}
+    </div>
+  )
 );
 
 const MetricCard = ({ title, value, icon: Icon, color, sub }: any) => {
@@ -89,6 +91,19 @@ export const BillingPage: React.FC = () => {
   const [billingModal, setBillingModal] = useState<string | null>(null);
   const [actualCostInput, setActualCostInput] = useState('');
   const [filter, setFilter] = useState<'pending-billing' | 'completed' | 'delivered' | 'all'>('pending-billing');
+  const tableRef = useRef<HTMLDivElement>(null);
+
+  const handleReviewAndCollect = () => {
+    setFilter('pending-billing');
+    setTimeout(() => {
+      tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+    if (completedJobs.length === 1) {
+      const job = completedJobs[0];
+      setBillingModal(job.id);
+      setActualCostInput(String(job.actualCost ?? job.estimatedCost));
+    }
+  };
 
   const completedJobs = jobs.filter((j: any) => j.status === 'Completed');
   const deliveredJobs = jobs.filter((j: any) => j.status === 'Delivered');
@@ -139,7 +154,7 @@ export const BillingPage: React.FC = () => {
               <p className="text-[11px] font-normal text-orange-600 uppercase tracking-wide mt-1">Collect ₹{pendingCollection.toLocaleString()} in pending payments</p>
             </div>
           </div>
-          <Button text="Review & Collect" variant="primary" onClick={() => setFilter('pending-billing')} className="w-full sm:w-auto" />
+          <Button text="Review & Collect" variant="primary" onClick={handleReviewAndCollect} className="w-full sm:w-auto" />
         </div>
       )}
 
@@ -157,7 +172,7 @@ export const BillingPage: React.FC = () => {
       </div>
 
       {/* Jobs Table */}
-      <Card>
+      <Card ref={tableRef}>
         <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
           <h2 className="text-[13px] font-medium text-gray-900">
             {filter === 'pending-billing' ? 'Jobs Ready for Delivery' : filter === 'delivered' ? 'Completed & Delivered Jobs' : 'All Billed Jobs'}
