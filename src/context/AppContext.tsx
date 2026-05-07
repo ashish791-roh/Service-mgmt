@@ -24,10 +24,10 @@ interface AppContextType {
   partRequests: PartRequest[];
   inventory: InventoryItem[];
   notifications: Notification[];
-  addUser: (user: Omit<User, 'id'>) => Promise<void>;
+  addUser: (user: Omit<User, 'id'>) => Promise<{ ok: boolean; error?: string }>;
   updateUser: (userId: string, data: Partial<Pick<User, 'name' | 'email' | 'role'>> & { password?: string }) => Promise<{ ok: boolean; error?: string }>;
   deleteUser: (userId: string) => Promise<{ ok: boolean; error?: string }>;
-  toggleUserActive: (userId: string) => void;
+  toggleUserActive: (userId: string) => Promise<{ ok: boolean; error?: string }>;
   addCustomer: (c: Omit<Customer, 'id' | 'createdAt'>) => Promise<Customer>;
   addDevice: (d: Omit<Device, 'id'>) => Promise<Device>;
   addJob: (j: Omit<Job, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Job>;
@@ -163,7 +163,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // ── Users ────────────────────────────────────────────────────────
-  const addUser = async (user: Omit<User, 'id'>) => {
+  const addUser = async (user: Omit<User, 'id'>): Promise<{ ok: boolean; error?: string }> => {
     try {
       const res = await fetch('/api/users', {
         method: 'POST',
@@ -178,8 +178,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const real = await res.json();
       if (!res.ok || real.error) {
-        console.error('[addUser] API error:', real.error);
-        return;
+        return { ok: false, error: real.error ?? 'Failed to create user.' };
       }
       // Map API response shape → frontend User shape
       const mapped: User = {
@@ -192,25 +191,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         joinedAt: real.joinedAt ?? real.createdAt?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
       };
       setUsers(prev => [...prev, mapped]);
+      return { ok: true };
     } catch (err) {
-      console.error('[addUser] Network error:', err);
+      return { ok: false, error: 'Network error — please check your connection.' };
     }
   };
 
-  const toggleUserActive = (userId: string) => {
+  const toggleUserActive = async (userId: string): Promise<{ ok: boolean; error?: string }> => {
     const target = users.find(u => u.id === userId);
-    if (!target) return;
+    if (!target) return { ok: false, error: 'User not found.' };
     const newStatus = !target.active;
 
     setUsers(prev => prev.map(u => u.id === userId ? { ...u, active: newStatus } : u));
 
-    fetch(`/api/users/${userId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isActive: newStatus }),
-    }).catch(() =>
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, active: !newStatus } : u))
-    );
+    try {
+      const res = await fetch(`/api/users/${userId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: newStatus }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        // Roll back optimistic update
+        setUsers(prev => prev.map(u => u.id === userId ? { ...u, active: !newStatus } : u));
+        return { ok: false, error: json.error ?? 'Failed to update user status.' };
+      }
+      return { ok: true };
+    } catch {
+      // Roll back on network error
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, active: !newStatus } : u));
+      return { ok: false, error: 'Network error — please check your connection.' };
+    }
   };
 
   const updateUser = async (userId: string, data: Partial<Pick<User, 'name' | 'email' | 'role'>> & { password?: string }): Promise<{ ok: boolean; error?: string }> => {

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { Wrench, CheckCircle, Bell, Clipboard, Package, Activity, X } from 'lucide-react';
+import { Wrench, CheckCircle, Bell, Clipboard, Package, Activity, X, Clock, ChevronRight } from 'lucide-react';
 import type { JobStatus } from '../types';
+import { Toast, useToast, getJobAgeLevel } from '../components/ui';
 
 const PageHeader = ({ title, subtitle, action }: { title: string, subtitle: string, action?: React.ReactNode }) => (
   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 bg-white p-6 rounded-xl border border-gray-200">
@@ -19,7 +20,7 @@ const Card = ({ children, className = "" }: { children: React.ReactNode, classNa
   </div>
 );
 
-const MetricCard = ({ title, value, icon: Icon, color, sub }: any) => {
+const MetricCard = ({ title, value, icon: Icon, color, sub, onClick }: any) => {
   const colorMap: Record<string, string> = {
     teal: "text-teal-500 bg-teal-50",
     cyan: "text-cyan-500 bg-cyan-50",
@@ -29,16 +30,147 @@ const MetricCard = ({ title, value, icon: Icon, color, sub }: any) => {
   const bgClass = colorMap[color] || colorMap.teal;
 
   return (
-    <div className="bg-white rounded-xl p-5 border border-gray-200 relative overflow-hidden flex flex-col gap-4">
+    <div
+      onClick={onClick}
+      className={`bg-white rounded-xl p-5 border border-gray-200 relative overflow-hidden flex flex-col gap-4 ${onClick ? 'cursor-pointer hover:border-teal-300 hover:shadow-md transition-all group' : ''}`}
+    >
       <div className="flex justify-between items-start">
         <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${bgClass}`}>
           <Icon size={18} strokeWidth={2} />
         </div>
-        {sub && <span className="bg-gray-100 text-gray-500 text-[11px] font-medium px-2 py-1 rounded-lg">{sub}</span>}
+        <div className="flex items-center gap-2">
+          {sub && <span className="bg-gray-100 text-gray-500 text-[11px] font-medium px-2 py-1 rounded-lg">{sub}</span>}
+          {onClick && (
+            <span className="text-[10px] font-medium text-teal-500 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
+              Details <ChevronRight size={12} />
+            </span>
+          )}
+        </div>
       </div>
       <div>
         <p className="text-[13px] font-medium text-gray-500">{title}</p>
         <h3 className="text-[18px] font-medium text-gray-900 mt-1">{value}</h3>
+      </div>
+    </div>
+  );
+};
+
+// ── Engineer Detail Modal ─────────────────────────────────────────────────────
+type EngineerModalType = 'active' | 'pending' | 'completed' | 'overdue' | null;
+
+const EngineerDetailModal = ({
+  type, onClose, jobs, customers, devices
+}: {
+  type: EngineerModalType;
+  onClose: () => void;
+  jobs: any[];
+  customers: any[];
+  devices: any[];
+}) => {
+  if (!type) return null;
+
+  const configs: Record<NonNullable<EngineerModalType>, { title: string; subtitle: string; accentColor: string }> = {
+    active:    { title: 'Active Repairs',  subtitle: 'Jobs currently in pipeline',      accentColor: 'text-cyan-600' },
+    pending:   { title: 'Pending Jobs',    subtitle: 'Jobs not yet started',            accentColor: 'text-orange-600' },
+    completed: { title: 'Completed Jobs',  subtitle: 'Successfully resolved repairs',   accentColor: 'text-green-600' },
+    overdue:   { title: 'Overdue Jobs',    subtitle: 'Jobs older than 10 days',         accentColor: 'text-red-600' },
+  };
+
+  const jobStatusColors: Record<string, string> = {
+    'New':        'border-cyan-400 text-cyan-700 bg-cyan-50',
+    'Assigned':   'border-teal-400 text-teal-700 bg-teal-50',
+    'In Progress':'border-orange-400 text-orange-700 bg-orange-50',
+    'Completed':  'border-green-400 text-green-700 bg-green-50',
+    'Delivered':  'border-green-400 text-green-700 bg-green-50',
+  };
+
+  const getFilteredJobs = () => {
+    if (type === 'active')    return jobs.filter(j => ['Assigned', 'In Progress'].includes(j.status));
+    if (type === 'pending')   return jobs.filter(j => j.status === 'Assigned');
+    if (type === 'completed') return jobs.filter(j => ['Completed', 'Delivered'].includes(j.status));
+    if (type === 'overdue')   return jobs.filter(j => {
+      const daysOld = Math.floor((Date.now() - new Date(j.createdAt).getTime()) / 86400000);
+      return ['Assigned', 'In Progress'].includes(j.status) && daysOld > 10;
+    });
+    return [];
+  };
+
+  const filteredJobs = getFilteredJobs();
+  const cfg = configs[type];
+
+  const renderJobRow = (job: any) => {
+    const customer = customers.find((c: any) => c.id === job.customerId);
+    const device = devices.find((d: any) => d.id === job.deviceId);
+    const daysOld = Math.floor((Date.now() - new Date(job.createdAt).getTime()) / 86400000);
+    const style = jobStatusColors[job.status] || 'border-gray-300 text-gray-700 bg-gray-50';
+    const borderCls = style.split(' ')[0];
+    const badgeCls = style.split(' ').slice(1).join(' ');
+    const isOverdue = daysOld > 10;
+    const isWarning = daysOld > 5 && !isOverdue;
+
+    return (
+      <div key={job.id} className={`flex flex-col gap-2 px-6 py-4 border-l-4 ${borderCls} hover:bg-gray-50 transition-colors`}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-[13px] font-medium text-gray-900 truncate">{job.problemDescription}</p>
+            <p className="text-[11px] text-gray-500 mt-0.5">
+              {customer?.name ?? 'Unknown'} · {device?.brand} {device?.model}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className={`px-2 py-0.5 rounded text-[11px] font-medium ${badgeCls}`}>{job.status}</span>
+            {isOverdue && <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-red-100 text-red-700">Overdue</span>}
+            {isWarning && <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-yellow-100 text-yellow-700">Warning</span>}
+          </div>
+        </div>
+        <div className="flex items-center gap-4 text-[11px] text-gray-500">
+          <span>Created {new Date(job.createdAt).toLocaleDateString('en-IN')}</span>
+          <span>·</span>
+          <span className={isOverdue ? 'text-red-600 font-semibold' : isWarning ? 'text-yellow-600 font-medium' : 'text-green-600'}>
+            {daysOld}d ago
+          </span>
+          <span>·</span>
+          <span className="font-medium text-gray-700">#{job.id}</span>
+        </div>
+        {job.repairNotes && (
+          <p className="text-[11px] text-teal-700 bg-teal-50 rounded px-3 py-2 border border-teal-100">
+            📝 {job.repairNotes}
+          </p>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-end bg-gray-900/40 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="relative w-full max-w-xl h-full bg-white shadow-2xl flex flex-col overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-200 bg-white shrink-0">
+          <div>
+            <h2 className="text-[18px] font-medium text-gray-900">{cfg.title}</h2>
+            <p className={`text-[13px] font-normal mt-0.5 ${cfg.accentColor}`}>{cfg.subtitle}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 hover:text-gray-900 transition-colors"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {filteredJobs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-48 text-center px-6">
+              <CheckCircle size={32} className="text-gray-300 mb-3" />
+              <p className="text-[13px] font-medium text-gray-500">No jobs in this category</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {filteredJobs.map(renderJobRow)}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -90,6 +222,7 @@ const PartStatusBadge = ({ status }: { status: string }) => {
 
 export const EngineerDashboard: React.FC = () => {
   const { currentUser, jobs, notifications, markNotificationRead, customers, devices } = useApp();
+  const [activeModal, setActiveModal] = useState<EngineerModalType>(null);
   if (!currentUser) return null;
 
   const myJobs = jobs.filter(j => j.assignedEngineerId === currentUser.id);
@@ -97,14 +230,18 @@ export const EngineerDashboard: React.FC = () => {
   const active = myJobs.filter(j => ['Assigned', 'In Progress'].includes(j.status));
   const completed = myJobs.filter(j => ['Completed', 'Delivered'].includes(j.status));
 
+  const pending = myJobs.filter(j => j.status === 'Assigned');
+  const overdueCount = active.filter(j => getJobAgeLevel(j.createdAt, j.status) === 'red').length;
+
   return (
     <div className="max-w-[1400px] mx-auto pb-6 space-y-6">
-      <PageHeader title="Workspace Overview" subtitle={`Welcome back, ${currentUser.name}`} />
+      <PageHeader title="Workspace Overview" subtitle={`Welcome back, ${currentUser.name} — click any card to view details`} />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <MetricCard title="Active Repairs" value={active.length} icon={Wrench} color="cyan" sub="In Pipeline" />
-        <MetricCard title="Completed" value={completed.length} icon={CheckCircle} color="green" sub="Total" />
-        <MetricCard title="Alerts" value={myNotifs.length} icon={Bell} color="orange" sub="Unread" />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+        <MetricCard title="Active Repairs" value={active.length} icon={Wrench} color="cyan" sub="In Pipeline" onClick={() => setActiveModal('active')} />
+        <MetricCard title="Pending" value={pending.length} icon={Clock} color="orange" sub="Not Started" onClick={() => setActiveModal('pending')} />
+        <MetricCard title="Completed" value={completed.length} icon={CheckCircle} color="green" sub="Total" onClick={() => setActiveModal('completed')} />
+        <MetricCard title="Overdue" value={overdueCount} icon={Bell} color="orange" sub={overdueCount > 0 ? "> 10 days" : ""} onClick={() => setActiveModal('overdue')} />
       </div>
 
       {myNotifs.length > 0 && (
@@ -145,12 +282,17 @@ export const EngineerDashboard: React.FC = () => {
             {active.map(job => {
               const customer = customers.find(c => c.id === job.customerId);
               const device = devices.find(d => d.id === job.deviceId);
+              const ageLevel = getJobAgeLevel(job.createdAt, job.status);
+              const borderColor = ageLevel === 'red' ? 'border-red-400' : ageLevel === 'yellow' ? 'border-amber-400' : 'border-teal-400';
               return (
-                <div key={job.id} className="flex flex-col sm:flex-row sm:items-center gap-4 px-6 py-4 hover:bg-gray-50 transition-colors cursor-pointer border-l-4 border-transparent hover:border-teal-500">
+                <div key={job.id} className={`flex flex-col sm:flex-row sm:items-center gap-4 px-6 py-4 hover:bg-gray-50 transition-colors cursor-pointer border-l-4 ${borderColor}`}>
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
                       <span className="text-[11px] font-medium text-gray-500 uppercase tracking-wide bg-gray-100 px-2 py-1 rounded">#{job.id}</span>
                       <StatusBadge status={job.status} />
+                      {ageLevel === 'red' && (
+                        <span className="text-[11px] font-medium text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">Overdue</span>
+                      )}
                     </div>
                     <p className="text-[13px] font-medium text-gray-900 mb-0.5">{customer?.name}</p>
                     <p className="text-[11px] font-normal text-gray-500 uppercase tracking-wide mb-2">{device?.brand} {device?.model}</p>
@@ -162,6 +304,14 @@ export const EngineerDashboard: React.FC = () => {
           </div>
         )}
       </Card>
+
+      <EngineerDetailModal
+        type={activeModal}
+        onClose={() => setActiveModal(null)}
+        jobs={myJobs}
+        customers={customers}
+        devices={devices}
+      />
     </div>
   );
 };
@@ -172,23 +322,30 @@ export const MyJobsPage: React.FC = () => {
   const [showPartModal, setShowPartModal] = useState<string | null>(null);
   const [statusUpdate, setStatusUpdate] = useState<{ status: string; notes: string }>({ status: '', notes: '' });
   const [partForm, setPartForm] = useState({ partName: '', quantity: '1', reason: '' });
+  const { toast, show } = useToast();
 
   if (!currentUser) return null;
   const myJobs = jobs.filter(j => j.assignedEngineerId === currentUser.id);
 
   const JOB_STATUSES: JobStatus[] = ['Assigned', 'In Progress', 'Completed'];
 
-  const handleStatusUpdate = (jobId: string) => {
-    if (!statusUpdate.status) { alert('Select a status'); return; }
-    updateJobStatus(jobId, statusUpdate.status as JobStatus, statusUpdate.notes);
-    setSelectedJob(null);
+  const handleStatusUpdate = async (jobId: string) => {
+    if (!statusUpdate.status) { show('Please select a status', 'error'); return; }
+    const result = await updateJobStatus(jobId, statusUpdate.status as JobStatus, statusUpdate.notes);
+    if (result.ok) {
+      setSelectedJob(null);
+      show('Job status updated successfully!', 'success');
+    } else {
+      show(result.error ?? 'Failed to update status', 'error');
+    }
   };
 
   const handlePartRequest = (jobId: string) => {
-    if (!partForm.partName || !partForm.reason) { alert('Fill all fields'); return; }
+    if (!partForm.partName || !partForm.reason) { show('Please fill all required fields', 'error'); return; }
     addPartRequest({ jobId, engineerId: currentUser.id, ...partForm, quantity: parseInt(partForm.quantity) });
     setShowPartModal(null);
     setPartForm({ partName: '', quantity: '1', reason: '' });
+    show('Parts request submitted successfully!', 'success');
   };
 
   return (
@@ -347,6 +504,7 @@ export const MyJobsPage: React.FC = () => {
           </div>
         </div>
       )}
+      {toast && <Toast {...toast} />}
     </div>
   );
 };

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { StatusBadge, UrgencyDot, Toast, useToast, PartStatusBadge } from '../components/ui';
-import { Briefcase, AlertCircle, Zap, Users, Settings, Search, Plus, ArrowRight, X } from 'lucide-react';
+import { StatusBadge, UrgencyDot, JobAgeBadge, getJobAgeLevel, Toast, useToast, PartStatusBadge } from '../components/ui';
+import { Briefcase, AlertCircle, Zap, Users, Settings, Search, Plus, ArrowRight, X, Phone, MapPin, Monitor, Wrench, Calendar, ChevronRight } from 'lucide-react';
 
 const PageHeader = ({ title, subtitle, action }: { title: string, subtitle: string, action?: React.ReactNode }) => (
   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 bg-white p-6 rounded-xl border border-gray-200">
@@ -19,18 +19,243 @@ const Card = ({ children, className = "" }: any) => (
   </div>
 );
 
-const MetricCard = ({ title, value, icon: Icon, colorClass, sub }: any) => (
-  <div className="bg-white rounded-xl p-5 border border-gray-200 shadow-sm relative overflow-hidden group">
+const MetricCard = ({ title, value, icon: Icon, colorClass, sub, onClick }: any) => (
+  <div
+    onClick={onClick}
+    className={`bg-white rounded-xl p-5 border border-gray-200 shadow-sm relative overflow-hidden group ${onClick ? 'cursor-pointer hover:border-teal-300 hover:shadow-md transition-all' : ''}`}
+  >
     <div className="flex justify-between items-start mb-4">
       <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${colorClass}`}>
         <Icon size={20} />
       </div>
-      {sub && <span className="bg-rose-100 text-rose-600 text-[11px] font-medium px-2.5 py-1 rounded-md uppercase tracking-wide">{sub}</span>}
+      <div className="flex items-center gap-2">
+        {sub && <span className="bg-rose-100 text-rose-600 text-[11px] font-medium px-2.5 py-1 rounded-md uppercase tracking-wide">{sub}</span>}
+        {onClick && (
+          <span className="text-[10px] font-medium text-teal-500 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
+            Details <ChevronRight size={12} />
+          </span>
+        )}
+      </div>
     </div>
     <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1">{title}</p>
     <h3 className="text-[24px] font-medium text-gray-900 leading-none">{value}</h3>
   </div>
 );
+
+// ── Reception Detail Modal (slide-in drawer) ──────────────────────────────────
+type ReceptionModalType = 'total' | 'unassigned' | 'inprogress' | 'customers' | null;
+
+const ReceptionDetailModal = ({
+  type, onClose, jobs, customers, users, onNavigate
+}: {
+  type: ReceptionModalType;
+  onClose: () => void;
+  jobs: any[];
+  customers: any[];
+  users: any[];
+  onNavigate: (p: string) => void;
+}) => {
+  if (!type) return null;
+
+  const configs: Record<NonNullable<ReceptionModalType>, { title: string; subtitle: string; accentColor: string }> = {
+    total:       { title: 'All Jobs',        subtitle: 'Complete job registry',            accentColor: 'text-cyan-600' },
+    unassigned:  { title: 'Unassigned Jobs', subtitle: 'Jobs waiting for an engineer',     accentColor: 'text-rose-600' },
+    inprogress:  { title: 'In Progress',     subtitle: 'Active repairs underway',          accentColor: 'text-amber-600' },
+    customers:   { title: 'Customers',       subtitle: 'Registered client accounts',       accentColor: 'text-green-600' },
+  };
+
+  const jobStatusColors: Record<string, string> = {
+    'New':        'border-cyan-400 text-cyan-700 bg-cyan-50',
+    'Assigned':   'border-teal-400 text-teal-700 bg-teal-50',
+    'In Progress':'border-orange-400 text-orange-700 bg-orange-50',
+    'Completed':  'border-green-400 text-green-700 bg-green-50',
+    'Delivered':  'border-green-400 text-green-700 bg-green-50',
+  };
+
+  const cfg = configs[type];
+
+  const renderContent = () => {
+    if (type === 'total') {
+      return (
+        <div className="divide-y divide-gray-100">
+          {jobs.length === 0 && <p className="px-6 py-8 text-[13px] text-gray-400 text-center">No jobs yet.</p>}
+          {jobs.map((job: any) => {
+            const customer = customers.find((c: any) => c.id === job.customerId);
+            const engineer = users.find((u: any) => u.id === job.assignedEngineerId);
+            const daysOld = Math.floor((Date.now() - new Date(job.createdAt).getTime()) / 86400000);
+            const style = jobStatusColors[job.status] || 'border-gray-300 text-gray-700 bg-gray-50';
+            const borderCls = style.split(' ')[0];
+            const badgeCls = style.split(' ').slice(1).join(' ');
+            return (
+              <div key={job.id} className={`flex flex-col gap-2 px-6 py-4 border-l-4 ${borderCls} hover:bg-gray-50 transition-colors`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-medium text-gray-900 truncate">{job.problemDescription}</p>
+                    <p className="text-[11px] text-gray-500 mt-0.5">
+                      {customer?.name ?? 'Unknown'} · {engineer ? engineer.name : <span className="text-rose-500">Unassigned</span>}
+                    </p>
+                  </div>
+                  <span className={`px-2 py-0.5 rounded text-[11px] font-medium shrink-0 ${badgeCls}`}>{job.status}</span>
+                </div>
+                <div className="flex items-center gap-4 text-[11px] text-gray-500">
+                  <span>{new Date(job.createdAt).toLocaleDateString('en-IN')}</span>
+                  <span>·</span>
+                  <span className={daysOld > 10 ? 'text-red-500 font-medium' : daysOld > 5 ? 'text-yellow-600 font-medium' : 'text-green-600'}>
+                    {daysOld}d ago
+                  </span>
+                  <span>·</span>
+                  <span className="font-medium text-gray-700">₹{job.estimatedCost?.toLocaleString()}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    if (type === 'unassigned') {
+      const unassigned = jobs.filter((j: any) => !j.assignedEngineerId || j.status === 'New');
+      return (
+        <>
+          <div className="px-6 py-4 bg-rose-50 border-b border-rose-100 flex items-center justify-between">
+            <p className="text-[13px] font-medium text-rose-700">{unassigned.length} jobs need assignment</p>
+            <button
+              onClick={() => { onClose(); onNavigate('assign'); }}
+              className="text-[11px] font-medium text-white bg-rose-500 hover:bg-rose-600 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              Go to Assign Page →
+            </button>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {unassigned.length === 0 && <p className="px-6 py-8 text-[13px] text-gray-400 text-center">All jobs are assigned! 🎉</p>}
+            {unassigned.map((job: any) => {
+              const customer = customers.find((c: any) => c.id === job.customerId);
+              const daysOld = Math.floor((Date.now() - new Date(job.createdAt).getTime()) / 86400000);
+              return (
+                <div key={job.id} className="flex flex-col gap-2 px-6 py-4 border-l-4 border-rose-400 hover:bg-gray-50 transition-colors">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] font-medium text-gray-900 truncate">{job.problemDescription}</p>
+                      <p className="text-[11px] text-gray-500 mt-0.5">{customer?.name ?? 'Unknown'} · {customer?.phone}</p>
+                    </div>
+                    <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-rose-100 text-rose-700 shrink-0">Unassigned</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-[11px] text-gray-500">
+                    <span>{new Date(job.createdAt).toLocaleDateString('en-IN')}</span>
+                    <span>·</span>
+                    <span className={daysOld > 5 ? 'text-red-600 font-medium' : 'text-gray-600'}>{daysOld}d waiting</span>
+                    <span>·</span>
+                    <span className="font-medium text-gray-700">₹{job.estimatedCost?.toLocaleString()}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      );
+    }
+
+    if (type === 'inprogress') {
+      const inProgress = jobs.filter((j: any) => j.status === 'In Progress');
+      return (
+        <div className="divide-y divide-gray-100">
+          {inProgress.length === 0 && <p className="px-6 py-8 text-[13px] text-gray-400 text-center">No jobs in progress.</p>}
+          {inProgress.map((job: any) => {
+            const customer = customers.find((c: any) => c.id === job.customerId);
+            const engineer = users.find((u: any) => u.id === job.assignedEngineerId);
+            const daysOld = Math.floor((Date.now() - new Date(job.createdAt).getTime()) / 86400000);
+            const isOverdue = daysOld > 10;
+            return (
+              <div key={job.id} className={`flex flex-col gap-2 px-6 py-4 border-l-4 ${isOverdue ? 'border-red-400' : 'border-amber-400'} hover:bg-gray-50 transition-colors`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-medium text-gray-900 truncate">{job.problemDescription}</p>
+                    <p className="text-[11px] text-gray-500 mt-0.5">
+                      {customer?.name ?? 'Unknown'} · {engineer?.name ?? 'Unknown Engineer'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-amber-100 text-amber-700">In Progress</span>
+                    {isOverdue && <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-red-100 text-red-700">Overdue</span>}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 text-[11px] text-gray-500">
+                  <span>{new Date(job.createdAt).toLocaleDateString('en-IN')}</span>
+                  <span>·</span>
+                  <span className={isOverdue ? 'text-red-600 font-semibold' : 'text-gray-600'}>{daysOld}d in progress</span>
+                  <span>·</span>
+                  <span className="font-medium text-gray-700">₹{job.estimatedCost?.toLocaleString()}</span>
+                </div>
+                {job.repairNotes && (
+                  <p className="text-[11px] text-teal-700 bg-teal-50 rounded px-3 py-2 border border-teal-100">📝 {job.repairNotes}</p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    if (type === 'customers') {
+      return (
+        <div className="divide-y divide-gray-100">
+          {customers.length === 0 && <p className="px-6 py-8 text-[13px] text-gray-400 text-center">No customers yet.</p>}
+          {customers.map((c: any) => {
+            const clientJobs = jobs.filter((j: any) => j.customerId === c.id);
+            const active = clientJobs.filter((j: any) => ['New', 'Assigned', 'In Progress'].includes(j.status)).length;
+            const done = clientJobs.filter((j: any) => ['Completed', 'Delivered'].includes(j.status)).length;
+            return (
+              <div key={c.id} className="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 transition-colors">
+                <div className="w-9 h-9 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center font-medium text-[14px] shrink-0">
+                  {c.name.charAt(0).toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] font-medium text-gray-900 truncate">{c.name}</p>
+                  <p className="text-[11px] text-gray-500 mt-0.5">{c.phone} · {c.address}</p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-[12px] font-medium text-gray-700">{clientJobs.length} job{clientJobs.length !== 1 ? 's' : ''}</p>
+                  <p className="text-[11px] text-gray-400">
+                    {active > 0 ? <span className="text-orange-500">{active} active</span> : ''}
+                    {active > 0 && done > 0 ? ' · ' : ''}
+                    {done > 0 ? <span className="text-green-600">{done} done</span> : ''}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    return null;
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-end bg-gray-900/40 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="relative w-full max-w-xl h-full bg-white shadow-2xl flex flex-col overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-200 bg-white shrink-0">
+          <div>
+            <h2 className="text-[18px] font-medium text-gray-900">{cfg.title}</h2>
+            <p className={`text-[13px] font-normal mt-0.5 ${cfg.accentColor}`}>{cfg.subtitle}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 hover:text-gray-900 transition-colors"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {renderContent()}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const Button = ({ icon: Icon, text, onClick, variant = 'primary', className = "" }: any) => {
   const styles: any = {
@@ -52,19 +277,20 @@ const Button = ({ icon: Icon, text, onClick, variant = 'primary', className = ""
 // ── ReceptionDashboard ─────────────────────────────────────────
 export const ReceptionDashboard: React.FC<{ onNavigate: (p: string) => void }> = ({ onNavigate }) => {
   const { jobs, customers, users, partRequests, currentUser } = useApp();
+  const [activeModal, setActiveModal] = useState<ReceptionModalType>(null);
   const showFinancials = currentUser?.role !== 'engineer';
   const pendingParts = partRequests.filter(r => r.status === 'Pending');
   const unassigned = jobs.filter(j => !j.assignedEngineerId);
 
   return (
     <div className="max-w-[1400px] mx-auto pb-8 space-y-6">
-      <PageHeader title="Command Center" subtitle="Real-time operations" />
+      <PageHeader title="Command Center" subtitle="Real-time operations — click any metric to view details" />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <MetricCard title="Total Jobs" value={jobs.length} icon={Briefcase} colorClass="bg-cyan-50 text-cyan-600 border border-cyan-200" />
-        <MetricCard title="Unassigned" value={unassigned.length} icon={AlertCircle} colorClass="bg-rose-50 text-rose-600 border border-rose-200" sub="Action Needed" />
-        <MetricCard title="In Progress" value={jobs.filter(j => j.status === 'In Progress').length} icon={Zap} colorClass="bg-amber-50 text-amber-600 border border-amber-200" />
-        <MetricCard title="Customers" value={customers.length} icon={Users} colorClass="bg-green-50 text-green-600 border border-green-200" />
+        <MetricCard title="Total Jobs" value={jobs.length} icon={Briefcase} colorClass="bg-cyan-50 text-cyan-600 border border-cyan-200" onClick={() => setActiveModal('total')} />
+        <MetricCard title="Unassigned" value={unassigned.length} icon={AlertCircle} colorClass="bg-rose-50 text-rose-600 border border-rose-200" sub="Action Needed" onClick={() => setActiveModal('unassigned')} />
+        <MetricCard title="In Progress" value={jobs.filter(j => j.status === 'In Progress').length} icon={Zap} colorClass="bg-amber-50 text-amber-600 border border-amber-200" onClick={() => setActiveModal('inprogress')} />
+        <MetricCard title="Customers" value={customers.length} icon={Users} colorClass="bg-green-50 text-green-600 border border-green-200" onClick={() => setActiveModal('customers')} />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
@@ -80,9 +306,11 @@ export const ReceptionDashboard: React.FC<{ onNavigate: (p: string) => void }> =
               {jobs.slice(0, 6).map((job) => {
                 const customer = customers.find(c => c.id === job.customerId);
                 const engineer = users.find(u => u.id === job.assignedEngineerId);
+                const ageLevel = getJobAgeLevel(job.createdAt, job.status);
+                const rowBorder = ageLevel === 'red' ? 'border-l-4 border-red-400' : ageLevel === 'yellow' ? 'border-l-4 border-amber-400' : 'border-l-4 border-emerald-400';
                 return (
-                  <div key={job.id} className="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 transition-colors cursor-pointer">
-                    <UrgencyDot createdAt={job.createdAt} />
+                  <div key={job.id} className={`flex items-center gap-4 px-6 py-4 hover:bg-gray-50 transition-colors cursor-pointer ${rowBorder}`}>
+                    <UrgencyDot createdAt={job.createdAt} status={job.status} />
                     <div className="flex-1 min-w-0">
                       <p className="text-[13px] font-medium text-gray-900 truncate mb-0.5">{customer?.name}</p>
                       <p className="text-[11px] font-normal text-gray-500 truncate">{job.problemDescription}</p>
@@ -142,6 +370,15 @@ export const ReceptionDashboard: React.FC<{ onNavigate: (p: string) => void }> =
           )}
         </div>
       </div>
+
+      <ReceptionDetailModal
+        type={activeModal}
+        onClose={() => setActiveModal(null)}
+        jobs={jobs}
+        customers={customers}
+        users={users}
+        onNavigate={onNavigate}
+      />
     </div>
   );
 };
@@ -163,13 +400,17 @@ export const CustomersPage: React.FC = () => {
   const [newCustId, setNewCustId] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // Customer detail modal state
+  const [selectedCustomer, setSelectedCustomer] = useState<typeof customers[0] | null>(null);
+  const [detailTab, setDetailTab] = useState<'jobs' | 'devices'>('jobs');
+  const [summaryModal, setSummaryModal] = useState<'total' | 'active' | 'completed' | 'revenue' | null>(null);
+
   const handleNext = async () => {
     if (submitting) return;
     if (step === 1) {
       if (!custForm.name || !custForm.phone) { show('Name and phone are required', 'error'); return; }
       setSubmitting(true);
       try {
-        // Await the real DB id — avoids FK violations on device/job creation
         const c = await addCustomer(custForm);
         setNewCustId(c.id);
         setStep(2);
@@ -185,7 +426,6 @@ export const CustomersPage: React.FC = () => {
       if (!jobForm.problemDescription || !jobForm.estimatedCost) { show('Problem description and cost are required', 'error'); return; }
       setSubmitting(true);
       try {
-        // Await real device id before creating job — avoids Job_deviceId_fkey FK violation
         const dev = await addDevice({ ...deviceForm, customerId: newCustId });
         await addJob({
           customerId: newCustId, deviceId: dev.id,
@@ -208,10 +448,367 @@ export const CustomersPage: React.FC = () => {
     }
   };
 
+  // Customer detail modal
+  const CustomerDetailModal = () => {
+    if (!selectedCustomer) return null;
+    const c = selectedCustomer;
+    const cJobs = jobs.filter(j => j.customerId === c.id);
+    const cDevices = devices.filter(d => d.customerId === c.id);
+    const completedJobs = cJobs.filter(j => ['Completed', 'Delivered'].includes(j.status));
+    const totalSpend = completedJobs.reduce((s, j) => s + (j.actualCost ?? j.estimatedCost), 0);
+    const activeJobs = cJobs.filter(j => !['Completed', 'Delivered'].includes(j.status));
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setSelectedCustomer(null)}>
+        <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+        <div
+          className="relative bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[88vh] flex flex-col overflow-hidden"
+          onClick={(e: React.MouseEvent) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex items-start justify-between px-6 py-5 border-b border-gray-200 bg-gray-50 flex-shrink-0">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 rounded-xl bg-teal-50 flex items-center justify-center text-[22px] font-medium text-teal-600 border border-teal-100 shrink-0">
+                {c.name.charAt(0)}
+              </div>
+              <div>
+                <h2 className="text-[18px] font-medium text-gray-900">{c.name}</h2>
+                <div className="flex items-center gap-3 mt-1">
+                  <span className="flex items-center gap-1 text-[12px] text-gray-500">
+                    <Phone size={11} /> {c.phone}
+                  </span>
+                  {c.address && (
+                    <span className="flex items-center gap-1 text-[12px] text-gray-400">
+                      <MapPin size={11} /> {c.address}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[10px] text-gray-400 mt-0.5 uppercase tracking-wide">
+                  Since {new Date(c.createdAt).toLocaleDateString('en-IN', { year: 'numeric', month: 'short' })}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setSelectedCustomer(null)}
+              className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-900 hover:bg-gray-200 transition-colors"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* Summary stats */}
+          <div className="grid grid-cols-4 divide-x divide-gray-200 border-b border-gray-200 flex-shrink-0">
+            {[
+              { label: 'Total Jobs', value: cJobs.length, color: 'text-gray-900' },
+              { label: 'Active', value: activeJobs.length, color: 'text-amber-600' },
+              { label: 'Completed', value: completedJobs.length, color: 'text-green-600' },
+              { label: 'Total Spend', value: `₹${(totalSpend / 1000).toFixed(1)}k`, color: 'text-teal-600' },
+            ].map(stat => (
+              <div key={stat.label} className="px-5 py-4 text-center">
+                <p className={`text-[22px] font-medium ${stat.color}`}>{stat.value}</p>
+                <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide mt-0.5">{stat.label}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Tabs */}
+          <div className="flex border-b border-gray-200 bg-white flex-shrink-0 px-6">
+            {[
+              { id: 'jobs' as const, label: `Jobs (${cJobs.length})`, icon: Wrench },
+              { id: 'devices' as const, label: `Devices (${cDevices.length})`, icon: Monitor },
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setDetailTab(tab.id)}
+                className={`flex items-center gap-2 px-4 py-3 text-[13px] font-medium border-b-2 transition-colors -mb-px ${
+                  detailTab === tab.id
+                    ? 'border-teal-500 text-teal-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-800'
+                }`}
+              >
+                <tab.icon size={14} /> {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Tab content */}
+          <div className="overflow-y-auto flex-1 p-6">
+            {detailTab === 'jobs' && (
+              <div className="space-y-3">
+                {cJobs.length === 0 ? (
+                  <div className="text-center py-10 text-gray-400">
+                    <Wrench size={28} className="mx-auto mb-2 opacity-40" />
+                    <p className="text-[13px]">No jobs yet</p>
+                  </div>
+                ) : (
+                  cJobs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map(job => {
+                    const device = devices.find(d => d.id === job.deviceId);
+                    const engineer = users.find(u => u.id === job.assignedEngineerId);
+                    const isActive = !['Completed', 'Delivered'].includes(job.status);
+                    return (
+                      <div key={job.id} className={`rounded-xl border p-4 ${isActive ? 'border-amber-200 bg-amber-50/30' : 'border-gray-200 bg-white'}`}>
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">#{job.id}</span>
+                              <StatusBadge status={job.status} />
+                            </div>
+                            <p className="text-[13px] font-medium text-gray-900">{job.problemDescription}</p>
+                          </div>
+                          <p className="text-[15px] font-medium text-gray-900 shrink-0">₹{(job.actualCost ?? job.estimatedCost).toLocaleString()}</p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-3 text-[11px] text-gray-500">
+                          {device && (
+                            <span className="flex items-center gap-1">
+                              <Monitor size={11} /> {device.brand} {device.model}
+                            </span>
+                          )}
+                          {engineer && (
+                            <span className="flex items-center gap-1">
+                              <div className="w-4 h-4 rounded bg-teal-50 text-teal-600 flex items-center justify-center text-[9px] font-medium border border-teal-100">
+                                {engineer.name.charAt(0)}
+                              </div>
+                              {engineer.name}
+                            </span>
+                          )}
+                          <span className="flex items-center gap-1">
+                            <Calendar size={11} /> {new Date(job.createdAt).toLocaleDateString('en-IN')}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+
+            {detailTab === 'devices' && (
+              <div className="space-y-3">
+                {cDevices.length === 0 ? (
+                  <div className="text-center py-10 text-gray-400">
+                    <Monitor size={28} className="mx-auto mb-2 opacity-40" />
+                    <p className="text-[13px]">No devices registered</p>
+                  </div>
+                ) : (
+                  cDevices.map(device => {
+                    const deviceJobs = cJobs.filter(j => j.deviceId === device.id);
+                    const latestJob = deviceJobs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+                    return (
+                      <div key={device.id} className="rounded-xl border border-gray-200 p-4 bg-white hover:border-teal-200 transition-colors">
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center">
+                              <Monitor size={18} className="text-gray-500" />
+                            </div>
+                            <div>
+                              <p className="text-[13px] font-medium text-gray-900">{device.brand} {device.model}</p>
+                              <p className="text-[11px] text-gray-500">{device.type}</p>
+                            </div>
+                          </div>
+                          <span className="text-[11px] font-medium bg-gray-100 text-gray-600 px-2.5 py-1 rounded-md uppercase tracking-wide">
+                            {deviceJobs.length} job{deviceJobs.length !== 1 ? 's' : ''}
+                          </span>
+                        </div>
+                        {device.serialNumber && (
+                          <p className="text-[11px] text-gray-400 font-mono mt-1">S/N: {device.serialNumber}</p>
+                        )}
+                        {latestJob && (
+                          <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
+                            <p className="text-[11px] text-gray-500 truncate max-w-[200px]">Last: {latestJob.problemDescription}</p>
+                            <StatusBadge status={latestJob.status} />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="max-w-[1400px] mx-auto pb-8 space-y-6">
-      <PageHeader title="Client Directory" subtitle="Manage and search customer records"
+      <PageHeader title="Client Directory" subtitle="Manage and search customer records — click any metric to drill in"
         action={<Button icon={Plus} text="New Registration" onClick={() => setShowModal(true)} />} />
+
+      {/* Summary metric cards */}
+      {(() => {
+        const allJobs = jobs.filter(j => customers.some(c => c.id === j.customerId));
+        const activeJobs = allJobs.filter(j => !['Completed', 'Delivered'].includes(j.status));
+        const completedJobs = allJobs.filter(j => ['Completed', 'Delivered'].includes(j.status));
+        const totalRevenue = completedJobs.reduce((s, j) => s + (j.actualCost ?? j.estimatedCost), 0);
+        return (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { label: 'Total Customers', value: customers.length, color: 'bg-teal-50 text-teal-600 border-teal-200', type: 'total' as const },
+              { label: 'Active Jobs', value: activeJobs.length, color: 'bg-amber-50 text-amber-600 border-amber-200', type: 'active' as const },
+              { label: 'Completed Jobs', value: completedJobs.length, color: 'bg-green-50 text-green-600 border-green-200', type: 'completed' as const },
+              { label: 'Total Revenue', value: `₹${(totalRevenue / 1000).toFixed(1)}k`, color: 'bg-cyan-50 text-cyan-600 border-cyan-200', type: 'revenue' as const },
+            ].map(card => (
+              <div
+                key={card.type}
+                onClick={() => setSummaryModal(card.type)}
+                className="bg-white rounded-xl p-5 border border-gray-200 cursor-pointer hover:border-teal-300 hover:shadow-md transition-all group flex flex-col gap-3"
+              >
+                <div className={`w-8 h-8 rounded-lg border flex items-center justify-center ${card.color}`}>
+                  <ChevronRight size={14} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                </div>
+                <div>
+                  <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">{card.label}</p>
+                  <p className="text-[22px] font-medium text-gray-900 mt-0.5">{card.value}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
+      {/* Summary detail drawer */}
+      {summaryModal && (() => {
+        const allJobs = jobs;
+        const activeJobs = allJobs.filter(j => !['Completed', 'Delivered'].includes(j.status));
+        const completedJobs = allJobs.filter(j => ['Completed', 'Delivered'].includes(j.status));
+
+        const configs = {
+          total:     { title: 'All Customers', subtitle: 'Complete client registry', accentColor: 'text-teal-600' },
+          active:    { title: 'Active Jobs', subtitle: 'Jobs currently in progress', accentColor: 'text-amber-600' },
+          completed: { title: 'Completed Jobs', subtitle: 'Successfully resolved repairs', accentColor: 'text-green-600' },
+          revenue:   { title: 'Revenue Overview', subtitle: 'Earnings from completed jobs', accentColor: 'text-cyan-600' },
+        };
+        const cfg = configs[summaryModal];
+        const jobStatusColors: Record<string, string> = {
+          'New': 'border-cyan-400 text-cyan-700 bg-cyan-50',
+          'Assigned': 'border-teal-400 text-teal-700 bg-teal-50',
+          'In Progress': 'border-orange-400 text-orange-700 bg-orange-50',
+          'Completed': 'border-green-400 text-green-700 bg-green-50',
+          'Delivered': 'border-green-400 text-green-700 bg-green-50',
+        };
+
+        const renderContent = () => {
+          if (summaryModal === 'total') {
+            return customers.map(c => {
+              const cJobs = jobs.filter(j => j.customerId === c.id);
+              const active = cJobs.filter(j => !['Completed', 'Delivered'].includes(j.status)).length;
+              const done = cJobs.filter(j => ['Completed', 'Delivered'].includes(j.status)).length;
+              return (
+                <div key={c.id} className="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 transition-colors cursor-pointer border-l-4 border-teal-300"
+                  onClick={() => { setSummaryModal(null); setSelectedCustomer(c); setDetailTab('jobs'); }}>
+                  <div className="w-9 h-9 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center font-medium text-[14px] shrink-0">
+                    {c.name.charAt(0)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-medium text-gray-900">{c.name}</p>
+                    <p className="text-[11px] text-gray-500 mt-0.5">{c.phone} · {c.address}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-[12px] font-medium text-gray-700">{cJobs.length} job{cJobs.length !== 1 ? 's' : ''}</p>
+                    <p className="text-[11px] text-gray-400">
+                      {active > 0 && <span className="text-orange-500">{active} active</span>}
+                      {active > 0 && done > 0 && ' · '}
+                      {done > 0 && <span className="text-green-600">{done} done</span>}
+                    </p>
+                  </div>
+                </div>
+              );
+            });
+          }
+
+          if (summaryModal === 'active' || summaryModal === 'completed') {
+            const displayJobs = summaryModal === 'active' ? activeJobs : completedJobs;
+            if (displayJobs.length === 0) return <p className="px-6 py-8 text-[13px] text-gray-400 text-center">No jobs here yet.</p>;
+            return displayJobs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map(job => {
+              const customer = customers.find(c => c.id === job.customerId);
+              const engineer = users.find(u => u.id === job.assignedEngineerId);
+              const daysOld = Math.floor((Date.now() - new Date(job.createdAt).getTime()) / 86400000);
+              const style = jobStatusColors[job.status] || 'border-gray-300 text-gray-700 bg-gray-50';
+              const borderCls = style.split(' ')[0];
+              const badgeCls = style.split(' ').slice(1).join(' ');
+              return (
+                <div key={job.id} className={`flex flex-col gap-2 px-6 py-4 border-l-4 ${borderCls} hover:bg-gray-50 transition-colors`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] font-medium text-gray-900 truncate">{job.problemDescription}</p>
+                      <p className="text-[11px] text-gray-500 mt-0.5">
+                        {customer?.name ?? 'Unknown'} · {engineer?.name ?? <span className="text-orange-500">Unassigned</span>}
+                      </p>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded text-[11px] font-medium shrink-0 ${badgeCls}`}>{job.status}</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-[11px] text-gray-500">
+                    <span>{new Date(job.createdAt).toLocaleDateString('en-IN')}</span>
+                    <span>·</span>
+                    <span className={daysOld > 10 ? 'text-red-500 font-medium' : 'text-gray-500'}>{daysOld}d ago</span>
+                    <span>·</span>
+                    <span className="font-medium text-gray-700">₹{(job.actualCost ?? job.estimatedCost).toLocaleString()}</span>
+                  </div>
+                </div>
+              );
+            });
+          }
+
+          if (summaryModal === 'revenue') {
+            const totalRevenue = completedJobs.reduce((s, j) => s + (j.actualCost ?? j.estimatedCost), 0);
+            const byCustomer = customers.map(c => {
+              const cDone = jobs.filter(j => j.customerId === c.id && ['Completed', 'Delivered'].includes(j.status));
+              return { ...c, revenue: cDone.reduce((s, j) => s + (j.actualCost ?? j.estimatedCost), 0), count: cDone.length };
+            }).filter(c => c.revenue > 0).sort((a, b) => b.revenue - a.revenue);
+            const maxRev = byCustomer[0]?.revenue || 1;
+            return (
+              <>
+                <div className="px-6 py-4 bg-green-50 border-b border-green-100">
+                  <p className="text-[11px] font-medium text-green-600 uppercase tracking-wide">Total Collected</p>
+                  <p className="text-[22px] font-medium text-green-700 mt-0.5">₹{totalRevenue.toLocaleString()}</p>
+                </div>
+                <div className="px-6 py-3 bg-gray-50 border-b border-gray-100">
+                  <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Revenue by Customer</p>
+                </div>
+                {byCustomer.map(c => (
+                  <div key={c.id} className="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 border-b border-gray-100 transition-colors">
+                    <div className="w-8 h-8 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center text-[12px] font-medium shrink-0">
+                      {c.name.charAt(0)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between mb-1">
+                        <p className="text-[12px] font-medium text-gray-900 truncate">{c.name}</p>
+                        <p className="text-[12px] font-medium text-gray-700 shrink-0 ml-2">₹{c.revenue.toLocaleString()}</p>
+                      </div>
+                      <div className="h-1 bg-gray-200 rounded-full overflow-hidden">
+                        <div className="h-full bg-teal-500 rounded-full" style={{ width: `${Math.round((c.revenue / maxRev) * 100)}%` }} />
+                      </div>
+                      <p className="text-[10px] text-gray-400 mt-0.5">{c.count} completed job{c.count !== 1 ? 's' : ''}</p>
+                    </div>
+                  </div>
+                ))}
+                {byCustomer.length === 0 && <p className="px-6 py-8 text-[13px] text-gray-400 text-center">No revenue data yet.</p>}
+              </>
+            );
+          }
+          return null;
+        };
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-start justify-end bg-gray-900/40 backdrop-blur-sm" onClick={() => setSummaryModal(null)}>
+            <div className="relative w-full max-w-xl h-full bg-white shadow-2xl flex flex-col overflow-hidden" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-6 py-5 border-b border-gray-200 bg-white shrink-0">
+                <div>
+                  <h2 className="text-[18px] font-medium text-gray-900">{cfg.title}</h2>
+                  <p className={`text-[13px] font-normal mt-0.5 ${cfg.accentColor}`}>{cfg.subtitle}</p>
+                </div>
+                <button onClick={() => setSummaryModal(null)} className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 hover:text-gray-900 transition-colors">
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto divide-y divide-gray-100">
+                {renderContent()}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="relative max-w-2xl">
         <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"><Search size={18} /></div>
@@ -226,17 +823,23 @@ export const CustomersPage: React.FC = () => {
         {filtered.map((c) => {
           const cJobs = jobs.filter(j => j.customerId === c.id);
           const cDevices = devices.filter(d => d.customerId === c.id);
+          const activeJobs = cJobs.filter(j => !['Completed', 'Delivered'].includes(j.status));
           return (
-            <Card key={c.id} className="p-5 flex flex-col h-full hover:border-teal-300 transition-colors">
+            <Card
+              key={c.id}
+              className="p-5 flex flex-col h-full hover:border-teal-400 hover:shadow-md transition-all duration-200 cursor-pointer active:scale-[0.99] group"
+              onClick={() => { setSelectedCustomer(c); setDetailTab('jobs'); }}
+            >
               <div className="flex items-start gap-4 mb-5">
                 <div className="w-12 h-12 rounded-lg bg-teal-50 flex items-center justify-center text-[18px] font-medium text-teal-600 border border-teal-100 shrink-0">
                   {c.name.charAt(0)}
                 </div>
-                <div>
+                <div className="flex-1 min-w-0">
                   <h3 className="text-[13px] font-medium text-gray-900 mb-0.5">{c.name}</h3>
-                  <p className="text-[11px] font-normal text-gray-500 mb-0.5">{c.phone}</p>
-                  <p className="text-[11px] font-normal text-gray-400 line-clamp-1">{c.address}</p>
+                  <p className="text-[11px] font-normal text-gray-500 mb-0.5 flex items-center gap-1"><Phone size={10} /> {c.phone}</p>
+                  {c.address && <p className="text-[11px] font-normal text-gray-400 truncate flex items-center gap-1"><MapPin size={10} /> {c.address}</p>}
                 </div>
+                <ChevronRight size={16} className="text-gray-300 group-hover:text-teal-400 transition-colors shrink-0 mt-1" />
               </div>
               <div className="mt-auto pt-4 border-t border-gray-100 flex items-center justify-between">
                 <div className="flex gap-4">
@@ -248,6 +851,12 @@ export const CustomersPage: React.FC = () => {
                     <p className="text-[18px] font-medium text-gray-900 leading-none">{cDevices.length}</p>
                     <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mt-1">Devices</p>
                   </div>
+                  {activeJobs.length > 0 && (
+                    <div>
+                      <p className="text-[18px] font-medium text-amber-500 leading-none">{activeJobs.length}</p>
+                      <p className="text-[11px] font-medium text-amber-500 uppercase tracking-wide mt-1">Active</p>
+                    </div>
+                  )}
                 </div>
                 <div className="flex flex-col gap-1 items-end">
                   {cJobs.slice(0, 2).map(j => <StatusBadge key={j.id} status={j.status} />)}
@@ -257,6 +866,9 @@ export const CustomersPage: React.FC = () => {
           );
         })}
       </div>
+
+      {/* Customer detail modal */}
+      {selectedCustomer && <CustomerDetailModal />}
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 backdrop-blur-sm p-4">
@@ -394,7 +1006,7 @@ export const JobsPage: React.FC = () => {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
-                {['', 'ID', 'Client & Device', 'Issue Overview', 'Assignment', 'Status', ...(showFinancials ? ['Quote'] : [])].map(h => (
+                {['', 'ID', 'Client & Device', 'Issue Overview', 'Assignment', 'Status', 'Age', ...(showFinancials ? ['Quote'] : [])].map(h => (
                   <th key={h} className="px-6 py-3 text-[11px] font-medium text-gray-500 uppercase tracking-wide">{h}</th>
                 ))}
               </tr>
@@ -404,9 +1016,11 @@ export const JobsPage: React.FC = () => {
                 const customer = customers.find(c => c.id === job.customerId);
                 const device = devices.find(d => d.id === job.deviceId);
                 const engineer = users.find(u => u.id === job.assignedEngineerId);
+                const ageLevel = getJobAgeLevel(job.createdAt, job.status);
+                const rowBg = ageLevel === 'red' ? 'bg-red-50/40' : ageLevel === 'yellow' ? 'bg-amber-50/40' : '';
                 return (
-                  <tr key={job.id} className="hover:bg-gray-50 transition-colors cursor-pointer">
-                    <td className="pl-6 py-4"><UrgencyDot createdAt={job.createdAt} /></td>
+                  <tr key={job.id} className={`hover:bg-gray-50 transition-colors cursor-pointer ${rowBg}`}>
+                    <td className="pl-6 py-4"><UrgencyDot createdAt={job.createdAt} status={job.status} /></td>
                     <td className="px-6 py-4 text-[11px] font-medium text-gray-400">#{job.id}</td>
                     <td className="px-6 py-4">
                       <p className="text-[13px] font-medium text-gray-900 mb-0.5">{customer?.name}</p>
@@ -424,6 +1038,7 @@ export const JobsPage: React.FC = () => {
                       )}
                     </td>
                     <td className="px-6 py-4"><StatusBadge status={job.status} /></td>
+                    <td className="px-6 py-4"><JobAgeBadge createdAt={job.createdAt} status={job.status} /></td>
                     {showFinancials && (
                       <td className="px-6 py-4 text-[13px] font-medium text-gray-900">₹{(job.estimatedCost ?? 0).toLocaleString()}</td>
                     )}

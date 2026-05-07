@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
-import { requireSession, LIMITS, checkLengths } from '@/lib/auth';
+import { requireSession, destroyAllSessionsForUser, LIMITS, checkLengths } from '@/lib/auth';
 
 // PUT /api/users/:id — admin only
 export async function PUT(
@@ -34,6 +34,13 @@ export async function PUT(
         const updateData: any = {};
 
         if (typeof body.isActive === 'boolean') {
+            // Prevent admin from deactivating themselves
+            if (auth.user.id === id && body.isActive === false) {
+                return NextResponse.json(
+                    { error: 'You cannot deactivate your own account.' },
+                    { status: 400 }
+                );
+            }
             updateData.isActive = body.isActive;
         }
 
@@ -48,6 +55,12 @@ export async function PUT(
             where: { id },
             data: updateData,
         });
+
+        // If the account was just deactivated, kill all active sessions immediately
+        // so the user is logged out right away rather than waiting for token expiry.
+        if (typeof body.isActive === 'boolean' && !body.isActive) {
+            await destroyAllSessionsForUser(id);
+        }
 
         const { password: _, ...safeUser } = user;
         return NextResponse.json({
@@ -78,6 +91,18 @@ export async function DELETE(
 
     try {
         const { id } = await params;
+
+        // Prevent admin from deleting themselves
+        if (auth.user.id === id) {
+            return NextResponse.json(
+                { error: 'You cannot delete your own account.' },
+                { status: 400 }
+            );
+        }
+
+        // Kill all sessions for the user being deleted before removing the record
+        await destroyAllSessionsForUser(id);
+
         await prisma.user.delete({ where: { id } });
         return NextResponse.json({ success: true });
     } catch (error: any) {
