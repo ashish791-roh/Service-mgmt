@@ -365,7 +365,7 @@ export const SystemSettingsPage: React.FC = () => {
               </FieldRow>
               <Divider />
               <div className="space-y-1">
-                <p className="text-[13px] font-semibold text-gray-700">Urgency Colour Thresholds (SRS §3.4)</p>
+                <p className="text-[13px] font-semibold text-gray-700">Urgency Colour Thresholds</p>
                 <p className="text-[11px] text-gray-400">
                   Jobs pending longer than these limits are highlighted to flag overdue work.
                 </p>
