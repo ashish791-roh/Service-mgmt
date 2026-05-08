@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import type {
   User, Customer, Device, Job, PartRequest,
-  InventoryItem, Notification, JobStatus, PartRequestStatus,
+  InventoryItem, Notification, JobStatus, PartRequestStatus, Sale,
 } from '../types';
 
 // ── Login result type (what LoginPage expects) ────────────────────
@@ -37,6 +37,8 @@ interface AppContextType {
   updatePartRequest: (id: string, status: PartRequestStatus) => void;
   addInventoryItem: (item: Omit<InventoryItem, 'id'>) => void;
   updateInventory: (id: string, quantity: number) => void;
+  sales: Sale[];
+  addSale: (sale: { companyName: string; contactName: string; phone: string; notes: string; customerId?: string; items: { inventoryItemId: string; quantity: number }[] }) => Promise<{ ok: boolean; error?: string; sale?: Sale }>;
   markNotificationRead: (id: string) => void;
   getUnreadCount: (userId: string) => number;
 }
@@ -64,6 +66,7 @@ function applyAppData(data: any, setters: {
   setPartRequests: React.Dispatch<React.SetStateAction<PartRequest[]>>;
   setInventory: React.Dispatch<React.SetStateAction<InventoryItem[]>>;
   setNotifications: React.Dispatch<React.SetStateAction<Notification[]>>;
+  setSales: React.Dispatch<React.SetStateAction<Sale[]>>;
 }) {
   setters.setUsers(data.users);
   setters.setCustomers(data.customers);
@@ -72,6 +75,7 @@ function applyAppData(data: any, setters: {
   setters.setPartRequests(data.partRequests);
   setters.setInventory(data.inventory);
   setters.setNotifications(data.notifications);
+  if (data.sales) setters.setSales(data.sales);
 }
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -94,8 +98,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [partRequests, setPartRequests] = useState<PartRequest[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [sales, setSales] = useState<Sale[]>([]);
 
-  const setters = { setUsers, setCustomers, setDevices, setJobs, setPartRequests, setInventory, setNotifications };
+  const setters = { setUsers, setCustomers, setDevices, setJobs, setPartRequests, setInventory, setNotifications, setSales };
 
   // ── Restore session AFTER hydration (client only) ────────────────
   useEffect(() => {
@@ -469,6 +474,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
+  // ── Sales ────────────────────────────────────────────────────────
+  const addSale = async (saleData: {
+    companyName: string;
+    contactName: string;
+    phone: string;
+    notes: string;
+    customerId?: string;
+    items: { inventoryItemId: string; quantity: number }[];
+  }): Promise<{ ok: boolean; error?: string; sale?: Sale }> => {
+    try {
+      const res = await fetch('/api/sales', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(saleData),
+      });
+      const data = await res.json();
+      if (!res.ok) return { ok: false, error: data.error ?? 'Failed to create sale.' };
+
+      // Add sale to state and refresh inventory + notifications (stock may have changed)
+      setSales(prev => [data, ...prev]);
+      const appData = await loadAppData();
+      setInventory(appData.inventory);
+      setNotifications(appData.notifications);
+
+      return { ok: true, sale: data };
+    } catch {
+      return { ok: false, error: 'Network error. Please try again.' };
+    }
+  };
+
   const getUnreadCount = (userId: string) =>
     notifications.filter(n => n.userId === userId && !n.read).length;
 
@@ -480,6 +515,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addCustomer, addDevice, addJob, updateJobStatus, assignEngineer,
       addPartRequest, updatePartRequest,
       addInventoryItem, updateInventory,
+      sales, addSale,
       markNotificationRead, getUnreadCount,
     }}>
       {children}

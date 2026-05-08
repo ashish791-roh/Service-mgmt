@@ -36,6 +36,86 @@ function mapInventory(i: any) {
     };
 }
 
+// ── Sales helpers ─────────────────────────────────────────────────
+async function ensureSalesTables() {
+    await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "Sale" (
+            "id"          TEXT        NOT NULL DEFAULT gen_random_uuid()::text,
+            "saleNumber"  TEXT        NOT NULL,
+            "customerId"  TEXT,
+            "companyName" TEXT,
+            "contactName" TEXT,
+            "phone"       TEXT,
+            "notes"       TEXT,
+            "totalAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+            "createdById" TEXT        NOT NULL,
+            "createdAt"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "updatedAt"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT "Sale_pkey" PRIMARY KEY ("id")
+        )
+    `);
+    await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "SaleItem" (
+            "id"              TEXT         NOT NULL DEFAULT gen_random_uuid()::text,
+            "saleId"          TEXT         NOT NULL,
+            "inventoryItemId" TEXT         NOT NULL,
+            "itemName"        TEXT         NOT NULL,
+            "quantity"        INTEGER      NOT NULL,
+            "unitPrice"       DOUBLE PRECISION NOT NULL,
+            "subtotal"        DOUBLE PRECISION NOT NULL,
+            CONSTRAINT "SaleItem_pkey" PRIMARY KEY ("id"),
+            CONSTRAINT "SaleItem_saleId_fkey"
+                FOREIGN KEY ("saleId") REFERENCES "Sale"("id") ON DELETE CASCADE
+        )
+    `);
+    await prisma.$executeRawUnsafe(
+        `CREATE UNIQUE INDEX IF NOT EXISTS "Sale_saleNumber_key" ON "Sale"("saleNumber")`
+    );
+}
+
+async function fetchSalesWithItems() {
+    await ensureSalesTables();
+    const sales = await prisma.$queryRawUnsafe<any[]>(
+        `SELECT * FROM "Sale" ORDER BY "createdAt" DESC`
+    );
+    const saleIds = sales.map((s: any) => s.id);
+    let allItems: any[] = [];
+    if (saleIds.length > 0) {
+        allItems = await prisma.$queryRawUnsafe<any[]>(
+            `SELECT * FROM "SaleItem" WHERE "saleId" = ANY($1::text[])`,
+            saleIds
+        );
+    }
+    const itemsBySale = allItems.reduce((acc: any, i: any) => {
+        acc[i.saleId] = acc[i.saleId] || [];
+        acc[i.saleId].push(i);
+        return acc;
+    }, {} as Record<string, any[]>);
+
+    return sales.map((s: any) => ({
+        id: s.id,
+        saleNumber: s.saleNumber,
+        customerId: s.customerId ?? null,
+        companyName: s.companyName ?? '',
+        contactName: s.contactName ?? '',
+        phone: s.phone ?? '',
+        notes: s.notes ?? '',
+        totalAmount: Number(s.totalAmount),
+        createdById: s.createdById,
+        createdAt: s.createdAt instanceof Date ? s.createdAt.toISOString() : String(s.createdAt),
+        updatedAt: s.updatedAt instanceof Date ? s.updatedAt.toISOString() : String(s.updatedAt),
+        items: (itemsBySale[s.id] ?? []).map((i: any) => ({
+            id: i.id,
+            saleId: i.saleId,
+            inventoryItemId: i.inventoryItemId,
+            itemName: i.itemName,
+            quantity: Number(i.quantity),
+            unitPrice: Number(i.unitPrice),
+            subtotal: Number(i.subtotal),
+        })),
+    }));
+}
+
 // ── GET /api/data — role-scoped payload ──────────────────────────
 
 export async function GET() {
@@ -93,8 +173,9 @@ export async function GET() {
                     updatedAt: r.updatedAt.toISOString(),
                     reviewedAt: r.reviewedAt?.toISOString() ?? undefined,
                 })),
-                // Engineers don't see inventory
+                // Engineers don't see inventory or sales
                 inventory: [],
+                sales: [],
                 notifications: myNotifications.map((n: any) => ({
                     ...n,
                     createdAt: n.createdAt.toISOString(),
@@ -152,6 +233,7 @@ export async function GET() {
                     ...n,
                     createdAt: n.createdAt.toISOString(),
                 })),
+                sales: await fetchSalesWithItems(),
             });
         }
 
@@ -191,6 +273,7 @@ export async function GET() {
                 ...n,
                 createdAt: n.createdAt.toISOString(),
             })),
+            sales: await fetchSalesWithItems(),
         });
 
     } catch (error) {

@@ -100,6 +100,16 @@ export async function PUT(
             });
         }
 
+        if (body.status && body.status !== existingJob.status && existingJob.engineerId) {
+            await prisma.notification.create({
+              data: {
+                userId: existingJob.engineerId,
+                message: `Job status updated to ${body.status}: ${job.problemDesc.substring(0, 50)}`,
+                jobId: job.id,
+              },
+            });
+          }
+
         // ── Customer SMS/email notification ───────────────────────
         const newStatus = body.status as string | undefined;
         const statusChanged = newStatus && newStatus !== existingJob.status;

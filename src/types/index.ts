@@ -20,6 +20,7 @@ export interface Customer {
   name: string;
   phone: string;
   address: string;
+  email?: string;
   createdAt: string;
 }
 
@@ -66,6 +67,31 @@ export interface InventoryItem {
   unitCost: number;
   category: string;
   minStock: number;
+}
+
+export interface SaleItem {
+  id: string;
+  saleId: string;
+  inventoryItemId: string;
+  itemName: string;
+  quantity: number;
+  unitPrice: number;
+  subtotal: number;
+}
+
+export interface Sale {
+  id: string;
+  saleNumber: string;
+  customerId: string | null;
+  companyName: string;
+  contactName: string;
+  phone: string;
+  notes: string;
+  totalAmount: number;
+  createdById: string;
+  createdAt: string;
+  updatedAt: string;
+  items: SaleItem[];
 }
 
 export interface Notification {

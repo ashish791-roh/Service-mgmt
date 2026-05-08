@@ -384,7 +384,7 @@ const DetailModal = ({
 
       return (
         <>
-          <div className="grid grid-cols-3 divide-x divide-gray-100 border-b border-gray-100">
+          <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 divide-x-0 sm:divide-x divide-gray-100 border-b border-gray-100">
             {[
               { label: 'Est. Total', value: `₹${(allRevenue / 1000).toFixed(1)}k`, cls: 'text-gray-900' },
               { label: 'Collected', value: `₹${(completedRevenue / 1000).toFixed(1)}k`, cls: 'text-green-600' },

@@ -4,7 +4,7 @@ import type { Role } from '../types';
 import { 
   LayoutDashboard, Users, BarChart3, LineChart, 
   UserSquare2, Wrench, Pin, Nut, Box, 
-  Wallet, ClipboardList, Bell, LogOut, Wrench as ToolIcon, X
+  Wallet, ClipboardList, Bell, LogOut, Wrench as ToolIcon, X, Settings, ShoppingCart
 } from 'lucide-react';
 
 interface NavItem { id: string; label: string; icon: any; roles: Role[]; }
@@ -19,16 +19,18 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'assign',        label: 'Assign Jobs',     icon: Pin,              roles: ['admin', 'reception'] },
   { id: 'parts',         label: 'Parts Requests',  icon: Nut,              roles: ['admin', 'reception'] },
   { id: 'inventory',     label: 'Inventory',       icon: Box,              roles: ['admin', 'reception'] },
+  { id: 'sales',         label: 'Sales',           icon: ShoppingCart,     roles: ['admin', 'reception'] },
   { id: 'billing',       label: 'Billing',         icon: Wallet,           roles: ['admin', 'reception'] },
   { id: 'my-jobs',       label: 'My Jobs',         icon: ClipboardList,    roles: ['engineer'] },
   { id: 'notifications', label: 'Notifications',   icon: Bell,             roles: ['admin', 'reception', 'engineer'] },
+  { id: 'settings',      label: 'System Settings', icon: Settings,         roles: ['admin'] },
 ];
 
 const SECTIONS = [
   { label: 'Overview',    ids: ['dashboard', 'analytics', 'reports'] },
   { label: 'Operations',  ids: ['customers', 'jobs', 'assign', 'my-jobs', 'parts'] },
-  { label: 'Management',  ids: ['users', 'inventory', 'billing'] },
-  { label: 'System',      ids: ['notifications'] },
+  { label: 'Management',  ids: ['users', 'inventory', 'sales', 'billing'] },
+  { label: 'System',      ids: ['notifications', 'settings'] },
 ];
 
 interface SidebarProps {

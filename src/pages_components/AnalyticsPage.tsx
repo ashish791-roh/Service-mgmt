@@ -133,7 +133,7 @@ const DetailModal = ({
       return (
         <>
           {/* Summary tiles */}
-          <div className="grid grid-cols-3 divide-x divide-gray-100 border-b border-gray-100">
+          <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 divide-x-0 sm:divide-x divide-gray-100 border-b border-gray-100">
             {[
               { label: 'Collected', value: `₹${(totalRevenue / 1000).toFixed(1)}k`, cls: 'text-green-600' },
               { label: 'Pending', value: `₹${(pendingRevenue / 1000).toFixed(1)}k`, cls: 'text-orange-500' },

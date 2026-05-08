@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { Banknote, Hourglass, CheckCircle, TrendingUp, X } from 'lucide-react';
+import { Banknote, Hourglass, CheckCircle, TrendingUp, X, Wrench, Package, TrendingDown } from 'lucide-react';
 import type { JobStatus } from '../types';
 
 const PageHeader = ({ title, subtitle, action }: { title: string, subtitle: string, action?: React.ReactNode }) => (
@@ -21,17 +21,19 @@ const Card = React.forwardRef<HTMLDivElement, { children: React.ReactNode, class
   )
 );
 
-const MetricCard = ({ title, value, icon: Icon, color, sub }: any) => {
+const MetricCard = ({ title, value, icon: Icon, color, sub, highlight }: any) => {
   const colorMap: Record<string, string> = {
     teal: "text-teal-500 bg-teal-50",
     cyan: "text-cyan-500 bg-cyan-50",
     green: "text-green-500 bg-green-50",
     orange: "text-orange-500 bg-orange-50",
+    purple: "text-purple-500 bg-purple-50",
+    red: "text-red-500 bg-red-50",
   };
   const bgClass = colorMap[color] || colorMap.teal;
 
   return (
-    <div className="bg-white rounded-xl p-5 border border-gray-200 relative overflow-hidden flex flex-col gap-4">
+    <div className={`bg-white rounded-xl p-5 border relative overflow-hidden flex flex-col gap-4 ${highlight ? 'border-green-300 ring-1 ring-green-200' : 'border-gray-200'}`}>
       <div className="flex justify-between items-start">
         <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${bgClass}`}>
           <Icon size={18} strokeWidth={2} />
@@ -40,7 +42,7 @@ const MetricCard = ({ title, value, icon: Icon, color, sub }: any) => {
       </div>
       <div>
         <p className="text-[13px] font-medium text-gray-500">{title}</p>
-        <h3 className="text-[18px] font-medium text-gray-900 mt-1">{value}</h3>
+        <h3 className={`text-[18px] font-medium mt-1 ${highlight ? 'text-green-600' : 'text-gray-900'}`}>{value}</h3>
       </div>
     </div>
   );
@@ -75,8 +77,43 @@ const StatusBadge = ({ status }: { status: string }) => {
   );
 };
 
+// ── Profit breakdown helpers ─────────────────────────────────────────────────
+
+/**
+ * Compute parts cost for a job by summing approved part requests matched
+ * against inventory unit cost. If an inventory match is not found, we fall
+ * back to 0 for that item (parts cost is "at least" this value).
+ */
+function calcPartsCost(jobId: string, partRequests: any[], inventory: any[]): number {
+  const approved = partRequests.filter(
+    (pr: any) => pr.jobId === jobId && pr.status === 'Approved'
+  );
+  return approved.reduce((sum: number, pr: any) => {
+    const item = inventory.find(
+      (inv: any) => inv.name.toLowerCase() === pr.partName.toLowerCase()
+    );
+    const unitCost = item?.unitCost ?? 0;
+    return sum + unitCost * pr.quantity;
+  }, 0);
+}
+
+/**
+ * Service charge = final invoice − parts cost.
+ * Profit = service charge (parts cost is already a pass-through expense).
+ * We treat profit = revenue − parts cost for simplicity.
+ */
+function calcProfitBreakdown(job: any, partRequests: any[], inventory: any[]) {
+  const revenue = job.actualCost ?? job.estimatedCost ?? 0;
+  const partsCost = calcPartsCost(job.id, partRequests, inventory);
+  const serviceCharge = Math.max(revenue - partsCost, 0);
+  const profit = revenue - partsCost;
+  return { revenue, partsCost, serviceCharge, profit };
+}
+
+// ── Main component ───────────────────────────────────────────────────────────
+
 export const BillingPage: React.FC = () => {
-  const { jobs, customers, devices, users, updateJobStatus, currentUser } = useApp() as any;
+  const { jobs, customers, devices, users, partRequests, inventory, updateJobStatus, currentUser } = useApp() as any;
 
   // SRS: Engineers must NOT see financial/billing data
   if (currentUser?.role === 'engineer') {
@@ -90,9 +127,31 @@ export const BillingPage: React.FC = () => {
 
   const [billingModal, setBillingModal] = useState<string | null>(null);
   const [actualCostInput, setActualCostInput] = useState('');
-  const [filter, setFilter] = useState<'pending-billing' | 'completed' | 'delivered' | 'all'>('pending-billing');
+  const [filter, setFilter] = useState<'pending-billing' | 'delivered' | 'all'>('pending-billing');
   const tableRef = useRef<HTMLDivElement>(null);
 
+  // ── Derived job lists ──────────────────────────────────────────────────────
+  const completedJobs = jobs.filter((j: any) => j.status === 'Completed');
+  const deliveredJobs = jobs.filter((j: any) => j.status === 'Delivered');
+  const allBillableJobs = jobs.filter((j: any) => ['Completed', 'Delivered'].includes(j.status));
+
+  // ── Aggregate financials ───────────────────────────────────────────────────
+  const totalRevenue = deliveredJobs.reduce(
+    (s: number, j: any) => s + (j.actualCost ?? j.estimatedCost ?? 0), 0
+  );
+  const totalPartsCost = deliveredJobs.reduce(
+    (s: number, j: any) => s + calcPartsCost(j.id, partRequests, inventory), 0
+  );
+  const totalProfit = totalRevenue - totalPartsCost;
+  const pendingCollection = completedJobs.reduce(
+    (s: number, j: any) => s + (j.actualCost ?? j.estimatedCost ?? 0), 0
+  );
+  const avgValue = allBillableJobs.length
+    ? Math.round((totalRevenue + pendingCollection) / allBillableJobs.length)
+    : 0;
+  const profitMargin = totalRevenue > 0 ? Math.round((totalProfit / totalRevenue) * 100) : 0;
+
+  // ── Handlers ───────────────────────────────────────────────────────────────
   const handleReviewAndCollect = () => {
     setFilter('pending-billing');
     setTimeout(() => {
@@ -105,18 +164,20 @@ export const BillingPage: React.FC = () => {
     }
   };
 
-  const completedJobs = jobs.filter((j: any) => j.status === 'Completed');
-  const deliveredJobs = jobs.filter((j: any) => j.status === 'Delivered');
-  const allBillableJobs = jobs.filter((j: any) => ['Completed', 'Delivered'].includes(j.status));
-
-  const totalRevenue = deliveredJobs.reduce((s: number, j: any) => s + (j.actualCost ?? j.estimatedCost), 0);
-  const pendingCollection = completedJobs.reduce((s: number, j: any) => s + (j.actualCost ?? j.estimatedCost), 0);
-  const avgValue = allBillableJobs.length ? Math.round((totalRevenue + pendingCollection) / allBillableJobs.length) : 0;
-
-  const handleMarkDelivered = (jobId: string) => {
+  const handleMarkDelivered = async (jobId: string) => {
     const job = jobs.find((j: any) => j.id === jobId);
     if (!job) return;
-    updateJobStatus(jobId, 'Delivered' as JobStatus);
+
+    const finalCost = actualCostInput ? parseFloat(actualCostInput) : (job.estimatedCost ?? 0);
+
+    // Save actualCost via PUT, then mark Delivered
+    await fetch(`/api/jobs/${jobId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ actualCost: finalCost, status: 'Delivered' }),
+    });
+
+    await updateJobStatus(jobId, 'Delivered' as JobStatus);
     setBillingModal(null);
     setActualCostInput('');
     alert('Job marked as delivered! Payment recorded successfully.');
@@ -124,40 +185,149 @@ export const BillingPage: React.FC = () => {
 
   const getDisplayJobs = () => {
     if (filter === 'pending-billing') return completedJobs;
-    if (filter === 'completed') return allBillableJobs;
     if (filter === 'delivered') return deliveredJobs;
     return allBillableJobs;
   };
 
   const displayJobs = getDisplayJobs();
 
+  // ── Modal job data ─────────────────────────────────────────────────────────
+  const modalJob = billingModal ? jobs.find((j: any) => j.id === billingModal) : null;
+  const modalCustomer = customers.find((c: any) => c.id === modalJob?.customerId);
+  const modalDevice = devices.find((d: any) => d.id === modalJob?.deviceId);
+  const modalEngineer = users.find((u: any) => u.id === modalJob?.assignedEngineerId);
+  const modalApprovedParts = partRequests.filter(
+    (pr: any) => pr.jobId === billingModal && pr.status === 'Approved'
+  );
+  const modalFinalCost = actualCostInput
+    ? parseFloat(actualCostInput) || 0
+    : (modalJob?.estimatedCost ?? 0);
+  const modalPartsCost = billingModal
+    ? calcPartsCost(billingModal, partRequests, inventory)
+    : 0;
+  const modalServiceCharge = Math.max(modalFinalCost - modalPartsCost, 0);
+  const modalProfit = modalFinalCost - modalPartsCost;
+
   return (
     <div className="max-w-[1400px] mx-auto pb-6 space-y-6">
       <PageHeader title="Revenue & Billing" subtitle="Financial tracking and final delivery operations" />
 
-      {/* Stats */}
+      {/* ── Top stats ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <MetricCard title="Total Revenue" value={`₹${(totalRevenue / 1000).toFixed(1)}k`} icon={Banknote} color="green" sub="Collected" />
-        <MetricCard title="Pending" value={`₹${(pendingCollection / 1000).toFixed(1)}k`} icon={Hourglass} color="orange" sub="To Collect" />
-        <MetricCard title="Ready to Bill" value={completedJobs.length} icon={CheckCircle} color="cyan" sub="Completed Jobs" />
-        <MetricCard title="Avg Job Value" value={`₹${avgValue.toLocaleString()}`} icon={TrendingUp} color="teal" />
+        <MetricCard
+          title="Total Revenue"
+          value={`₹${(totalRevenue / 1000).toFixed(1)}k`}
+          icon={Banknote}
+          color="green"
+          sub="Collected"
+        />
+        <MetricCard
+          title="Parts Cost"
+          value={`₹${(totalPartsCost / 1000).toFixed(1)}k`}
+          icon={Package}
+          color="orange"
+          sub="Delivered jobs"
+        />
+        <MetricCard
+          title="Net Profit"
+          value={`₹${(totalProfit / 1000).toFixed(1)}k`}
+          icon={TrendingUp}
+          color="purple"
+          sub={`${profitMargin}% margin`}
+          highlight
+        />
+        <MetricCard
+          title="Avg Job Value"
+          value={`₹${avgValue.toLocaleString()}`}
+          icon={CheckCircle}
+          color="teal"
+        />
       </div>
 
+      {/* ── Profit breakdown summary card ── */}
+      {deliveredJobs.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl p-6">
+          <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-4">Profit Breakdown — Delivered Jobs</p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* Revenue bar */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Banknote size={14} className="text-green-500" />
+                  <span className="text-[12px] font-medium text-gray-600">Total Revenue</span>
+                </div>
+                <span className="text-[13px] font-medium text-gray-900">₹{totalRevenue.toLocaleString()}</span>
+              </div>
+              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div className="h-full bg-green-400 rounded-full" style={{ width: '100%' }} />
+              </div>
+            </div>
+            {/* Parts cost bar */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Package size={14} className="text-orange-500" />
+                  <span className="text-[12px] font-medium text-gray-600">Parts Cost</span>
+                </div>
+                <span className="text-[13px] font-medium text-gray-900">₹{totalPartsCost.toLocaleString()}</span>
+              </div>
+              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-orange-400 rounded-full"
+                  style={{ width: totalRevenue > 0 ? `${Math.min((totalPartsCost / totalRevenue) * 100, 100)}%` : '0%' }}
+                />
+              </div>
+            </div>
+            {/* Profit bar */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {totalProfit >= 0
+                    ? <TrendingUp size={14} className="text-purple-500" />
+                    : <TrendingDown size={14} className="text-red-500" />
+                  }
+                  <span className="text-[12px] font-medium text-gray-600">Net Profit</span>
+                </div>
+                <span className={`text-[13px] font-medium ${totalProfit >= 0 ? 'text-purple-600' : 'text-red-600'}`}>
+                  ₹{totalProfit.toLocaleString()}
+                </span>
+              </div>
+              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full ${totalProfit >= 0 ? 'bg-purple-400' : 'bg-red-400'}`}
+                  style={{ width: totalRevenue > 0 ? `${Math.min(Math.abs(profitMargin), 100)}%` : '0%' }}
+                />
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 pt-4 border-t border-gray-100 flex items-center gap-2">
+            <span className={`text-[12px] font-medium px-2 py-0.5 rounded ${totalProfit >= 0 ? 'bg-purple-50 text-purple-700' : 'bg-red-50 text-red-700'}`}>
+              {profitMargin}% margin
+            </span>
+            <span className="text-[12px] text-gray-400">across {deliveredJobs.length} delivered job{deliveredJobs.length !== 1 ? 's' : ''}</span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Pending collection alert ── */}
       {completedJobs.length > 0 && (
         <div className="bg-orange-50 border border-orange-200 rounded-xl flex flex-col sm:flex-row items-center justify-between p-6 gap-4">
           <div className="flex items-center gap-4">
             <div className="w-10 h-10 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center">
-              <Banknote size={20} />
+              <Hourglass size={20} />
             </div>
             <div>
               <h3 className="text-[13px] font-medium text-gray-900">{completedJobs.length} Jobs Ready for Delivery</h3>
-              <p className="text-[11px] font-normal text-orange-600 uppercase tracking-wide mt-1">Collect ₹{pendingCollection.toLocaleString()} in pending payments</p>
+              <p className="text-[11px] font-normal text-orange-600 uppercase tracking-wide mt-1">
+                Collect ₹{pendingCollection.toLocaleString()} in pending payments
+              </p>
             </div>
           </div>
           <Button text="Review & Collect" variant="primary" onClick={handleReviewAndCollect} className="w-full sm:w-auto" />
         </div>
       )}
 
+      {/* ── Filter tabs ── */}
       <div className="flex bg-white p-1 rounded-lg border border-gray-200 w-fit overflow-x-auto gap-1">
         {[
           { id: 'pending-billing' as const, label: `Pending Delivery (${completedJobs.length})` },
@@ -171,7 +341,7 @@ export const BillingPage: React.FC = () => {
         ))}
       </div>
 
-      {/* Jobs Table */}
+      {/* ── Jobs Table ── */}
       <Card ref={tableRef}>
         <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
           <h2 className="text-[13px] font-medium text-gray-900">
@@ -182,8 +352,8 @@ export const BillingPage: React.FC = () => {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
-                {['Job ID', 'Customer Info', 'Device Details', 'Issue', 'Final Cost', 'Status', 'Action'].map(h => (
-                  <th key={h} className="px-6 py-3 text-[11px] font-medium text-gray-500 uppercase tracking-wide">{h}</th>
+                {['Job ID', 'Customer Info', 'Device Details', 'Issue', 'Service', 'Parts Cost', 'Total', 'Profit', 'Status', 'Action'].map(h => (
+                  <th key={h} className="px-4 py-3 text-[11px] font-medium text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
@@ -191,28 +361,46 @@ export const BillingPage: React.FC = () => {
               {displayJobs.map((job: any) => {
                 const customer = customers.find((c: any) => c.id === job.customerId);
                 const device = devices.find((d: any) => d.id === job.deviceId);
+                const { revenue, partsCost, serviceCharge, profit } = calcProfitBreakdown(job, partRequests, inventory);
+                const isEstimated = !job.actualCost;
                 return (
                   <tr key={job.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 text-[11px] font-medium text-gray-500 uppercase tracking-wide">#{job.id}</td>
-                    <td className="px-6 py-4">
+                    <td className="px-4 py-4 text-[11px] font-medium text-gray-500 uppercase tracking-wide">#{job.id}</td>
+                    <td className="px-4 py-4">
                       <p className="text-[13px] font-medium text-gray-900 mb-0.5">{customer?.name}</p>
                       <p className="text-[11px] font-normal text-gray-500 uppercase tracking-wide">{customer?.phone}</p>
                     </td>
-                    <td className="px-6 py-4 text-[13px] font-medium text-gray-500">{device?.brand} {device?.model}</td>
-                    <td className="px-6 py-4 text-[13px] font-normal text-gray-600 max-w-[200px] truncate">{job.problemDescription}</td>
-                    <td className="px-6 py-4">
-                      <p className="text-[13px] font-medium text-green-600">
-                        ₹{(job.actualCost ?? job.estimatedCost).toLocaleString()}
-                      </p>
-                      {!job.actualCost && <p className="text-[11px] font-normal text-gray-400 uppercase tracking-wide mt-0.5">Estimated</p>}
+                    <td className="px-4 py-4 text-[13px] font-medium text-gray-500 whitespace-nowrap">{device?.brand} {device?.model}</td>
+                    <td className="px-4 py-4 text-[13px] font-normal text-gray-600 max-w-[160px] truncate">{job.problemDescription}</td>
+                    <td className="px-4 py-4">
+                      <p className="text-[13px] font-medium text-teal-600">₹{serviceCharge.toLocaleString()}</p>
+                      <p className="text-[10px] text-gray-400 uppercase tracking-wide">Service</p>
                     </td>
-                    <td className="px-6 py-4"><StatusBadge status={job.status} /></td>
-                    <td className="px-6 py-4">
+                    <td className="px-4 py-4">
+                      <p className="text-[13px] font-medium text-orange-500">₹{partsCost.toLocaleString()}</p>
+                      <p className="text-[10px] text-gray-400 uppercase tracking-wide">Parts</p>
+                    </td>
+                    <td className="px-4 py-4">
+                      <p className="text-[13px] font-medium text-gray-900">₹{revenue.toLocaleString()}</p>
+                      {isEstimated && <p className="text-[10px] text-gray-400 uppercase tracking-wide">Est.</p>}
+                    </td>
+                    <td className="px-4 py-4">
+                      <p className={`text-[13px] font-medium ${profit >= 0 ? 'text-purple-600' : 'text-red-500'}`}>
+                        {profit >= 0 ? '+' : ''}₹{profit.toLocaleString()}
+                      </p>
+                      {revenue > 0 && (
+                        <p className="text-[10px] text-gray-400 uppercase tracking-wide">
+                          {Math.round((profit / revenue) * 100)}%
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-4 py-4"><StatusBadge status={job.status} /></td>
+                    <td className="px-4 py-4">
                       {job.status === 'Completed' ? (
-                        <Button 
-                          text="Process Payment" 
-                          variant="success" 
-                          onClick={() => { setBillingModal(job.id); setActualCostInput(String(job.actualCost ?? job.estimatedCost)); }} 
+                        <Button
+                          text="Process Payment"
+                          variant="success"
+                          onClick={() => { setBillingModal(job.id); setActualCostInput(String(job.actualCost ?? job.estimatedCost)); }}
                         />
                       ) : (
                         <span className="px-3 py-1.5 bg-gray-100 text-gray-500 text-[11px] font-medium rounded-lg uppercase tracking-wide inline-block">
@@ -237,72 +425,139 @@ export const BillingPage: React.FC = () => {
         </div>
       </Card>
 
-      {/* Mark Delivered Modal */}
-      {billingModal && (() => {
-        const job = jobs.find((j: any) => j.id === billingModal);
-        const customer = customers.find((c: any) => c.id === job?.customerId);
-        const device = devices.find((d: any) => d.id === job?.deviceId);
-        const engineer = users.find((u: any) => u.id === job?.assignedEngineerId);
-        return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 p-4">
-            <div className="bg-white rounded-xl w-full max-w-lg shadow-xl overflow-hidden flex flex-col">
-              <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200">
-                <h2 className="text-[18px] font-medium text-gray-900">Process Payment</h2>
-                <button onClick={() => setBillingModal(null)} className="text-gray-400 hover:text-gray-600 transition-colors">
-                  <X size={20} />
-                </button>
-              </div>
+      {/* ── Process Payment Modal ── */}
+      {billingModal && modalJob && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-lg shadow-xl overflow-hidden flex flex-col max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200">
+              <h2 className="text-[18px] font-medium text-gray-900">Process Payment</h2>
+              <button onClick={() => setBillingModal(null)} className="text-gray-400 hover:text-gray-600 transition-colors">
+                <X size={20} />
+              </button>
+            </div>
 
-              <div className="p-6 space-y-6">
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
-                  <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Job Invoice Summary</p>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-[11px] font-normal text-gray-500 uppercase tracking-wide">Client</p>
-                      <p className="text-[13px] font-medium text-gray-900">{customer?.name}</p>
-                      <p className="text-[11px] font-normal text-gray-500">{customer?.phone}</p>
-                    </div>
-                    <div>
-                      <p className="text-[11px] font-normal text-gray-500 uppercase tracking-wide">Device</p>
-                      <p className="text-[13px] font-medium text-gray-900">{device?.brand} {device?.model}</p>
-                      <p className="text-[11px] font-normal text-gray-500">Assigned: {engineer?.name}</p>
-                    </div>
+            <div className="p-6 space-y-5">
+              {/* Job summary */}
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
+                <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Job Invoice Summary</p>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-[11px] font-normal text-gray-500 uppercase tracking-wide">Client</p>
+                    <p className="text-[13px] font-medium text-gray-900">{modalCustomer?.name}</p>
+                    <p className="text-[11px] font-normal text-gray-500">{modalCustomer?.phone}</p>
                   </div>
-                  
-                  <div className="bg-white rounded-lg p-3 border border-gray-200">
-                    <p className="text-[11px] font-normal text-gray-500 uppercase tracking-wide mb-1">Resolution</p>
-                    <p className="text-[13px] font-normal text-gray-700">{job?.problemDescription}</p>
+                  <div>
+                    <p className="text-[11px] font-normal text-gray-500 uppercase tracking-wide">Device</p>
+                    <p className="text-[13px] font-medium text-gray-900">{modalDevice?.brand} {modalDevice?.model}</p>
+                    <p className="text-[11px] font-normal text-gray-500">Assigned: {modalEngineer?.name}</p>
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-medium text-gray-700 uppercase tracking-wide mb-2">Final Invoice Amount (₹) *</label>
-                  <input 
-                    className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-[18px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 transition-all text-center" 
-                    type="number" 
-                    value={actualCostInput} 
-                    onChange={e => setActualCostInput(e.target.value)} 
-                    placeholder={String(job?.estimatedCost ?? 0)} 
-                  />
-                </div>
-                
-                <div className="bg-green-50 rounded-lg p-4 border border-green-200 flex items-center justify-between">
-                  <p className="text-[13px] font-medium text-green-800 uppercase tracking-wide">Amount Due</p>
-                  <p className="text-[18px] font-medium text-green-600">
-                    ₹{(actualCostInput ? parseFloat(actualCostInput) : (job?.estimatedCost ?? 0)).toLocaleString()}
-                  </p>
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <p className="text-[11px] font-normal text-gray-500 uppercase tracking-wide mb-1">Resolution</p>
+                  <p className="text-[13px] font-normal text-gray-700">{modalJob?.problemDescription}</p>
                 </div>
               </div>
 
-              <div className="flex gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
-                <Button text="Cancel" variant="outline" onClick={() => setBillingModal(null)} className="w-full" />
-                <Button text="Collect & Mark Delivered" variant="success" onClick={() => handleMarkDelivered(billingModal)} className="w-full" />
+              {/* Approved parts used */}
+              {modalApprovedParts.length > 0 && (
+                <div className="border border-orange-200 rounded-lg overflow-hidden">
+                  <div className="bg-orange-50 px-4 py-2 flex items-center gap-2">
+                    <Package size={13} className="text-orange-500" />
+                    <p className="text-[11px] font-medium text-orange-700 uppercase tracking-wide">Approved Parts Used</p>
+                  </div>
+                  <div className="divide-y divide-gray-100 bg-white">
+                    {modalApprovedParts.map((pr: any) => {
+                      const inv = inventory.find((i: any) => i.name.toLowerCase() === pr.partName.toLowerCase());
+                      const lineCost = (inv?.unitCost ?? 0) * pr.quantity;
+                      return (
+                        <div key={pr.id} className="flex items-center justify-between px-4 py-2">
+                          <div>
+                            <p className="text-[13px] font-medium text-gray-900">{pr.partName}</p>
+                            <p className="text-[11px] text-gray-500">Qty: {pr.quantity}{inv ? ` × ₹${inv.unitCost}` : ' (unit cost unknown)'}</p>
+                          </div>
+                          <p className="text-[13px] font-medium text-orange-600">
+                            {lineCost > 0 ? `₹${lineCost.toLocaleString()}` : '—'}
+                          </p>
+                        </div>
+                      );
+                    })}
+                    <div className="flex items-center justify-between px-4 py-2 bg-orange-50">
+                      <p className="text-[12px] font-medium text-orange-700 uppercase tracking-wide">Total Parts Cost</p>
+                      <p className="text-[13px] font-medium text-orange-700">₹{modalPartsCost.toLocaleString()}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Final cost input */}
+              <div>
+                <label className="block text-[11px] font-medium text-gray-700 uppercase tracking-wide mb-2">Final Invoice Amount (₹) *</label>
+                <input
+                  className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-[18px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 transition-all text-center"
+                  type="number"
+                  value={actualCostInput}
+                  onChange={e => setActualCostInput(e.target.value)}
+                  placeholder={String(modalJob?.estimatedCost ?? 0)}
+                />
+              </div>
+
+              {/* Profit breakdown preview */}
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2">
+                <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-3">Profit Breakdown Preview</p>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Banknote size={13} className="text-green-500" />
+                    <span className="text-[12px] text-gray-600">Total Invoice</span>
+                  </div>
+                  <span className="text-[13px] font-medium text-gray-900">₹{modalFinalCost.toLocaleString()}</span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Package size={13} className="text-orange-400" />
+                    <span className="text-[12px] text-gray-600">Parts Cost</span>
+                  </div>
+                  <span className="text-[13px] font-medium text-orange-600">− ₹{modalPartsCost.toLocaleString()}</span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Wrench size={13} className="text-teal-500" />
+                    <span className="text-[12px] text-gray-600">Service Charge</span>
+                  </div>
+                  <span className="text-[13px] font-medium text-teal-600">₹{modalServiceCharge.toLocaleString()}</span>
+                </div>
+
+                <div className="border-t border-gray-200 pt-2 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {modalProfit >= 0
+                      ? <TrendingUp size={13} className="text-purple-500" />
+                      : <TrendingDown size={13} className="text-red-500" />
+                    }
+                    <span className="text-[12px] font-medium text-gray-700">Net Profit</span>
+                  </div>
+                  <span className={`text-[15px] font-medium ${modalProfit >= 0 ? 'text-purple-600' : 'text-red-600'}`}>
+                    {modalProfit >= 0 ? '+' : ''}₹{modalProfit.toLocaleString()}
+                    {modalFinalCost > 0 && (
+                      <span className="text-[11px] ml-1 font-normal opacity-70">
+                        ({Math.round((modalProfit / modalFinalCost) * 100)}%)
+                      </span>
+                    )}
+                  </span>
+                </div>
               </div>
             </div>
+
+            <div className="flex gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
+              <Button text="Cancel" variant="outline" onClick={() => setBillingModal(null)} className="w-full" />
+              <Button text="Collect & Mark Delivered" variant="success" onClick={() => handleMarkDelivered(billingModal)} className="w-full" />
+            </div>
           </div>
-        );
-      })()}
+        </div>
+      )}
     </div>
   );
 };

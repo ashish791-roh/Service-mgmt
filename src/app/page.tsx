@@ -13,18 +13,22 @@ import { EngineerDashboard, MyJobsPage } from '../pages_components/EngineersPage
 import { AnalyticsPage } from '../pages_components/AnalyticsPage';
 import { NotificationsPage } from '../pages_components/NotificationsPage';
 import { ReportsPage } from '../pages_components/ReportsPage';
+import { SystemSettingsPage } from '../pages_components/SystemSettingsPage';
+import { SalesPage } from '../pages_components/SalesPage';
 
 const PAGE_LABELS: Record<string, string> = {
   dashboard: 'Dashboard', users: 'User Management', analytics: 'Analytics',
   reports: 'Reports', customers: 'Customers', jobs: 'Jobs',
   assign: 'Assign Jobs', parts: 'Parts Requests', inventory: 'Inventory',
-  billing: 'Billing', 'my-jobs': 'My Jobs', notifications: 'Notifications',
+  sales: 'Sales', billing: 'Billing', 'my-jobs': 'My Jobs',
+  notifications: 'Notifications', settings: 'System Settings',
 };
 
 const PAGE_ICONS: Record<string, string> = {
   dashboard: '⊞', users: '👥', analytics: '📊', reports: '📈',
   customers: '🧑‍💼', jobs: '🔧', assign: '📌', parts: '🔩',
-  inventory: '📦', billing: '💰', 'my-jobs': '📋', notifications: '🔔',
+  inventory: '📦', sales: '🛒', billing: '💰', 'my-jobs': '📋',
+  notifications: '🔔', settings: '⚙️',
 };
 
 function AppContent() {
@@ -59,10 +63,17 @@ function AppContent() {
       case 'assign': return <AssignJobsPage />;
       case 'parts': return <PartsRequestPage />;
       case 'inventory': return <InventoryPage />;
+      case 'sales': return <SalesPage />;
       case 'billing': return <BillingPage />;
       case 'analytics': return <AnalyticsPage />;
       case 'notifications': return <NotificationsPage />;
       case 'reports': return <ReportsPage />;
+      case 'settings': return currentUser.role === 'admin' ? <SystemSettingsPage /> : (
+        <div className="flex flex-col items-center justify-center h-64 text-slate-400">
+          <span className="text-4xl mb-3">🔒</span>
+          <p className="text-sm font-medium">Access denied</p>
+        </div>
+      );
       default: return (
         <div className="flex flex-col items-center justify-center h-64 text-slate-400">
           <span className="text-4xl mb-3">🔍</span>
