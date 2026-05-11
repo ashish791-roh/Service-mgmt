@@ -29,12 +29,12 @@ export async function PUT(
         // ── Auto-add parts cost to job estimatedCost on approval ─────────────
         if (body.status === 'Approved' && partRequest.jobId && partRequest.partName) {
             try {
-                // Look up the inventory item by name (case-insensitive) to get unit cost and id
+                // Look up the inventory item by name (case-insensitive) to get unit cost
                 const inventoryItem = await prisma.inventoryItem.findFirst({
                     where: {
                         name: { equals: partRequest.partName, mode: 'insensitive' },
                     },
-                    select: { id: true, unitPrice: true, quantity: true },
+                    select: { unitPrice: true },
                 });
 
                 const unitCost = inventoryItem?.unitPrice ?? 0;
@@ -59,27 +59,9 @@ export async function PUT(
                         `[parts/[id]] Approved part "${partRequest.partName}" has no inventory match or zero unit cost — estimatedCost unchanged.`
                     );
                 }
-
-                // ── Decrement inventory quantity on approval ──────────────────
-                if (inventoryItem) {
-                    const deductQty = partRequest.quantity ?? 1;
-                    const newQty = Math.max(0, inventoryItem.quantity - deductQty);
-                    await prisma.inventoryItem.update({
-                        where: { id: inventoryItem.id },
-                        data: { quantity: newQty },
-                    });
-                    console.log(
-                        `[parts/[id]] Inventory "${partRequest.partName}" decremented by ${deductQty} ` +
-                        `(${inventoryItem.quantity} → ${newQty}).`
-                    );
-                } else {
-                    console.warn(
-                        `[parts/[id]] Approved part "${partRequest.partName}" not found in inventory — quantity not decremented.`
-                    );
-                }
             } catch (costErr) {
-                // Cost/inventory update failure must NOT fail the approval itself
-                console.error('[parts/[id]] Failed to update job estimatedCost or inventory:', costErr);
+                // Cost update failure must NOT fail the approval itself
+                console.error('[parts/[id]] Failed to update job estimatedCost:', costErr);
             }
         }
 
