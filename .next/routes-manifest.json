@@ -28,6 +28,14 @@
       "namedRegex": "^/api/jobs/(?<nxtPid>[^/]+?)(?:/)?$"
     },
     {
+      "page": "/api/jobs/[id]/public",
+      "regex": "^/api/jobs/([^/]+?)/public(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/jobs/(?<nxtPid>[^/]+?)/public(?:/)?$"
+    },
+    {
       "page": "/api/parts/[id]",
       "regex": "^/api/parts/([^/]+?)(?:/)?$",
       "routeKeys": {
@@ -56,6 +64,12 @@
       "regex": "^/_not\\-found(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/_not\\-found(?:/)?$"
+    },
+    {
+      "page": "/track",
+      "regex": "^/track(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/track(?:/)?$"
     }
   ],
   "dataRoutes": [],
