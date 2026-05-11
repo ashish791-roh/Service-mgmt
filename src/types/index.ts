@@ -33,6 +33,21 @@ export interface Device {
   serialNumber?: string;
 }
 
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  done: boolean;
+}
+
+export interface JobActivity {
+  id: string;
+  jobId: string;
+  userId: string;
+  action: string;
+  details?: string;
+  createdAt: string;
+}
+
 export interface Job {
   id: string;
   customerId: string;
@@ -43,6 +58,11 @@ export interface Job {
   estimatedCost: number;
   actualCost?: number;
   repairNotes?: string;
+  checklist?: ChecklistItem[];
+  rating?: number;
+  feedback?: string;
+  linkedJobId?: string;
+  activities?: JobActivity[];
   createdAt: string;
   updatedAt: string;
   completedAt?: string;

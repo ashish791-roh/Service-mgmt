@@ -20,6 +20,7 @@ model User {
   assignedJobs  Job[]          @relation("EngineerJobs")
   partRequests  PartRequest[]
   notifications Notification[]
+  jobActivities JobActivity[]
 }
 
 // ── Customer Management ───────────────────────────────────────────
@@ -70,6 +71,26 @@ model Job {
   engineer     User?         @relation("EngineerJobs", fields: [engineerId], references: [id])
   partRequests PartRequest[]
   payment      Payment?
+
+  checklist    Json?
+  rating       Int?
+  feedback     String?
+  linkedJobId  String?
+  linkedJob    Job?          @relation("JobWarranty", fields: [linkedJobId], references: [id])
+  warrantyJobs Job[]         @relation("JobWarranty")
+  activities   JobActivity[]
+}
+
+model JobActivity {
+  id        String   @id @default(uuid())
+  jobId     String
+  userId    String
+  action    String
+  details   String?
+  createdAt DateTime @default(now())
+
+  job  Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
 }
 
 // ── Parts Request System ──────────────────────────────────────────

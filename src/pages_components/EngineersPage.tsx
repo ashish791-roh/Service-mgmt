@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { Wrench, CheckCircle, Bell, Clipboard, Package, Activity, X, Clock, ChevronRight, QrCode, Download, Printer } from 'lucide-react';
 import type { JobStatus } from '../types';
 import { Toast, useToast, getJobAgeLevel } from '../components/ui';
+import { JobDrawer } from '../components/JobDrawer';
 
 const PageHeader = ({ title, subtitle, action }: { title: string, subtitle: string, action?: React.ReactNode }) => (
   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 bg-white p-6 rounded-xl border border-gray-200">
@@ -433,12 +434,14 @@ export const EngineerDashboard: React.FC = () => {
 };
 
 export const MyJobsPage: React.FC = () => {
-  const { currentUser, jobs, customers, devices, partRequests, updateJobStatus, addPartRequest } = useApp();
-  const [selectedJob, setSelectedJob] = useState<string | null>(null);
+  const { currentUser, jobs, customers, devices, partRequests, inventory, updateJobStatus, addPartRequest } = useApp();
+  const [selectedJob, setSelectedJob] = useState<{ id: string; hasPendingParts: boolean } | null>(null);
   const [showPartModal, setShowPartModal] = useState<string | null>(null);
+  const [selectedDrawerJobId, setSelectedDrawerJobId] = useState<string | null>(null);
   const [statusUpdate, setStatusUpdate] = useState<{ status: string; notes: string }>({ status: '', notes: '' });
   const [partForm, setPartForm] = useState({ partName: '', quantity: '1', reason: '' });
   const [qrJob, setQrJob] = useState<any>(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const { toast, show } = useToast();
 
   if (!currentUser) return null;
@@ -483,6 +486,7 @@ export const MyJobsPage: React.FC = () => {
             const customer = customers.find(c => c.id === job.customerId);
             const device = devices.find(d => d.id === job.deviceId);
             const myPartReqs = partRequests.filter(r => r.jobId === job.id);
+            const hasPendingParts = myPartReqs.some(r => r.status === 'Pending');
             const isCompleted = ['Completed', 'Delivered'].includes(job.status);
             
             return (
@@ -529,6 +533,14 @@ export const MyJobsPage: React.FC = () => {
                           </div>
                         ))}
                       </div>
+                      {hasPendingParts && (
+                        <div className="mt-2 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                          <span className="text-amber-500 mt-0.5 shrink-0">⚠</span>
+                          <p className="text-[11px] font-medium text-amber-700">
+                            Parts pending approval — you cannot mark this job as Completed until reception approves or rejects all part requests.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -536,7 +548,8 @@ export const MyJobsPage: React.FC = () => {
                 <div className="p-5 bg-gray-50 border-t border-gray-200 flex gap-3">
                   {!isCompleted ? (
                     <>
-                      <Button text="Update Status" variant="primary" onClick={() => { setSelectedJob(job.id); setStatusUpdate({ status: job.status, notes: job.repairNotes ?? '' }); }} className="flex-1" />
+                      <Button text="Open Workspace" variant="primary" onClick={() => setSelectedDrawerJobId(job.id)} className="flex-1" />
+                      <Button text="Update Status" variant="outline" onClick={() => { setSelectedJob({ id: job.id, hasPendingParts }); setStatusUpdate({ status: job.status, notes: job.repairNotes ?? '' }); }} />
                       <Button text="Order Part" variant="warning" onClick={() => setShowPartModal(job.id)} className="flex-1" />
                     </>
                   ) : (
@@ -568,6 +581,14 @@ export const MyJobsPage: React.FC = () => {
               </button>
             </div>
             <div className="p-6 space-y-4">
+              {selectedJob.hasPendingParts && (
+                <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  <span className="text-amber-500 mt-0.5 shrink-0">⚠</span>
+                  <p className="text-[11px] font-medium text-amber-700">
+                    Parts pending approval — <strong>Completed</strong> is disabled until reception approves or rejects all part requests.
+                  </p>
+                </div>
+              )}
               <div>
                 <label className="block text-[11px] font-medium text-gray-700 uppercase tracking-wide mb-1">New Status *</label>
                 <select 
@@ -575,7 +596,15 @@ export const MyJobsPage: React.FC = () => {
                   className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500"
                 >
                   <option value="" disabled>Select phase...</option>
-                  {JOB_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                  {JOB_STATUSES.map(s => (
+                    <option
+                      key={s}
+                      value={s}
+                      disabled={s === 'Completed' && selectedJob.hasPendingParts}
+                    >
+                      {s === 'Completed' && selectedJob.hasPendingParts ? 'Completed (pending parts approval)' : s}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div>
@@ -589,7 +618,7 @@ export const MyJobsPage: React.FC = () => {
             </div>
             <div className="flex gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
               <Button text="Cancel" variant="outline" onClick={() => setSelectedJob(null)} className="w-full" />
-              <Button text="Save Update" variant="success" onClick={() => handleStatusUpdate(selectedJob)} className="w-full" />
+              <Button text="Save Update" variant="success" onClick={() => handleStatusUpdate(selectedJob.id)} className="w-full" />
             </div>
           </div>
         </div>
@@ -605,10 +634,48 @@ export const MyJobsPage: React.FC = () => {
               </button>
             </div>
             <div className="p-6 space-y-4">
-              <div>
+              <div className="relative">
                 <label className="block text-[11px] font-medium text-gray-700 uppercase tracking-wide mb-1">Part Name *</label>
-                <input value={partForm.partName} onChange={e => setPartForm(f => ({ ...f, partName: e.target.value }))} placeholder="e.g. iPhone 13 Screen Assembly"
-                  className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-orange-500" />
+                <input 
+                  value={partForm.partName} 
+                  onFocus={() => setShowSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                  onChange={e => {
+                    setPartForm(f => ({ ...f, partName: e.target.value }));
+                    setShowSuggestions(true);
+                  }} 
+                  placeholder="e.g. iPhone 13 Screen Assembly"
+                  className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-orange-500" 
+                />
+                
+                {/* Autocomplete Dropdown */}
+                {showSuggestions && partForm.partName.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden z-50 max-h-48 overflow-y-auto">
+                    {(() => {
+                      const matches = inventory.filter(i => i.name.toLowerCase().includes(partForm.partName.toLowerCase()));
+                      if (matches.length === 0) return (
+                         <div className="px-3 py-2 text-[12px] text-gray-500 italic">No matching parts in inventory.</div>
+                      );
+                      return matches.map(item => (
+                        <div 
+                          key={item.id}
+                          className="px-3 py-2 hover:bg-gray-50 cursor-pointer flex justify-between items-center border-b border-gray-50 last:border-0"
+                          onClick={() => {
+                            setPartForm(f => ({ ...f, partName: item.name }));
+                            setShowSuggestions(false);
+                          }}
+                        >
+                          <span className="text-[13px] font-medium text-gray-900">{item.name}</span>
+                          {item.quantity > 0 ? (
+                            <span className="text-[11px] font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">In Stock ({item.quantity})</span>
+                          ) : (
+                            <span className="text-[11px] font-medium text-rose-500 bg-rose-50 px-1.5 py-0.5 rounded">Out of Stock</span>
+                          )}
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block text-[11px] font-medium text-gray-700 uppercase tracking-wide mb-1">Quantity *</label>
@@ -633,6 +700,7 @@ export const MyJobsPage: React.FC = () => {
         const d = devices.find(d => d.id === qrJob.deviceId);
         return <QRModal job={qrJob} customer={c} device={d} onClose={() => setQrJob(null)} />;
       })()}
+      {selectedDrawerJobId && <JobDrawer jobId={selectedDrawerJobId} onClose={() => setSelectedDrawerJobId(null)} />}
       {toast && <Toast {...toast} />}
     </div>
   );

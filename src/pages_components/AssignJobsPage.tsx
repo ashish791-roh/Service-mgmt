@@ -228,8 +228,10 @@ export const AssignJobsPage: React.FC = () => {
               </div>
               <p className="text-[13px] font-medium text-gray-900 truncate mb-2">{eng.name}</p>
               <div className="flex items-center justify-center gap-1.5 mb-1">
-                <div className={`w-2 h-2 rounded-full ${active > 3 ? 'bg-amber-500' : 'bg-green-500'}`} />
-                <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">{active} Active</p>
+                <div className={`w-2 h-2 rounded-full ${active > 5 ? 'bg-red-500' : active > 3 ? 'bg-amber-500' : 'bg-green-500'}`} />
+                <p className={`text-[11px] font-medium uppercase tracking-wide ${active > 5 ? 'text-red-600' : active > 3 ? 'text-amber-600' : 'text-green-600'}`}>
+                  {active > 5 ? 'High Load' : active > 3 ? 'Med Load' : 'Optimal'} ({active})
+                </p>
               </div>
               {overdue > 0 && (
                 <p className="text-[10px] font-medium text-red-500 uppercase tracking-wide">{overdue} Overdue</p>
@@ -299,13 +301,17 @@ export const AssignJobsPage: React.FC = () => {
                     className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 transition-colors"
                   >
                     <option value="">Select engineer...</option>
-                    {engineers.map(e => {
+                    {[...engineers].sort((a, b) => {
+                      const loadA = jobs.filter(j => j.assignedEngineerId === a.id && ['Assigned', 'In Progress'].includes(j.status)).length;
+                      const loadB = jobs.filter(j => j.assignedEngineerId === b.id && ['Assigned', 'In Progress'].includes(j.status)).length;
+                      return loadA - loadB;
+                    }).map((e, idx) => {
                       const load = jobs.filter(j =>
                         j.assignedEngineerId === e.id && ['Assigned', 'In Progress'].includes(j.status)
                       ).length;
                       return (
                         <option key={e.id} value={e.id}>
-                          {e.name} ({load} active)
+                          {e.name} ({load} active) {idx === 0 ? '— Recommended' : ''}
                         </option>
                       );
                     })}

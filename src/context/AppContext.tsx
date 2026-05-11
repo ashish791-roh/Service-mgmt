@@ -31,7 +31,7 @@ interface AppContextType {
   addCustomer: (c: Omit<Customer, 'id' | 'createdAt'>) => Promise<Customer>;
   addDevice: (d: Omit<Device, 'id'>) => Promise<Device>;
   addJob: (j: Omit<Job, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Job>;
-  updateJobStatus: (jobId: string, status: JobStatus, notes?: string) => Promise<{ ok: boolean; error?: string }>;
+  updateJobStatus: (jobId: string, status: JobStatus, notes?: string, checklist?: any[], rating?: number, feedback?: string, linkedJobId?: string) => Promise<{ ok: boolean; error?: string }>;
   assignEngineer: (jobId: string, engineerId: string) => void;
   addPartRequest: (r: Omit<PartRequest, 'id' | 'createdAt' | 'status'>) => void;
   updatePartRequest: (id: string, status: PartRequestStatus) => void;
@@ -349,6 +349,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     jobId: string,
     status: JobStatus,
     notes?: string,
+    checklist?: any[],
+    rating?: number,
+    feedback?: string,
+    linkedJobId?: string
   ): Promise<{ ok: boolean; error?: string }> => {
     // Snapshot current state for rollback
     const previousJobs = jobs;
@@ -360,6 +364,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status,
       updatedAt: now,
       ...(notes !== undefined ? { repairNotes: notes } : {}),
+      ...(checklist !== undefined ? { checklist } : {}),
+      ...(rating !== undefined ? { rating } : {}),
+      ...(feedback !== undefined ? { feedback } : {}),
+      ...(linkedJobId !== undefined ? { linkedJobId } : {}),
       ...(status === 'Completed' ? { completedAt: now } : {}),
     } : j));
 
@@ -369,7 +377,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const res = await fetch(`/api/jobs/${jobId}`, {
         method: isEngineer ? 'PATCH' : 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status, repairNotes: notes }),
+        body: JSON.stringify({ status, repairNotes: notes, checklist, rating, feedback, linkedJobId }),
       });
 
       if (!res.ok) {
@@ -430,7 +438,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
     })
-      .then(() => loadAppData().then(data => setNotifications(data.notifications)))
+      .then(() => loadAppData().then(data => {
+        // Refresh notifications always; also refresh jobs when approving
+        // so the updated estimatedCost (parts cost added) is reflected in the UI
+        setNotifications(data.notifications);
+        if (status === 'Approved') {
+          setJobs(data.jobs);
+        }
+      }))
       .catch(console.error);
   };
 

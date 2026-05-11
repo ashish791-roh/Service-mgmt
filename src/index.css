@@ -105,3 +105,98 @@
     animation: slideInRight 0.28s cubic-bezier(0.16, 1, 0.3, 1);
   }
 }
+
+/* ── PROFESSIONAL DARK MODE RETROFIT ── */
+/* This maps light mode tailwind colors to dark mode equivalents instantly */
+/* Placed outside of @layer utilities so Tailwind JIT does not purge it */
+.dark {
+  color-scheme: dark;
+  /* Base background overriding the body color */
+  background-color: #0f172a;
+  color: #f8fafc;
+}
+
+.dark .bg-gray-50 {
+  background-color: #0f172a !important;
+}
+
+.dark .bg-white, 
+.dark .bg-gray-50\/50 {
+  background-color: #1e293b !important;
+}
+
+.dark .bg-gray-100 {
+  background-color: #334155 !important;
+}
+
+.dark .bg-gray-200 {
+  background-color: #475569 !important;
+}
+
+.dark .text-gray-900 {
+  color: #f8fafc !important;
+}
+
+.dark .text-gray-800 {
+  color: #f1f5f9 !important;
+}
+
+.dark .text-gray-700 {
+  color: #e2e8f0 !important;
+}
+
+.dark .text-gray-600 {
+  color: #cbd5e1 !important;
+}
+
+.dark .text-gray-500 {
+  color: #94a3b8 !important;
+}
+
+.dark .text-gray-400 {
+  color: #64748b !important;
+}
+
+.dark .border-gray-200 {
+  border-color: #334155 !important;
+}
+
+.dark .border-gray-100 {
+  border-color: #1e293b !important;
+}
+
+.dark .hover\:bg-gray-50:hover {
+  background-color: #334155 !important;
+}
+
+.dark .hover\:bg-gray-100:hover {
+  background-color: #475569 !important;
+}
+
+.dark .bg-amber-50\/90,
+.dark .bg-amber-100,
+.dark .bg-amber-200 {
+  background-color: #451a03 !important; /* amber-900 */
+  border-color: #78350f !important; /* amber-800 */
+}
+
+.dark .bg-rose-50\/90,
+.dark .bg-rose-100,
+.dark .bg-rose-200 {
+  background-color: #4c0519 !important; /* rose-900 */
+  border-color: #881337 !important; /* rose-800 */
+}
+
+/* Specific overrides to keep Sidebar active states distinct */
+.dark .bg-teal-50 {
+  background-color: rgba(20, 184, 166, 0.1) !important;
+}
+.dark .text-teal-600 {
+  color: #2dd4bf !important;
+}
+.dark .text-teal-500 {
+  color: #2dd4bf !important;
+}
+.dark .border-teal-200 {
+  border-color: rgba(20, 184, 166, 0.3) !important;
+}

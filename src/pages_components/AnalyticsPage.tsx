@@ -767,6 +767,41 @@ export const AnalyticsPage: React.FC = () => {
         <MetricCard title="Parts Approved" value={partRequests.filter(r => r.status === 'Approved').length}      icon={CheckCircle}  color="orange"              onClick={() => setActiveModal('parts')} />
       </div>
 
+      {/* Revenue Forecast Widget */}
+      {(() => {
+        const completedJobs = jobs.filter(j => ['Completed', 'Delivered'].includes(j.status));
+        const pendingJobs = jobs.filter(j => ['New', 'Assigned', 'In Progress'].includes(j.status));
+        const realized = completedJobs.reduce((sum, j) => sum + (j.actualCost ?? j.estimatedCost ?? 0), 0);
+        const pipeline = pendingJobs.reduce((sum, j) => sum + (j.estimatedCost ?? 0), 0);
+        const projected = realized + pipeline;
+        return (
+          <Card className="mb-6">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50">
+              <h3 className="text-[13px] font-medium text-gray-900 flex items-center gap-2">
+                <Banknote className="text-green-500" size={16} /> Revenue Forecast
+              </h3>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-gray-100">
+              <div className="p-6">
+                <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1">Realized Revenue</p>
+                <p className="text-[24px] font-medium text-green-600">₹{realized.toLocaleString()}</p>
+                <p className="text-[11px] text-gray-400 mt-1">{completedJobs.length} completed jobs</p>
+              </div>
+              <div className="p-6">
+                <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1">Pipeline (Estimated)</p>
+                <p className="text-[24px] font-medium text-orange-500">₹{pipeline.toLocaleString()}</p>
+                <p className="text-[11px] text-gray-400 mt-1">{pendingJobs.length} active jobs</p>
+              </div>
+              <div className="p-6 bg-teal-50/30">
+                <p className="text-[11px] font-medium text-teal-600 uppercase tracking-wide mb-1">Projected Total</p>
+                <p className="text-[24px] font-medium text-teal-700">₹{projected.toLocaleString()}</p>
+                <p className="text-[11px] text-teal-600/70 mt-1">If all pipeline closes</p>
+              </div>
+            </div>
+          </Card>
+        );
+      })()}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Job Status Breakdown — clickable */}
         <Card className="lg:col-span-2" onClick={() => setActiveModal('workflow')}>

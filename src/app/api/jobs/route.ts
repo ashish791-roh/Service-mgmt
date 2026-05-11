@@ -36,7 +36,19 @@ export async function POST(request: Request) {
                 problemDesc: body.problemDescription,
                 status: jobStatus,
                 estimatedCost: body.estimatedCost ? parseFloat(body.estimatedCost) : null,
+                checklist: body.checklist || undefined,
+                rating: body.rating || undefined,
+                feedback: body.feedback || undefined,
+                linkedJobId: body.linkedJobId || undefined,
+                activities: {
+                    create: {
+                        userId: auth.user.id,
+                        action: 'Created Job',
+                        details: `Job created with status ${jobStatus}`
+                    }
+                }
             },
+            include: { activities: true }
         });
 
         // ── Internal engineer notification (unchanged) ────────────
@@ -88,6 +100,10 @@ export async function POST(request: Request) {
             estimatedCost: job.estimatedCost ?? 0,
             createdAt: job.createdAt.toISOString(),
             updatedAt: job.updatedAt.toISOString(),
+            activities: job.activities.map((a: any) => ({
+                ...a,
+                createdAt: a.createdAt.toISOString()
+            }))
         }, { status: 201 });
     } catch (error) {
         console.error('[api/jobs POST]', error);

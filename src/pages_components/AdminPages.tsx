@@ -473,7 +473,7 @@ const DetailModal = ({
 
 // ── AdminDashboard ────────────────────────────────────────────────────────────
 export const AdminDashboard: React.FC<{ onNavigate: (p: string) => void }> = ({ onNavigate }) => {
-  const { jobs, users, customers, partRequests } = useApp();
+  const { jobs, users, customers, partRequests, inventory } = useApp();
   const [activeModal, setActiveModal] = useState<ModalType>(null);
 
   const engineers = users.filter(u => u.role === 'engineer');
@@ -512,6 +512,33 @@ export const AdminDashboard: React.FC<{ onNavigate: (p: string) => void }> = ({ 
         <MetricCard title="Pending Parts"      value={pendingParts.length}                             icon={Package}  color="orange" sub={pendingParts.length > 0 ? "Action Needed" : ""} onClick={() => setActiveModal('parts')} />
         <MetricCard title="Est. Total Revenue" value={`₹${(jobs.reduce((s, j) => s + (j.actualCost ?? j.estimatedCost), 0) / 1000).toFixed(1)}k`} icon={Banknote} color="green" onClick={() => setActiveModal('revenue')} />
       </div>
+
+      {inventory && inventory.filter(i => i.quantity <= i.minStock).length > 0 && (
+        <Card className="bg-red-50 border-red-200">
+          <div className="px-6 py-4 border-b border-red-200 flex items-center justify-between">
+            <h3 className="text-[13px] font-medium text-red-900 flex items-center gap-2">
+              <Package size={16} className="text-red-500" /> Low Stock Inventory Alerts
+            </h3>
+            <span className="text-[11px] font-medium bg-red-100 text-red-700 px-2 py-0.5 rounded-md uppercase tracking-wide">
+              {inventory.filter(i => i.quantity <= i.minStock).length} Items Critical
+            </span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-5">
+            {inventory.filter(i => i.quantity <= i.minStock).slice(0, 3).map(item => (
+              <div key={item.id} className="bg-white border border-red-100 rounded-lg p-4">
+                <div className="flex justify-between items-start mb-2">
+                  <p className="text-[13px] font-medium text-gray-900 truncate">{item.name}</p>
+                  <p className="text-[15px] font-bold text-red-600">{item.quantity}</p>
+                </div>
+                <div className="flex justify-between items-center text-[11px] text-gray-500">
+                  <span className="uppercase tracking-wide">{item.category}</span>
+                  <span>Min: {item.minStock}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Jobs */}

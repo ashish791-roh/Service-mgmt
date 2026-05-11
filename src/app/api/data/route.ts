@@ -13,6 +13,10 @@ function mapJob(j: any) {
         createdAt: j.createdAt.toISOString(),
         updatedAt: j.updatedAt.toISOString(),
         completedAt: j.completedAt?.toISOString() ?? undefined,
+        activities: j.activities ? j.activities.map((a: any) => ({
+            ...a,
+            createdAt: a.createdAt.toISOString()
+        })) : []
     };
 }
 
@@ -127,12 +131,14 @@ export async function GET() {
     try {
         // ── Engineer: only their own data ────────────────────────
         if (user.role === 'engineer') {
-            const [myJobs, allPartRequests, myNotifications, allDevices, allCustomers] =
+            const [myJobs, allPartRequests, myNotifications, allDevices, allCustomers, allInventory] =
                 await Promise.all([
                     // Jobs assigned to this engineer
+                    // @ts-ignore - Prisma client needs regeneration to see activities relation
                     prisma.job.findMany({
                         where: { engineerId: user.id },
                         orderBy: { createdAt: 'desc' },
+                        include: { activities: true },
                     }),
                     // Part requests submitted by this engineer
                     prisma.partRequest.findMany({
@@ -147,6 +153,8 @@ export async function GET() {
                     // Devices and customers are needed to display job details
                     prisma.device.findMany({ orderBy: { createdAt: 'desc' } }),
                     prisma.customer.findMany({ orderBy: { createdAt: 'desc' } }),
+                    // Inventory for autocomplete suggestions (limited data)
+                    prisma.inventoryItem.findMany({ orderBy: { name: 'asc' } }),
                 ]);
 
             // Only expose the engineer's own profile — no other users
@@ -173,8 +181,13 @@ export async function GET() {
                     updatedAt: r.updatedAt.toISOString(),
                     reviewedAt: r.reviewedAt?.toISOString() ?? undefined,
                 })),
-                // Engineers don't see inventory or sales
-                inventory: [],
+                // Expose limited inventory data to engineers for part autocomplete
+                inventory: allInventory.map((i: any) => ({
+                    id: i.id,
+                    name: i.name,
+                    category: i.category,
+                    quantity: i.quantity,
+                })),
                 sales: [],
                 notifications: myNotifications.map((n: any) => ({
                     ...n,
@@ -202,7 +215,8 @@ export async function GET() {
                 }),
                 prisma.customer.findMany({ orderBy: { createdAt: 'desc' } }),
                 prisma.device.findMany({ orderBy: { createdAt: 'desc' } }),
-                prisma.job.findMany({ orderBy: { createdAt: 'desc' } }),
+                // @ts-ignore - Prisma client needs regeneration to see activities relation
+                prisma.job.findMany({ orderBy: { createdAt: 'desc' }, include: { activities: true } }),
                 prisma.partRequest.findMany({ orderBy: { createdAt: 'desc' } }),
                 prisma.inventoryItem.findMany({ orderBy: { name: 'asc' } }),
                 // Reception sees all notifications (they may act on part-request decisions)
@@ -243,7 +257,8 @@ export async function GET() {
                 prisma.user.findMany({ orderBy: { createdAt: 'asc' } }),
                 prisma.customer.findMany({ orderBy: { createdAt: 'desc' } }),
                 prisma.device.findMany({ orderBy: { createdAt: 'desc' } }),
-                prisma.job.findMany({ orderBy: { createdAt: 'desc' } }),
+                // @ts-ignore - Prisma client needs regeneration to see activities relation
+                prisma.job.findMany({ orderBy: { createdAt: 'desc' }, include: { activities: true } }),
                 prisma.partRequest.findMany({ orderBy: { createdAt: 'desc' } }),
                 prisma.inventoryItem.findMany({ orderBy: { name: 'asc' } }),
                 prisma.notification.findMany({ orderBy: { createdAt: 'desc' } }),

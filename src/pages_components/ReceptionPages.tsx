@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { StatusBadge, UrgencyDot, JobAgeBadge, getJobAgeLevel, Toast, useToast, PartStatusBadge } from '../components/ui';
+import { JobDrawer } from '../components/JobDrawer';
 import { Briefcase, AlertCircle, Zap, Users, Settings, Search, Plus, ArrowRight, X, Phone, MapPin, Monitor, Wrench, Calendar, ChevronRight, QrCode, Download, Printer } from 'lucide-react';
 
 const PageHeader = ({ title, subtitle, action }: { title: string, subtitle: string, action?: React.ReactNode }) => (
@@ -58,18 +59,18 @@ const ReceptionDetailModal = ({
   if (!type) return null;
 
   const configs: Record<NonNullable<ReceptionModalType>, { title: string; subtitle: string; accentColor: string }> = {
-    total:       { title: 'All Jobs',        subtitle: 'Complete job registry',            accentColor: 'text-cyan-600' },
-    unassigned:  { title: 'Unassigned Jobs', subtitle: 'Jobs waiting for an engineer',     accentColor: 'text-rose-600' },
-    inprogress:  { title: 'In Progress',     subtitle: 'Active repairs underway',          accentColor: 'text-amber-600' },
-    customers:   { title: 'Customers',       subtitle: 'Registered client accounts',       accentColor: 'text-green-600' },
+    total: { title: 'All Jobs', subtitle: 'Complete job registry', accentColor: 'text-cyan-600' },
+    unassigned: { title: 'Unassigned Jobs', subtitle: 'Jobs waiting for an engineer', accentColor: 'text-rose-600' },
+    inprogress: { title: 'In Progress', subtitle: 'Active repairs underway', accentColor: 'text-amber-600' },
+    customers: { title: 'Customers', subtitle: 'Registered client accounts', accentColor: 'text-green-600' },
   };
 
   const jobStatusColors: Record<string, string> = {
-    'New':        'border-cyan-400 text-cyan-700 bg-cyan-50',
-    'Assigned':   'border-teal-400 text-teal-700 bg-teal-50',
-    'In Progress':'border-orange-400 text-orange-700 bg-orange-50',
-    'Completed':  'border-green-400 text-green-700 bg-green-50',
-    'Delivered':  'border-green-400 text-green-700 bg-green-50',
+    'New': 'border-cyan-400 text-cyan-700 bg-cyan-50',
+    'Assigned': 'border-teal-400 text-teal-700 bg-teal-50',
+    'In Progress': 'border-orange-400 text-orange-700 bg-orange-50',
+    'Completed': 'border-green-400 text-green-700 bg-green-50',
+    'Delivered': 'border-green-400 text-green-700 bg-green-50',
   };
 
   const cfg = configs[type];
@@ -545,9 +546,11 @@ export const CustomersPage: React.FC = () => {
 
   const [custForm, setCustForm] = useState({ name: '', phone: '', address: '', email: '' });
   const [deviceForm, setDeviceForm] = useState({ type: '', brand: '', model: '', serialNumber: '' });
-  const [jobForm, setJobForm] = useState({ problemDescription: '', estimatedCost: '', assignedEngineerId: '' });
+  const [jobForm, setJobForm] = useState({ problemDescription: '', estimatedCost: '', assignedEngineerId: '', linkedJobId: '' });
   const [newCustId, setNewCustId] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Feature: auto-show QR modal after job creation
+  const [createdJob, setCreatedJob] = useState<any>(null);
 
   // Customer detail modal state
   const [selectedCustomer, setSelectedCustomer] = useState<typeof customers[0] | null>(null);
@@ -576,19 +579,21 @@ export const CustomersPage: React.FC = () => {
       setSubmitting(true);
       try {
         const dev = await addDevice({ ...deviceForm, customerId: newCustId });
-        await addJob({
+        const newJob = await addJob({
           customerId: newCustId, deviceId: dev.id,
           assignedEngineerId: jobForm.assignedEngineerId || null,
           status: jobForm.assignedEngineerId ? 'Assigned' : 'New',
           problemDescription: jobForm.problemDescription,
           estimatedCost: parseFloat(jobForm.estimatedCost),
+          linkedJobId: jobForm.linkedJobId || undefined,
         });
         setShowModal(false);
         setStep(1);
         setCustForm({ name: '', phone: '', address: '', email: '' });
         setDeviceForm({ type: '', brand: '', model: '', serialNumber: '' });
-        setJobForm({ problemDescription: '', estimatedCost: '', assignedEngineerId: '' });
-        show('Job registered successfully!');
+        setJobForm({ problemDescription: '', estimatedCost: '', assignedEngineerId: '', linkedJobId: '' });
+        // Open QR modal so staff can print the ticket for the customer
+        setCreatedJob(newJob);
       } catch {
         show('Failed to register job. Please try again.', 'error');
       } finally {
@@ -669,11 +674,10 @@ export const CustomersPage: React.FC = () => {
               <button
                 key={tab.id}
                 onClick={() => setDetailTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-3 text-[13px] font-medium border-b-2 transition-colors -mb-px ${
-                  detailTab === tab.id
+                className={`flex items-center gap-2 px-4 py-3 text-[13px] font-medium border-b-2 transition-colors -mb-px ${detailTab === tab.id
                     ? 'border-teal-500 text-teal-600'
                     : 'border-transparent text-gray-500 hover:text-gray-800'
-                }`}
+                  }`}
               >
                 <tab.icon size={14} /> {tab.label}
               </button>
@@ -823,10 +827,10 @@ export const CustomersPage: React.FC = () => {
         const completedJobs = allJobs.filter(j => ['Completed', 'Delivered'].includes(j.status));
 
         const configs = {
-          total:     { title: 'All Customers', subtitle: 'Complete client registry', accentColor: 'text-teal-600' },
-          active:    { title: 'Active Jobs', subtitle: 'Jobs currently in progress', accentColor: 'text-amber-600' },
+          total: { title: 'All Customers', subtitle: 'Complete client registry', accentColor: 'text-teal-600' },
+          active: { title: 'Active Jobs', subtitle: 'Jobs currently in progress', accentColor: 'text-amber-600' },
           completed: { title: 'Completed Jobs', subtitle: 'Successfully resolved repairs', accentColor: 'text-green-600' },
-          revenue:   { title: 'Revenue Overview', subtitle: 'Earnings from completed jobs', accentColor: 'text-cyan-600' },
+          revenue: { title: 'Revenue Overview', subtitle: 'Earnings from completed jobs', accentColor: 'text-cyan-600' },
         };
         const cfg = configs[summaryModal];
         const jobStatusColors: Record<string, string> = {
@@ -1102,6 +1106,10 @@ export const CustomersPage: React.FC = () => {
                       {engineers.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                     </select>
                   </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5">Linked Warranty Job (Optional)</label>
+                    <input className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 focus:bg-white transition-colors font-mono" value={jobForm.linkedJobId} onChange={e => setJobForm({ ...jobForm, linkedJobId: e.target.value })} placeholder="e.g. j-123456" />
+                  </div>
                 </>
               )}
             </div>
@@ -1114,6 +1122,21 @@ export const CustomersPage: React.FC = () => {
         </div>
       )}
       {toast && <Toast {...toast} />}
+      {createdJob && (() => {
+        const c = customers.find(c => c.id === createdJob.customerId);
+        const d = devices.find(d => d.id === createdJob.deviceId);
+        return (
+          <QRModal
+            job={createdJob}
+            customer={c}
+            device={d}
+            onClose={() => {
+              setCreatedJob(null);
+              show('Job registered successfully!');
+            }}
+          />
+        );
+      })()}
     </div>
   );
 };
@@ -1124,7 +1147,10 @@ export const JobsPage: React.FC = () => {
   const showFinancials = currentUser?.role !== 'engineer';
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [engineerFilter, setEngineerFilter] = useState<string>('All');
+  const [dateFrom, setDateFrom] = useState<string>('');
+  const [dateTo, setDateTo] = useState<string>('');
   const [qrJob, setQrJob] = useState<any>(null);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
 
   const engineers = users.filter(u => u.role === 'engineer');
   const statuses = ['All', 'New', 'Assigned', 'In Progress', 'Completed', 'Delivered'];
@@ -1132,8 +1158,21 @@ export const JobsPage: React.FC = () => {
   const filtered = jobs.filter(j => {
     if (statusFilter !== 'All' && j.status !== statusFilter) return false;
     if (engineerFilter !== 'All' && j.assignedEngineerId !== engineerFilter) return false;
+    if (dateFrom) {
+      const from = new Date(dateFrom);
+      from.setHours(0, 0, 0, 0);
+      if (new Date(j.createdAt) < from) return false;
+    }
+    if (dateTo) {
+      const to = new Date(dateTo);
+      to.setHours(23, 59, 59, 999);
+      if (new Date(j.createdAt) > to) return false;
+    }
     return true;
   });
+
+  const hasDateFilter = dateFrom || dateTo;
+  const clearDateFilter = () => { setDateFrom(''); setDateTo(''); };
 
   return (
     <div className="max-w-[1400px] mx-auto pb-8 space-y-6">
@@ -1153,6 +1192,35 @@ export const JobsPage: React.FC = () => {
           <option value="All">All Engineers</option>
           {engineers.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
         </select>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-lg px-3 py-1.5">
+            <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wide whitespace-nowrap">From</span>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={e => setDateFrom(e.target.value)}
+              className="text-[13px] font-medium text-gray-900 focus:outline-none bg-transparent"
+            />
+          </div>
+          <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-lg px-3 py-1.5">
+            <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wide whitespace-nowrap">To</span>
+            <input
+              type="date"
+              value={dateTo}
+              min={dateFrom || undefined}
+              onChange={e => setDateTo(e.target.value)}
+              className="text-[13px] font-medium text-gray-900 focus:outline-none bg-transparent"
+            />
+          </div>
+          {hasDateFilter && (
+            <button
+              onClick={clearDateFilter}
+              className="px-3 py-1.5 text-[12px] font-medium text-rose-600 bg-rose-50 border border-rose-100 rounded-lg hover:bg-rose-100 transition-colors whitespace-nowrap"
+            >
+              Clear dates
+            </button>
+          )}
+        </div>
       </div>
 
       <Card>
@@ -1173,7 +1241,7 @@ export const JobsPage: React.FC = () => {
                 const ageLevel = getJobAgeLevel(job.createdAt, job.status);
                 const rowBg = ageLevel === 'red' ? 'bg-red-50/40' : ageLevel === 'yellow' ? 'bg-amber-50/40' : '';
                 return (
-                  <tr key={job.id} className={`hover:bg-gray-50 transition-colors cursor-pointer ${rowBg}`}>
+                  <tr key={job.id} onClick={() => setSelectedJobId(job.id)} className={`hover:bg-gray-50 transition-colors cursor-pointer ${rowBg}`}>
                     <td className="pl-6 py-4"><UrgencyDot createdAt={job.createdAt} status={job.status} /></td>
                     <td className="px-6 py-4 text-[11px] font-medium text-gray-400">#{job.id}</td>
                     <td className="px-6 py-4">
@@ -1226,6 +1294,7 @@ export const JobsPage: React.FC = () => {
         const d = devices.find(d => d.id === qrJob.deviceId);
         return <QRModal job={qrJob} customer={c} device={d} onClose={() => setQrJob(null)} />;
       })()}
+      {selectedJobId && <JobDrawer jobId={selectedJobId} onClose={() => setSelectedJobId(null)} />}
     </div>
   );
 };

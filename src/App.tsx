@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { getSettings } from './pages_components/SystemSettingsPage';
 import { AppProvider, useApp } from './context/AppContext';
 import { LoginPage } from './pages_components/LoginPage';
 import { Sidebar } from './components/Sidebar';
@@ -38,6 +39,26 @@ function AppContent() {
   const { currentUser, hydrated } = useApp();
   const [activePage, setActivePage] = useState<string>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    const applyTheme = () => {
+      const { theme } = getSettings();
+      const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      if (isDark) document.documentElement.classList.add('dark');
+      else document.documentElement.classList.remove('dark');
+    };
+
+    applyTheme(); // Run on mount
+
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    mediaQuery.addEventListener('change', applyTheme);
+    window.addEventListener('theme-change', applyTheme);
+
+    return () => {
+      mediaQuery.removeEventListener('change', applyTheme);
+      window.removeEventListener('theme-change', applyTheme);
+    };
+  }, []);
 
   // Show spinner while session is being restored from localStorage/cookie.
   // This prevents the login page from flashing on every refresh.
