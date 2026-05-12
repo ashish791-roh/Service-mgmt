@@ -49,6 +49,7 @@ interface JobData {
     completedAt: string | null;
     updatedAt: string | null;
     device: { brand: string; type: string; model: string } | null;
+    photos?: { id: string, url: string, type: 'before' | 'after' }[];
 }
 
 // ── Helper ─────────────────────────────────────────────────────────────────────
@@ -222,6 +223,37 @@ function TrackContent() {
                                 </div>
                             </div>
                         </div>
+
+                        {/* Device Photos */}
+                        {job.photos && job.photos.length > 0 && (
+                            <div className="bg-white rounded-2xl shadow-sm p-5 mb-4 space-y-4">
+                                <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wide mb-2">Device Condition Photos</p>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wide mb-2">Intake (Before)</p>
+                                        <div className="space-y-2">
+                                            {job.photos.filter(p => p.type === 'before').map(p => (
+                                                <img key={p.id} src={p.url} alt="Before repair" className="w-full h-24 object-cover rounded-lg border border-slate-200" />
+                                            ))}
+                                            {job.photos.filter(p => p.type === 'before').length === 0 && (
+                                                <div className="w-full h-24 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-center text-[10px] text-slate-400">No photos</div>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wide mb-2">Post-Repair (After)</p>
+                                        <div className="space-y-2">
+                                            {job.photos.filter(p => p.type === 'after').map(p => (
+                                                <img key={p.id} src={p.url} alt="After repair" className="w-full h-24 object-cover rounded-lg border border-slate-200" />
+                                            ))}
+                                            {job.photos.filter(p => p.type === 'after').length === 0 && (
+                                                <div className="w-full h-24 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-center text-[10px] text-slate-400">No photos</div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         {/* Footer note */}
                         <p className="text-center text-[11px] text-slate-400 px-4">

@@ -16,6 +16,10 @@ function mapJob(j: any) {
         activities: j.activities ? j.activities.map((a: any) => ({
             ...a,
             createdAt: a.createdAt.toISOString()
+        })) : [],
+        photos: j.photos ? j.photos.map((p: any) => ({
+            ...p,
+            createdAt: p.createdAt.toISOString()
         })) : []
     };
 }
@@ -134,11 +138,10 @@ export async function GET() {
             const [myJobs, allPartRequests, myNotifications, allDevices, allCustomers, allInventory] =
                 await Promise.all([
                     // Jobs assigned to this engineer
-                    // @ts-ignore - Prisma client needs regeneration to see activities relation
                     prisma.job.findMany({
                         where: { engineerId: user.id },
                         orderBy: { createdAt: 'desc' },
-                        include: { activities: true },
+                        include: { activities: true, photos: true },
                     }),
                     // Part requests submitted by this engineer
                     prisma.partRequest.findMany({
@@ -215,8 +218,7 @@ export async function GET() {
                 }),
                 prisma.customer.findMany({ orderBy: { createdAt: 'desc' } }),
                 prisma.device.findMany({ orderBy: { createdAt: 'desc' } }),
-                // @ts-ignore - Prisma client needs regeneration to see activities relation
-                prisma.job.findMany({ orderBy: { createdAt: 'desc' }, include: { activities: true } }),
+                prisma.job.findMany({ orderBy: { createdAt: 'desc' }, include: { activities: true, photos: true } }),
                 prisma.partRequest.findMany({ orderBy: { createdAt: 'desc' } }),
                 prisma.inventoryItem.findMany({ orderBy: { name: 'asc' } }),
                 // Reception sees all notifications (they may act on part-request decisions)
@@ -257,8 +259,7 @@ export async function GET() {
                 prisma.user.findMany({ orderBy: { createdAt: 'asc' } }),
                 prisma.customer.findMany({ orderBy: { createdAt: 'desc' } }),
                 prisma.device.findMany({ orderBy: { createdAt: 'desc' } }),
-                // @ts-ignore - Prisma client needs regeneration to see activities relation
-                prisma.job.findMany({ orderBy: { createdAt: 'desc' }, include: { activities: true } }),
+                prisma.job.findMany({ orderBy: { createdAt: 'desc' }, include: { activities: true, photos: true } }),
                 prisma.partRequest.findMany({ orderBy: { createdAt: 'desc' } }),
                 prisma.inventoryItem.findMany({ orderBy: { name: 'asc' } }),
                 prisma.notification.findMany({ orderBy: { createdAt: 'desc' } }),

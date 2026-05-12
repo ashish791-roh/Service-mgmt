@@ -79,6 +79,7 @@ model Job {
   linkedJob    Job?          @relation("JobWarranty", fields: [linkedJobId], references: [id])
   warrantyJobs Job[]         @relation("JobWarranty")
   activities   JobActivity[]
+  photos       JobPhoto[]
 }
 
 model JobActivity {
@@ -91,6 +92,16 @@ model JobActivity {
 
   job  Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id])
+}
+
+model JobPhoto {
+  id        String   @id @default(uuid())
+  jobId     String
+  url       String
+  type      String   // "before" | "after"
+  createdAt DateTime @default(now())
+
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
 }
 
 // ── Parts Request System ──────────────────────────────────────────

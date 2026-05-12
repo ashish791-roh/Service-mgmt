@@ -28,12 +28,28 @@
       "namedRegex": "^/api/jobs/(?<nxtPid>[^/]+?)(?:/)?$"
     },
     {
+      "page": "/api/jobs/[id]/photos",
+      "regex": "^/api/jobs/([^/]+?)/photos(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/jobs/(?<nxtPid>[^/]+?)/photos(?:/)?$"
+    },
+    {
       "page": "/api/jobs/[id]/public",
       "regex": "^/api/jobs/([^/]+?)/public(?:/)?$",
       "routeKeys": {
         "nxtPid": "nxtPid"
       },
       "namedRegex": "^/api/jobs/(?<nxtPid>[^/]+?)/public(?:/)?$"
+    },
+    {
+      "page": "/api/jobs/[id]/sla-check",
+      "regex": "^/api/jobs/([^/]+?)/sla\\-check(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/jobs/(?<nxtPid>[^/]+?)/sla\\-check(?:/)?$"
     },
     {
       "page": "/api/parts/[id]",

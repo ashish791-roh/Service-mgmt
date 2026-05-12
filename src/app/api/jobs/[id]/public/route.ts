@@ -12,6 +12,7 @@ export async function GET(
 
         const job = await prisma.job.findUnique({
             where: { id: jobId },
+            include: { photos: true },
         });
 
         if (!job) {
@@ -34,6 +35,12 @@ export async function GET(
             device: device
                 ? { brand: device.brand, type: device.type, model: device.model }
                 : null,
+            photos: job.photos.map((p: any) => ({
+                id: p.id,
+                url: p.url,
+                type: p.type,
+                createdAt: p.createdAt.toISOString()
+            })),
         });
     } catch (error) {
         console.error('[api/jobs/[id]/public GET]', error);
