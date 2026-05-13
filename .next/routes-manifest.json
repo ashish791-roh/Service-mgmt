@@ -74,6 +74,14 @@
         "nxtPid": "nxtPid"
       },
       "namedRegex": "^/api/users/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/webhooks/[id]",
+      "regex": "^/api/webhooks/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/webhooks/(?<nxtPid>[^/]+?)(?:/)?$"
     }
   ],
   "staticRoutes": [
