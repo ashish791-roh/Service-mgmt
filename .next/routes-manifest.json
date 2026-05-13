@@ -52,6 +52,14 @@
       "namedRegex": "^/api/jobs/(?<nxtPid>[^/]+?)/sla\\-check(?:/)?$"
     },
     {
+      "page": "/api/jobs/[id]/warranty",
+      "regex": "^/api/jobs/([^/]+?)/warranty(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/jobs/(?<nxtPid>[^/]+?)/warranty(?:/)?$"
+    },
+    {
       "page": "/api/parts/[id]",
       "regex": "^/api/parts/([^/]+?)(?:/)?$",
       "routeKeys": {

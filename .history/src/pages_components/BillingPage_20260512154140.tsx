@@ -1,0 +1,1108 @@
+import React, { useState, useRef } from 'react';
+import { useApp } from '../context/AppContext';
+import { Banknote, Hourglass, CheckCircle, TrendingUp, X, Wrench, Package, TrendingDown, Printer, ShoppingCart, User, Phone, FileText } from 'lucide-react';
+import type { JobStatus, Sale } from '../types';
+
+const PageHeader = ({ title, subtitle, action }: { title: string, subtitle: string, action?: React.ReactNode }) => (
+  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 bg-white p-6 rounded-xl border border-gray-200">
+    <div>
+      <h1 className="text-[18px] font-medium text-gray-900">{title}</h1>
+      <p className="text-[13px] font-normal text-teal-500 mt-1">{subtitle}</p>
+    </div>
+    {action && <div>{action}</div>}
+  </div>
+);
+
+const Card = React.forwardRef<HTMLDivElement, { children: React.ReactNode, className?: string }>(
+  ({ children, className = "" }, ref) => (
+    <div ref={ref} className={`bg-white rounded-xl border border-gray-200 overflow-hidden ${className}`}>
+      {children}
+    </div>
+  )
+);
+
+const MetricCard = ({ title, value, icon: Icon, color, sub, highlight }: any) => {
+  const colorMap: Record<string, string> = {
+    teal: "text-teal-500 bg-teal-50",
+    cyan: "text-cyan-500 bg-cyan-50",
+    green: "text-green-500 bg-green-50",
+    orange: "text-orange-500 bg-orange-50",
+    purple: "text-purple-500 bg-purple-50",
+    red: "text-red-500 bg-red-50",
+  };
+  const bgClass = colorMap[color] || colorMap.teal;
+
+  return (
+    <div className={`bg-white rounded-xl p-5 border relative overflow-hidden flex flex-col gap-4 ${highlight ? 'border-green-300 ring-1 ring-green-200' : 'border-gray-200'}`}>
+      <div className="flex justify-between items-start">
+        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${bgClass}`}>
+          <Icon size={18} strokeWidth={2} />
+        </div>
+        {sub && <span className="bg-gray-100 text-gray-500 text-[11px] font-medium px-2 py-1 rounded-lg">{sub}</span>}
+      </div>
+      <div>
+        <p className="text-[13px] font-medium text-gray-500">{title}</p>
+        <h3 className={`text-[18px] font-medium mt-1 ${highlight ? 'text-green-600' : 'text-gray-900'}`}>{value}</h3>
+      </div>
+    </div>
+  );
+};
+
+const Button = ({ text, onClick, variant = 'primary', className = "" }: any) => {
+  const styles: any = {
+    primary: "bg-gray-900 text-white hover:bg-gray-800",
+    success: "bg-green-500 text-white hover:bg-green-600",
+    outline: "bg-white border border-gray-200 text-gray-700 hover:bg-gray-50",
+  };
+  return (
+    <button onClick={onClick} className={`px-4 py-2 rounded-lg font-medium text-[13px] transition-colors ${styles[variant]} ${className}`}>
+      {text}
+    </button>
+  );
+};
+
+const StatusBadge = ({ status }: { status: string }) => {
+  const styles: Record<string, string> = {
+    'New': 'bg-cyan-50 text-cyan-700 border-l-2 border-cyan-500',
+    'Assigned': 'bg-teal-50 text-teal-700 border-l-2 border-teal-500',
+    'In Progress': 'bg-orange-50 text-orange-700 border-l-2 border-orange-500',
+    'Completed': 'bg-green-50 text-green-700 border-l-2 border-green-500',
+    'Delivered': 'bg-gray-100 text-gray-600 border-l-2 border-gray-400',
+  };
+  const style = styles[status] || 'bg-gray-50 text-gray-600 border-l-2 border-gray-400';
+  return (
+    <span className={`px-3 py-1 rounded-r text-[11px] font-medium uppercase tracking-wide inline-block ${style}`}>
+      {status}
+    </span>
+  );
+};
+
+// ── Profit breakdown helpers ─────────────────────────────────────────────────
+
+/**
+ * Compute parts cost for a job by summing approved part requests matched
+ * against inventory unit cost. If an inventory match is not found, we fall
+ * back to 0 for that item (parts cost is "at least" this value).
+ */
+function calcPartsCost(jobId: string, partRequests: any[], inventory: any[]): number {
+  const approved = partRequests.filter(
+    (pr: any) => pr.jobId === jobId && pr.status === 'Approved'
+  );
+  return approved.reduce((sum: number, pr: any) => {
+    const item = inventory.find(
+      (inv: any) => inv.name.toLowerCase() === pr.partName.toLowerCase()
+    );
+    const unitCost = item?.unitCost ?? 0;
+    return sum + unitCost * pr.quantity;
+  }, 0);
+}
+
+/**
+ * Service charge = final invoice − parts cost.
+ * Profit = service charge (parts cost is already a pass-through expense).
+ * We treat profit = revenue − parts cost for simplicity.
+ */
+function calcProfitBreakdown(job: any, partRequests: any[], inventory: any[]) {
+  const revenue = job.actualCost ?? job.estimatedCost ?? 0;
+  const partsCost = calcPartsCost(job.id, partRequests, inventory);
+  const serviceCharge = Math.max(revenue - partsCost, 0);
+  const profit = revenue - partsCost;
+  return { revenue, partsCost, serviceCharge, profit };
+}
+
+
+// ── Invoice print helper ─────────────────────────────────────────────────────
+
+function printInvoice(params: {
+  job: any;
+  customer: any;
+  device: any;
+  engineer: any;
+  approvedParts: any[];
+  inventory: any[];
+  finalCost: number;
+  partsCost: number;
+  serviceCharge: number;
+}) {
+  const { job, customer, device, engineer, approvedParts, inventory, finalCost, partsCost, serviceCharge } = params;
+  const shortId = job.id.slice(-8).toUpperCase();
+  const fullJobId = job.id;
+  const printDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  const printTime = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+
+  const fmtDate = (d?: string) => d
+    ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    : '—';
+
+  const intakeDate   = fmtDate(job.createdAt);
+  const completedDate = fmtDate(job.completedAt);
+  const deliveredDate = job.status === 'Delivered' ? printDate : '—';
+  const paymentStatus = job.status === 'Delivered' ? 'PAID' : 'PENDING';
+  const paymentColor  = job.status === 'Delivered' ? '#16a34a' : '#d97706';
+  const paymentBg     = job.status === 'Delivered' ? '#f0fdf4' : '#fffbeb';
+  const paymentBorder = job.status === 'Delivered' ? '#bbf7d0' : '#fde68a';
+
+  const partsRows = approvedParts.map((pr: any) => {
+    const inv = inventory.find((i: any) => i.name.toLowerCase() === pr.partName.toLowerCase());
+    const unitCost = inv?.unitCost ?? 0;
+    const lineCost = unitCost * pr.quantity;
+    return `
+      <tr>
+        <td style="padding:9px 12px;border-bottom:1px solid #f3f4f6;">${pr.partName}</td>
+        <td style="padding:9px 12px;border-bottom:1px solid #f3f4f6;text-align:center;">${pr.quantity}</td>
+        <td style="padding:9px 12px;border-bottom:1px solid #f3f4f6;text-align:right;">${unitCost > 0 ? '₹' + unitCost.toLocaleString() : '—'}</td>
+        <td style="padding:9px 12px;border-bottom:1px solid #f3f4f6;text-align:right;font-weight:500;">${lineCost > 0 ? '₹' + lineCost.toLocaleString() : '—'}</td>
+      </tr>`;
+  }).join('');
+
+  const partsSection = approvedParts.length > 0 ? `
+    <h3 style="font-size:11px;font-weight:700;color:#374151;margin:28px 0 10px;text-transform:uppercase;letter-spacing:0.08em;display:flex;align-items:center;gap:8px;">
+      <span style="display:inline-block;width:3px;height:14px;background:#f97316;border-radius:2px;"></span>
+      Parts &amp; Components Used
+    </h3>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+      <thead>
+        <tr style="background:#f9fafb;">
+          <th style="padding:9px 12px;text-align:left;font-weight:600;color:#6b7280;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid #e5e7eb;">Part Name</th>
+          <th style="padding:9px 12px;text-align:center;font-weight:600;color:#6b7280;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid #e5e7eb;">Qty</th>
+          <th style="padding:9px 12px;text-align:right;font-weight:600;color:#6b7280;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid #e5e7eb;">Unit Cost</th>
+          <th style="padding:9px 12px;text-align:right;font-weight:600;color:#6b7280;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid #e5e7eb;">Amount</th>
+        </tr>
+      </thead>
+      <tbody>${partsRows}</tbody>
+    </table>` : '';
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8"/>
+  <title>Invoice #${shortId} — ${customer?.name ?? 'Customer'}</title>
+  <style>
+    @media print {
+      body { margin: 0; padding: 24px; }
+      .no-print { display: none !important; }
+      @page { margin: 1cm; }
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, sans-serif;
+      color: #111827;
+      background: #fff;
+      padding: 40px;
+      max-width: 740px;
+      margin: 0 auto;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    * { box-sizing: border-box; }
+    table { border-collapse: collapse; }
+  </style>
+</head>
+<body>
+  <button class="no-print" onclick="window.print()" style="position:fixed;top:20px;right:20px;background:#111827;color:#fff;border:none;padding:10px 22px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);z-index:99;">
+    🖨️ Print / Save PDF
+  </button>
+
+  <!-- ── HEADER ─────────────────────────────────────────────── -->
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:20px;border-bottom:2px solid #111827;">
+    <div>
+      <h1 style="font-size:30px;font-weight:800;margin:0;letter-spacing:-1px;color:#111827;">FixHub</h1>
+      <p style="margin:3px 0 0;font-size:12px;color:#6b7280;">Device Repair &amp; Service Centre</p>
+    </div>
+    <div style="text-align:right;">
+      <div style="display:flex;align-items:center;gap:10px;justify-content:flex-end;margin-bottom:4px;">
+        <p style="font-size:24px;font-weight:800;margin:0;color:#1d4ed8;letter-spacing:-0.5px;">INVOICE</p>
+        <span style="background:${paymentBg};color:${paymentColor};border:1px solid ${paymentBorder};font-size:11px;font-weight:700;padding:3px 8px;border-radius:4px;letter-spacing:0.05em;">${paymentStatus}</span>
+      </div>
+      <p style="margin:2px 0 0;font-size:13px;font-weight:600;color:#374151;">#${shortId}</p>
+      <p style="margin:2px 0 0;font-size:11px;color:#9ca3af;">Printed: ${printDate} at ${printTime}</p>
+    </div>
+  </div>
+
+  <!-- ── CUSTOMER + DEVICE ──────────────────────────────────── -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
+    <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;">
+      <p style="font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 8px;">Billed To</p>
+      <p style="font-size:15px;font-weight:700;margin:0 0 3px;color:#111827;">${customer?.name ?? '—'}</p>
+      <p style="font-size:13px;color:#374151;margin:0 0 2px;">📞 ${customer?.phone ?? '—'}</p>
+      ${customer?.email ? `<p style="font-size:12px;color:#6b7280;margin:0 0 2px;">✉️ ${customer.email}</p>` : ''}
+      ${customer?.address ? `<p style="font-size:12px;color:#6b7280;margin:0;line-height:1.4;">📍 ${customer.address}</p>` : ''}
+    </div>
+    <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;">
+      <p style="font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 8px;">Device Details</p>
+      <p style="font-size:15px;font-weight:700;margin:0 0 3px;color:#111827;">${device?.brand ?? ''} ${device?.model ?? ''}</p>
+      ${device?.type ? `<p style="font-size:12px;color:#6b7280;margin:0 0 2px;">Type: ${device.type}</p>` : ''}
+      ${device?.serialNumber ? `<p style="font-size:12px;color:#6b7280;margin:0 0 2px;">S/N: <span style="font-family:monospace;">${device.serialNumber}</span></p>` : ''}
+      <p style="font-size:12px;color:#6b7280;margin:0;">Technician: <strong style="color:#374151;">${engineer?.name ?? 'N/A'}</strong></p>
+    </div>
+  </div>
+
+  <!-- ── JOB TIMELINE ───────────────────────────────────────── -->
+  <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px 16px;margin-bottom:20px;display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;">
+    <div>
+      <p style="font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 3px;">Job ID</p>
+      <p style="font-size:12px;font-weight:600;color:#111827;margin:0;font-family:monospace;">#${shortId}</p>
+      <p style="font-size:10px;color:#9ca3af;margin:1px 0 0;font-family:monospace;">${fullJobId.slice(0, 16)}…</p>
+    </div>
+    <div>
+      <p style="font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 3px;">Date Received</p>
+      <p style="font-size:12px;font-weight:600;color:#111827;margin:0;">${intakeDate}</p>
+    </div>
+    <div>
+      <p style="font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 3px;">Completed On</p>
+      <p style="font-size:12px;font-weight:600;color:#111827;margin:0;">${completedDate}</p>
+    </div>
+    <div>
+      <p style="font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 3px;">Delivered On</p>
+      <p style="font-size:12px;font-weight:600;color:#111827;margin:0;">${deliveredDate}</p>
+    </div>
+  </div>
+
+  <!-- ── PROBLEM & REPAIR NOTES ─────────────────────────────── -->
+  <div style="border:1px solid #bfdbfe;background:#eff6ff;border-radius:8px;padding:14px 16px;margin-bottom:20px;">
+    <p style="font-size:10px;font-weight:700;color:#1d4ed8;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 5px;">Problem Description</p>
+    <p style="font-size:13px;color:#1e3a8a;margin:0 0 0;">${job.problemDescription ?? job.problemDesc ?? '—'}</p>
+    ${job.repairNotes ? `
+    <div style="margin-top:10px;padding-top:10px;border-top:1px solid #bfdbfe;">
+      <p style="font-size:10px;font-weight:700;color:#1d4ed8;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 5px;">Work Performed / Repair Notes</p>
+      <p style="font-size:13px;color:#1e3a8a;margin:0;">${job.repairNotes}</p>
+    </div>` : ''}
+  </div>
+
+  <!-- ── PARTS TABLE ────────────────────────────────────────── -->
+  ${partsSection}
+
+  <!-- ── COST SUMMARY ───────────────────────────────────────── -->
+  <div style="margin-top:24px;">
+    <div style="display:flex;justify-content:flex-end;">
+      <div style="width:280px;">
+        ${approvedParts.length > 0 ? `
+        <div style="display:flex;justify-content:space-between;padding:7px 0;font-size:13px;color:#6b7280;">
+          <span>Service Charge</span>
+          <span style="font-weight:500;color:#111827;">₹${serviceCharge.toLocaleString()}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:7px 0;font-size:13px;color:#6b7280;">
+          <span>Parts &amp; Components</span>
+          <span style="font-weight:500;color:#111827;">₹${partsCost.toLocaleString()}</span>
+        </div>
+        <div style="border-top:1px solid #e5e7eb;margin:6px 0;"></div>` : ''}
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#111827;border-radius:8px;">
+          <span style="font-size:14px;font-weight:600;color:#fff;">Total Amount</span>
+          <span style="font-size:20px;font-weight:800;color:#fff;">₹${finalCost.toLocaleString()}</span>
+        </div>
+        <p style="font-size:11px;color:#9ca3af;text-align:right;margin:5px 0 0;">
+          Payment Status: <strong style="color:${paymentColor};">${paymentStatus}</strong>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SIGNATURE ROW ──────────────────────────────────────── -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:48px;padding-top:16px;border-top:1px solid #e5e7eb;">
+    <div>
+      <div style="border-bottom:1px solid #374151;height:36px;margin-bottom:6px;"></div>
+      <p style="font-size:11px;color:#6b7280;margin:0;">Customer Signature</p>
+      <p style="font-size:11px;color:#9ca3af;margin:2px 0 0;">I confirm receipt of the repaired device.</p>
+    </div>
+    <div>
+      <div style="border-bottom:1px solid #374151;height:36px;margin-bottom:6px;"></div>
+      <p style="font-size:11px;color:#6b7280;margin:0;">Authorised by — FixHub</p>
+      <p style="font-size:11px;color:#9ca3af;margin:2px 0 0;">${engineer?.name ?? 'Technician'} · ${printDate}</p>
+    </div>
+  </div>
+
+  <!-- ── FOOTER ─────────────────────────────────────────────── -->
+  <div style="margin-top:32px;padding-top:14px;border-top:1px solid #f3f4f6;display:flex;justify-content:space-between;align-items:center;">
+    <p style="font-size:11px;color:#9ca3af;margin:0;">Thank you for choosing FixHub Service.</p>
+    <p style="font-size:10px;color:#d1d5db;margin:0;">Ref: #${shortId} · ${printDate}</p>
+  </div>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank', 'width=820,height=960');
+  if (!win) return;
+  win.document.write(html);
+  win.document.close();
+}
+
+// ── Main component ───────────────────────────────────────────────────────────
+
+export const BillingPage: React.FC = () => {
+  const { jobs, customers, devices, users, partRequests, inventory, updateJobStatus, currentUser, sales } = useApp() as any;
+
+  // SRS: Engineers must NOT see financial/billing data
+  if (currentUser?.role === 'engineer') {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 text-gray-400">
+        <Banknote size={48} className="mb-4 opacity-50" />
+        <p className="text-[13px] font-medium text-gray-500">Access restricted</p>
+      </div>
+    );
+  }
+
+  const [billingModal, setBillingModal] = useState<string | null>(null);
+  const [actualCostInput, setActualCostInput] = useState('');
+  const [filter, setFilter] = useState<'pending-billing' | 'delivered' | 'all'>('pending-billing');
+  const [pageTab, setPageTab] = useState<'jobs' | 'sales'>('jobs');
+  const [paidSaleIds, setPaidSaleIds] = useState<Set<string>>(new Set());
+  const [salePaymentModal, setSalePaymentModal] = useState<Sale | null>(null);
+  const [saleFilter, setSaleFilter] = useState<'unpaid' | 'paid' | 'all'>('unpaid');
+  const tableRef = useRef<HTMLDivElement>(null);
+
+  // ── Derived job lists ──────────────────────────────────────────────────────
+  const completedJobs = jobs.filter((j: any) => j.status === 'Completed');
+  const deliveredJobs = jobs.filter((j: any) => j.status === 'Delivered');
+  const allBillableJobs = jobs.filter((j: any) => ['Completed', 'Delivered'].includes(j.status));
+
+  // ── Aggregate financials ───────────────────────────────────────────────────
+  const totalRevenue = deliveredJobs.reduce(
+    (s: number, j: any) => s + (j.actualCost ?? j.estimatedCost ?? 0), 0
+  );
+  const totalPartsCost = deliveredJobs.reduce(
+    (s: number, j: any) => s + calcPartsCost(j.id, partRequests, inventory), 0
+  );
+  const totalProfit = totalRevenue - totalPartsCost;
+  const pendingCollection = completedJobs.reduce(
+    (s: number, j: any) => s + (j.actualCost ?? j.estimatedCost ?? 0), 0
+  );
+  const avgValue = allBillableJobs.length
+    ? Math.round((totalRevenue + pendingCollection) / allBillableJobs.length)
+    : 0;
+  const profitMargin = totalRevenue > 0 ? Math.round((totalProfit / totalRevenue) * 100) : 0;
+
+  // ── Handlers ───────────────────────────────────────────────────────────────
+  const handleReviewAndCollect = () => {
+    setFilter('pending-billing');
+    setTimeout(() => {
+      tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+    if (completedJobs.length === 1) {
+      const job = completedJobs[0];
+      setBillingModal(job.id);
+      setActualCostInput(String(job.actualCost ?? job.estimatedCost));
+    }
+  };
+
+  const handleMarkDelivered = async (jobId: string) => {
+    const job = jobs.find((j: any) => j.id === jobId);
+    if (!job) return;
+
+    const finalCost = actualCostInput ? parseFloat(actualCostInput) : (job.estimatedCost ?? 0);
+
+    // Save actualCost via PUT, then mark Delivered
+    await fetch(`/api/jobs/${jobId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ actualCost: finalCost, status: 'Delivered' }),
+    });
+
+    await updateJobStatus(jobId, 'Delivered' as JobStatus);
+    setBillingModal(null);
+    setActualCostInput('');
+    alert('Job marked as delivered! Payment recorded successfully.');
+  };
+
+  const getDisplayJobs = () => {
+    if (filter === 'pending-billing') return completedJobs;
+    if (filter === 'delivered') return deliveredJobs;
+    return allBillableJobs;
+  };
+
+  const displayJobs = getDisplayJobs();
+
+  // ── Modal job data ─────────────────────────────────────────────────────────
+  const modalJob = billingModal ? jobs.find((j: any) => j.id === billingModal) : null;
+  const modalCustomer = customers.find((c: any) => c.id === modalJob?.customerId);
+  const modalDevice = devices.find((d: any) => d.id === modalJob?.deviceId);
+  const modalEngineer = users.find((u: any) => u.id === modalJob?.assignedEngineerId);
+  const modalApprovedParts = partRequests.filter(
+    (pr: any) => pr.jobId === billingModal && pr.status === 'Approved'
+  );
+  const modalFinalCost = actualCostInput
+    ? parseFloat(actualCostInput) || 0
+    : (modalJob?.estimatedCost ?? 0);
+  const modalPartsCost = billingModal
+    ? calcPartsCost(billingModal, partRequests, inventory)
+    : 0;
+  const modalServiceCharge = Math.max(modalFinalCost - modalPartsCost, 0);
+  const modalProfit = modalFinalCost - modalPartsCost;
+
+  // ── Sales billing data ─────────────────────────────────────────────────────
+  const salesList: Sale[] = (sales as Sale[]) ?? [];
+  const unpaidSales = salesList.filter(s => !paidSaleIds.has(s.id));
+  const paidSales = salesList.filter(s => paidSaleIds.has(s.id));
+  const displaySales = saleFilter === 'unpaid' ? unpaidSales : saleFilter === 'paid' ? paidSales : salesList;
+  const totalSalesRevenue = paidSales.reduce((sum, s) => sum + s.totalAmount, 0);
+  const pendingSalesAmount = unpaidSales.reduce((sum, s) => sum + s.totalAmount, 0);
+
+  const handleMarkSalePaid = (sale: Sale) => {
+    setPaidSaleIds(prev => new Set([...prev, sale.id]));
+    setSalePaymentModal(null);
+  };
+
+  const printSaleInvoice = (sale: Sale) => {
+    const printDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    const printTime = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    const isPaid = paidSaleIds.has(sale.id);
+    const paymentColor = isPaid ? '#16a34a' : '#d97706';
+    const paymentBg = isPaid ? '#f0fdf4' : '#fffbeb';
+    const paymentBorder = isPaid ? '#bbf7d0' : '#fde68a';
+    const paymentStatus = isPaid ? 'PAID' : 'PENDING';
+    const itemRows = sale.items.map(item => `
+      <tr>
+        <td style="padding:9px 12px;border-bottom:1px solid #f3f4f6;">${item.itemName}</td>
+        <td style="padding:9px 12px;border-bottom:1px solid #f3f4f6;text-align:center;">${item.quantity}</td>
+        <td style="padding:9px 12px;border-bottom:1px solid #f3f4f6;text-align:right;">₹${item.unitPrice.toLocaleString()}</td>
+        <td style="padding:9px 12px;border-bottom:1px solid #f3f4f6;text-align:right;font-weight:500;">₹${item.subtotal.toLocaleString()}</td>
+      </tr>`).join('');
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
+      <title>Sale Invoice ${sale.saleNumber}</title>
+      <style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif;color:#111827;background:#fff;padding:40px;max-width:740px;margin:0 auto;font-size:13px;line-height:1.5;}*{box-sizing:border-box;}table{border-collapse:collapse;}</style>
+    </head><body>
+      <button class="no-print" onclick="window.print()" style="position:fixed;top:20px;right:20px;background:#111827;color:#fff;border:none;padding:10px 22px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">🖨️ Print / Save PDF</button>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:20px;border-bottom:2px solid #111827;">
+        <div><h1 style="font-size:30px;font-weight:800;margin:0;letter-spacing:-1px;">FixHub</h1><p style="margin:3px 0 0;font-size:12px;color:#6b7280;">Device Repair &amp; Service Centre</p></div>
+        <div style="text-align:right;">
+          <div style="display:flex;align-items:center;gap:10px;justify-content:flex-end;margin-bottom:4px;">
+            <p style="font-size:24px;font-weight:800;margin:0;color:#0d9488;letter-spacing:-0.5px;">SALES RECEIPT</p>
+            <span style="background:${paymentBg};color:${paymentColor};border:1px solid ${paymentBorder};font-size:11px;font-weight:700;padding:3px 8px;border-radius:4px;">${paymentStatus}</span>
+          </div>
+          <p style="margin:2px 0 0;font-size:13px;font-weight:600;color:#374151;">${sale.saleNumber}</p>
+          <p style="margin:2px 0 0;font-size:11px;color:#9ca3af;">Printed: ${printDate} at ${printTime}</p>
+        </div>
+      </div>
+      <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;margin-bottom:20px;">
+        <p style="font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 8px;">Billed To</p>
+        <p style="font-size:15px;font-weight:700;margin:0 0 3px;">${sale.companyName || sale.contactName || 'Walk-in Customer'}</p>
+        ${sale.contactName && sale.companyName ? `<p style="font-size:13px;color:#374151;margin:0 0 2px;">${sale.contactName}</p>` : ''}
+        ${sale.phone ? `<p style="font-size:13px;color:#374151;margin:0;">📞 ${sale.phone}</p>` : ''}
+      </div>
+      <h3 style="font-size:11px;font-weight:700;color:#374151;margin:20px 0 10px;text-transform:uppercase;letter-spacing:0.08em;">Items Sold</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+        <thead><tr style="background:#f9fafb;">
+          <th style="padding:9px 12px;text-align:left;font-weight:600;color:#6b7280;font-size:11px;text-transform:uppercase;border-bottom:1px solid #e5e7eb;">Item</th>
+          <th style="padding:9px 12px;text-align:center;font-weight:600;color:#6b7280;font-size:11px;text-transform:uppercase;border-bottom:1px solid #e5e7eb;">Qty</th>
+          <th style="padding:9px 12px;text-align:right;font-weight:600;color:#6b7280;font-size:11px;text-transform:uppercase;border-bottom:1px solid #e5e7eb;">Unit Price</th>
+          <th style="padding:9px 12px;text-align:right;font-weight:600;color:#6b7280;font-size:11px;text-transform:uppercase;border-bottom:1px solid #e5e7eb;">Subtotal</th>
+        </tr></thead>
+        <tbody>${itemRows}</tbody>
+      </table>
+      <div style="margin-top:24px;display:flex;justify-content:flex-end;">
+        <div style="width:280px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#111827;border-radius:8px;">
+            <span style="font-size:14px;font-weight:600;color:#fff;">Total Amount</span>
+            <span style="font-size:20px;font-weight:800;color:#fff;">₹${sale.totalAmount.toLocaleString()}</span>
+          </div>
+          <p style="font-size:11px;color:#9ca3af;text-align:right;margin:5px 0 0;">Payment Status: <strong style="color:${paymentColor};">${paymentStatus}</strong></p>
+        </div>
+      </div>
+      ${sale.notes ? `<div style="margin-top:20px;padding:12px 16px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;color:#374151;">${sale.notes}</div>` : ''}
+      <div style="margin-top:40px;padding-top:14px;border-top:1px solid #f3f4f6;display:flex;justify-content:space-between;align-items:center;">
+        <p style="font-size:11px;color:#9ca3af;margin:0;">Thank you for choosing FixHub.</p>
+        <p style="font-size:10px;color:#d1d5db;margin:0;">${sale.saleNumber} · ${printDate}</p>
+      </div>
+    </body></html>`;
+    const win = window.open('', '_blank', 'width=820,height=960');
+    if (!win) return;
+    win.document.write(html);
+    win.document.close();
+  };
+
+  return (
+    <div className="max-w-[1400px] mx-auto pb-6 space-y-6">
+      <PageHeader title="Revenue & Billing" subtitle="Financial tracking and final delivery operations" />
+
+      {/* ── Page-level tabs: Jobs vs Sales ── */}
+      <div className="flex bg-white p-1 rounded-lg border border-gray-200 w-fit gap-1">
+        <button
+          onClick={() => setPageTab('jobs')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-md text-[13px] font-medium transition-colors ${pageTab === 'jobs' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}
+        >
+          <Wrench size={14} /> Repair Jobs
+        </button>
+        <button
+          onClick={() => setPageTab('sales')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-md text-[13px] font-medium transition-colors ${pageTab === 'sales' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}
+        >
+          <ShoppingCart size={14} /> Sales Payments
+          {unpaidSales.length > 0 && (
+            <span className="bg-orange-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{unpaidSales.length}</span>
+          )}
+        </button>
+      </div>
+
+      {/* ══════════════════════════════════════════════════════════════
+          SALES PAYMENTS TAB
+      ══════════════════════════════════════════════════════════════ */}
+      {pageTab === 'sales' && (
+        <>
+          {/* Sales metrics */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <MetricCard title="Pending Payment" value={`₹${pendingSalesAmount.toLocaleString()}`} icon={Hourglass} color="orange" sub={`${unpaidSales.length} sales`} />
+            <MetricCard title="Collected from Sales" value={`₹${totalSalesRevenue.toLocaleString()}`} icon={Banknote} color="green" sub={`${paidSales.length} paid`} highlight={paidSales.length > 0} />
+            <MetricCard title="Total Sales" value={salesList.length} icon={ShoppingCart} color="teal" />
+          </div>
+
+          {/* Pending payment alert */}
+          {unpaidSales.length > 0 && (
+            <div className="bg-orange-50 border border-orange-200 rounded-xl flex items-center justify-between p-5 gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center">
+                  <Hourglass size={20} />
+                </div>
+                <div>
+                  <h3 className="text-[13px] font-medium text-gray-900">{unpaidSales.length} Sales Pending Payment</h3>
+                  <p className="text-[11px] font-normal text-orange-600 uppercase tracking-wide mt-1">Collect ₹{pendingSalesAmount.toLocaleString()} in outstanding payments</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Sales filter tabs */}
+          <div className="flex bg-white p-1 rounded-lg border border-gray-200 w-fit gap-1">
+            {[
+              { id: 'unpaid' as const, label: `Pending Payment (${unpaidSales.length})` },
+              { id: 'paid' as const, label: `Paid (${paidSales.length})` },
+              { id: 'all' as const, label: 'All Sales' },
+            ].map(tab => (
+              <button key={tab.id} onClick={() => setSaleFilter(tab.id)}
+                className={`px-4 py-2 rounded-md text-[13px] font-medium transition-colors whitespace-nowrap ${saleFilter === tab.id ? 'bg-gray-100 text-gray-900' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}>
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Sales table */}
+          <Card>
+            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+              <h2 className="text-[13px] font-medium text-gray-900">
+                {saleFilter === 'unpaid' ? 'Sales Pending Payment' : saleFilter === 'paid' ? 'Paid Sales' : 'All Sales'}
+              </h2>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    {['Sale #', 'Buyer', 'Items', 'Date', 'Amount', 'Status', 'Action'].map(h => (
+                      <th key={h} className="px-4 py-3 text-[11px] font-medium text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {displaySales.map((sale: Sale) => {
+                    const isPaid = paidSaleIds.has(sale.id);
+                    return (
+                      <tr key={sale.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-4">
+                          <span className="inline-flex items-center gap-1.5 bg-teal-50 text-teal-700 border border-teal-200 text-[11px] font-semibold px-2 py-1 rounded-md">
+                            <ShoppingCart size={11} />{sale.saleNumber}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4">
+                          <p className="text-[13px] font-medium text-gray-900">{sale.companyName || sale.contactName || 'Walk-in Customer'}</p>
+                          {sale.phone && <p className="text-[11px] text-gray-500 flex items-center gap-1"><Phone size={10} />{sale.phone}</p>}
+                        </td>
+                        <td className="px-4 py-4">
+                          <p className="text-[13px] text-gray-700">{sale.items.length} item{sale.items.length !== 1 ? 's' : ''}</p>
+                          <p className="text-[11px] text-gray-400">{sale.items.map(i => i.itemName).join(', ')}</p>
+                        </td>
+                        <td className="px-4 py-4 text-[12px] text-gray-500">
+                          {new Date(sale.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </td>
+                        <td className="px-4 py-4">
+                          <p className="text-[14px] font-semibold text-gray-900">₹{sale.totalAmount.toLocaleString()}</p>
+                        </td>
+                        <td className="px-4 py-4">
+                          <span className={`px-3 py-1 rounded-r text-[11px] font-medium uppercase tracking-wide inline-block border-l-2 ${isPaid ? 'bg-green-50 text-green-700 border-green-500' : 'bg-orange-50 text-orange-700 border-orange-500'}`}>
+                            {isPaid ? 'Paid' : 'Pending'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4">
+                          {!isPaid ? (
+                            <Button
+                              text="Process Payment"
+                              variant="success"
+                              onClick={() => setSalePaymentModal(sale)}
+                            />
+                          ) : (
+                            <button
+                              onClick={() => printSaleInvoice(sale)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-600 text-[11px] font-medium rounded-lg uppercase tracking-wide hover:bg-gray-200 transition-colors"
+                            >
+                              <Printer size={12} /> Invoice
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {displaySales.length === 0 && (
+                <div className="p-12 text-center">
+                  <div className="w-12 h-12 bg-gray-50 rounded-lg flex items-center justify-center mx-auto mb-3 text-gray-400">
+                    <ShoppingCart size={24} />
+                  </div>
+                  <p className="text-[13px] font-medium text-gray-900 mb-1">No sales found</p>
+                  <p className="text-[13px] font-normal text-gray-500">Sales recorded on the Sales page will appear here for payment processing.</p>
+                </div>
+              )}
+            </div>
+          </Card>
+
+          {/* ── Sale Payment Modal ── */}
+          {salePaymentModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 p-4">
+              <div className="bg-white rounded-xl w-full max-w-lg shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
+                <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-teal-50 flex items-center justify-center">
+                      <ShoppingCart size={16} className="text-teal-500" />
+                    </div>
+                    <div>
+                      <h2 className="text-[15px] font-semibold text-gray-900">Process Sale Payment</h2>
+                      <p className="text-[11px] text-gray-400">{salePaymentModal.saleNumber}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setSalePaymentModal(null)} className="text-gray-400 hover:text-gray-600 transition-colors">
+                    <X size={20} />
+                  </button>
+                </div>
+
+                <div className="p-6 space-y-4 overflow-y-auto">
+                  {/* Buyer info */}
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2">
+                    <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-2">Buyer</p>
+                    <p className="text-[14px] font-semibold text-gray-900">{salePaymentModal.companyName || salePaymentModal.contactName || 'Walk-in Customer'}</p>
+                    {salePaymentModal.contactName && salePaymentModal.companyName && (
+                      <p className="text-[12px] text-gray-500 flex items-center gap-1"><User size={11} />{salePaymentModal.contactName}</p>
+                    )}
+                    {salePaymentModal.phone && (
+                      <p className="text-[12px] text-gray-500 flex items-center gap-1"><Phone size={11} />{salePaymentModal.phone}</p>
+                    )}
+                    {salePaymentModal.notes && (
+                      <p className="text-[12px] text-gray-500 flex items-center gap-1 mt-1"><FileText size={11} />{salePaymentModal.notes}</p>
+                    )}
+                  </div>
+
+                  {/* Items sold */}
+                  <div className="border border-teal-200 rounded-lg overflow-hidden">
+                    <div className="bg-teal-50 px-4 py-2 flex items-center gap-2">
+                      <Package size={13} className="text-teal-500" />
+                      <p className="text-[11px] font-medium text-teal-700 uppercase tracking-wide">Items Sold</p>
+                    </div>
+                    <div className="divide-y divide-gray-100 bg-white">
+                      {salePaymentModal.items.map(item => (
+                        <div key={item.id} className="flex items-center justify-between px-4 py-2">
+                          <div>
+                            <p className="text-[13px] font-medium text-gray-900">{item.itemName}</p>
+                            <p className="text-[11px] text-gray-500">Qty: {item.quantity} × ₹{item.unitPrice.toLocaleString()}</p>
+                          </div>
+                          <p className="text-[13px] font-medium text-teal-600">₹{item.subtotal.toLocaleString()}</p>
+                        </div>
+                      ))}
+                      <div className="flex items-center justify-between px-4 py-3 bg-gray-900">
+                        <p className="text-[12px] font-medium text-white uppercase tracking-wide">Total Amount Due</p>
+                        <p className="text-[16px] font-bold text-white">₹{salePaymentModal.totalAmount.toLocaleString()}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
+                  <Button text="Cancel" variant="outline" onClick={() => setSalePaymentModal(null)} className="w-full" />
+                  <button
+                    onClick={() => printSaleInvoice(salePaymentModal)}
+                    className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-[13px] transition-colors bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 w-full"
+                  >
+                    <Printer size={15} /> Print Invoice
+                  </button>
+                  <Button text="Collect & Mark Paid" variant="success" onClick={() => handleMarkSalePaid(salePaymentModal)} className="w-full" />
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════
+          REPAIR JOBS TAB (existing content)
+      ══════════════════════════════════════════════════════════════ */}
+      {pageTab === 'jobs' && (<>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <MetricCard
+          title="Total Revenue"
+          value={`₹${(totalRevenue / 1000).toFixed(1)}k`}
+          icon={Banknote}
+          color="green"
+          sub="Collected"
+        />
+        <MetricCard
+          title="Parts Cost"
+          value={`₹${(totalPartsCost / 1000).toFixed(1)}k`}
+          icon={Package}
+          color="orange"
+          sub="Delivered jobs"
+        />
+        <MetricCard
+          title="Net Profit"
+          value={`₹${(totalProfit / 1000).toFixed(1)}k`}
+          icon={TrendingUp}
+          color="purple"
+          sub={`${profitMargin}% margin`}
+          highlight
+        />
+        <MetricCard
+          title="Avg Job Value"
+          value={`₹${avgValue.toLocaleString()}`}
+          icon={CheckCircle}
+          color="teal"
+        />
+      </div>
+
+      {/* ── Profit breakdown summary card ── */}
+      {deliveredJobs.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl p-6">
+          <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-4">Profit Breakdown — Delivered Jobs</p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* Revenue bar */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Banknote size={14} className="text-green-500" />
+                  <span className="text-[12px] font-medium text-gray-600">Total Revenue</span>
+                </div>
+                <span className="text-[13px] font-medium text-gray-900">₹{totalRevenue.toLocaleString()}</span>
+              </div>
+              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div className="h-full bg-green-400 rounded-full" style={{ width: '100%' }} />
+              </div>
+            </div>
+            {/* Parts cost bar */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Package size={14} className="text-orange-500" />
+                  <span className="text-[12px] font-medium text-gray-600">Parts Cost</span>
+                </div>
+                <span className="text-[13px] font-medium text-gray-900">₹{totalPartsCost.toLocaleString()}</span>
+              </div>
+              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-orange-400 rounded-full"
+                  style={{ width: totalRevenue > 0 ? `${Math.min((totalPartsCost / totalRevenue) * 100, 100)}%` : '0%' }}
+                />
+              </div>
+            </div>
+            {/* Profit bar */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {totalProfit >= 0
+                    ? <TrendingUp size={14} className="text-purple-500" />
+                    : <TrendingDown size={14} className="text-red-500" />
+                  }
+                  <span className="text-[12px] font-medium text-gray-600">Net Profit</span>
+                </div>
+                <span className={`text-[13px] font-medium ${totalProfit >= 0 ? 'text-purple-600' : 'text-red-600'}`}>
+                  ₹{totalProfit.toLocaleString()}
+                </span>
+              </div>
+              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full ${totalProfit >= 0 ? 'bg-purple-400' : 'bg-red-400'}`}
+                  style={{ width: totalRevenue > 0 ? `${Math.min(Math.abs(profitMargin), 100)}%` : '0%' }}
+                />
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 pt-4 border-t border-gray-100 flex items-center gap-2">
+            <span className={`text-[12px] font-medium px-2 py-0.5 rounded ${totalProfit >= 0 ? 'bg-purple-50 text-purple-700' : 'bg-red-50 text-red-700'}`}>
+              {profitMargin}% margin
+            </span>
+            <span className="text-[12px] text-gray-400">across {deliveredJobs.length} delivered job{deliveredJobs.length !== 1 ? 's' : ''}</span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Pending collection alert ── */}
+      {completedJobs.length > 0 && (
+        <div className="bg-orange-50 border border-orange-200 rounded-xl flex flex-col sm:flex-row items-center justify-between p-6 gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center">
+              <Hourglass size={20} />
+            </div>
+            <div>
+              <h3 className="text-[13px] font-medium text-gray-900">{completedJobs.length} Jobs Ready for Delivery</h3>
+              <p className="text-[11px] font-normal text-orange-600 uppercase tracking-wide mt-1">
+                Collect ₹{pendingCollection.toLocaleString()} in pending payments
+              </p>
+            </div>
+          </div>
+          <Button text="Review & Collect" variant="primary" onClick={handleReviewAndCollect} className="w-full sm:w-auto" />
+        </div>
+      )}
+
+      {/* ── Filter tabs ── */}
+      <div className="flex bg-white p-1 rounded-lg border border-gray-200 w-fit overflow-x-auto gap-1">
+        {[
+          { id: 'pending-billing' as const, label: `Pending Delivery (${completedJobs.length})` },
+          { id: 'delivered' as const, label: `Delivered (${deliveredJobs.length})` },
+          { id: 'all' as const, label: 'All Billed Records' },
+        ].map(tab => (
+          <button key={tab.id} onClick={() => setFilter(tab.id)}
+            className={`px-4 py-2 rounded-md text-[13px] font-medium transition-colors whitespace-nowrap ${filter === tab.id ? 'bg-gray-100 text-gray-900' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}>
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Jobs Table ── */}
+      <Card ref={tableRef}>
+        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+          <h2 className="text-[13px] font-medium text-gray-900">
+            {filter === 'pending-billing' ? 'Jobs Ready for Delivery' : filter === 'delivered' ? 'Completed & Delivered Jobs' : 'All Billed Jobs'}
+          </h2>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                {['Job ID', 'Customer Info', 'Device Details', 'Issue', 'Service', 'Parts Cost', 'Total', 'Profit', 'Status', 'Action'].map(h => (
+                  <th key={h} className="px-4 py-3 text-[11px] font-medium text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {displayJobs.map((job: any) => {
+                const customer = customers.find((c: any) => c.id === job.customerId);
+                const device = devices.find((d: any) => d.id === job.deviceId);
+                const { revenue, partsCost, serviceCharge, profit } = calcProfitBreakdown(job, partRequests, inventory);
+                const isEstimated = !job.actualCost;
+                return (
+                  <tr key={job.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-4 text-[11px] font-medium text-gray-500 uppercase tracking-wide">#{job.id}</td>
+                    <td className="px-4 py-4">
+                      <p className="text-[13px] font-medium text-gray-900 mb-0.5">{customer?.name}</p>
+                      <p className="text-[11px] font-normal text-gray-500 uppercase tracking-wide">{customer?.phone}</p>
+                    </td>
+                    <td className="px-4 py-4 text-[13px] font-medium text-gray-500 whitespace-nowrap">{device?.brand} {device?.model}</td>
+                    <td className="px-4 py-4 text-[13px] font-normal text-gray-600 max-w-[160px] truncate">{job.problemDescription}</td>
+                    <td className="px-4 py-4">
+                      <p className="text-[13px] font-medium text-teal-600">₹{serviceCharge.toLocaleString()}</p>
+                      <p className="text-[10px] text-gray-400 uppercase tracking-wide">Service</p>
+                    </td>
+                    <td className="px-4 py-4">
+                      <p className="text-[13px] font-medium text-orange-500">₹{partsCost.toLocaleString()}</p>
+                      <p className="text-[10px] text-gray-400 uppercase tracking-wide">Parts</p>
+                    </td>
+                    <td className="px-4 py-4">
+                      <p className="text-[13px] font-medium text-gray-900">₹{revenue.toLocaleString()}</p>
+                      {isEstimated && <p className="text-[10px] text-gray-400 uppercase tracking-wide">Est.</p>}
+                    </td>
+                    <td className="px-4 py-4">
+                      <p className={`text-[13px] font-medium ${profit >= 0 ? 'text-purple-600' : 'text-red-500'}`}>
+                        {profit >= 0 ? '+' : ''}₹{profit.toLocaleString()}
+                      </p>
+                      {revenue > 0 && (
+                        <p className="text-[10px] text-gray-400 uppercase tracking-wide">
+                          {Math.round((profit / revenue) * 100)}%
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-4 py-4"><StatusBadge status={job.status} /></td>
+                    <td className="px-4 py-4">
+                      {job.status === 'Completed' ? (
+                        <Button
+                          text="Process Payment"
+                          variant="success"
+                          onClick={() => { setBillingModal(job.id); setActualCostInput(String(job.actualCost ?? job.estimatedCost)); }}
+                        />
+                      ) : (
+                        <button
+                          onClick={() => {
+                            const c = customers.find((c: any) => c.id === job.customerId);
+                            const d = devices.find((d: any) => d.id === job.deviceId);
+                            const e = users.find((u: any) => u.id === job.assignedEngineerId);
+                            const ap = partRequests.filter((pr: any) => pr.jobId === job.id && pr.status === 'Approved');
+                            const { partsCost, serviceCharge } = calcProfitBreakdown(job, partRequests, inventory);
+                            printInvoice({ job, customer: c, device: d, engineer: e, approvedParts: ap, inventory, finalCost: job.actualCost ?? job.estimatedCost ?? 0, partsCost, serviceCharge });
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-600 text-[11px] font-medium rounded-lg uppercase tracking-wide hover:bg-gray-200 transition-colors"
+                          title="Print Invoice"
+                        >
+                          <Printer size={12} />
+                          Invoice
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {displayJobs.length === 0 && (
+            <div className="p-12 text-center">
+              <div className="w-12 h-12 bg-gray-50 rounded-lg flex items-center justify-center mx-auto mb-3 text-gray-400">
+                <Banknote size={24} />
+              </div>
+              <p className="text-[13px] font-medium text-gray-900 mb-1">No jobs pending delivery</p>
+              <p className="text-[13px] font-normal text-gray-500">Completed jobs awaiting payment will appear here.</p>
+            </div>
+          )}
+        </div>
+      </Card>
+
+      {/* ── Process Payment Modal ── */}
+      {billingModal && modalJob && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-lg shadow-xl overflow-hidden flex flex-col max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200">
+              <h2 className="text-[18px] font-medium text-gray-900">Process Payment</h2>
+              <button onClick={() => setBillingModal(null)} className="text-gray-400 hover:text-gray-600 transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              {/* Job summary */}
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
+                <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Job Invoice Summary</p>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-[11px] font-normal text-gray-500 uppercase tracking-wide">Client</p>
+                    <p className="text-[13px] font-medium text-gray-900">{modalCustomer?.name}</p>
+                    <p className="text-[11px] font-normal text-gray-500">{modalCustomer?.phone}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-normal text-gray-500 uppercase tracking-wide">Device</p>
+                    <p className="text-[13px] font-medium text-gray-900">{modalDevice?.brand} {modalDevice?.model}</p>
+                    <p className="text-[11px] font-normal text-gray-500">Assigned: {modalEngineer?.name}</p>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <p className="text-[11px] font-normal text-gray-500 uppercase tracking-wide mb-1">Resolution</p>
+                  <p className="text-[13px] font-normal text-gray-700">{modalJob?.problemDescription}</p>
+                </div>
+              </div>
+
+              {/* Approved parts used */}
+              {modalApprovedParts.length > 0 && (
+                <div className="border border-orange-200 rounded-lg overflow-hidden">
+                  <div className="bg-orange-50 px-4 py-2 flex items-center gap-2">
+                    <Package size={13} className="text-orange-500" />
+                    <p className="text-[11px] font-medium text-orange-700 uppercase tracking-wide">Approved Parts Used</p>
+                  </div>
+                  <div className="divide-y divide-gray-100 bg-white">
+                    {modalApprovedParts.map((pr: any) => {
+                      const inv = inventory.find((i: any) => i.name.toLowerCase() === pr.partName.toLowerCase());
+                      const lineCost = (inv?.unitCost ?? 0) * pr.quantity;
+                      return (
+                        <div key={pr.id} className="flex items-center justify-between px-4 py-2">
+                          <div>
+                            <p className="text-[13px] font-medium text-gray-900">{pr.partName}</p>
+                            <p className="text-[11px] text-gray-500">Qty: {pr.quantity}{inv ? ` × ₹${inv.unitCost}` : ' (unit cost unknown)'}</p>
+                          </div>
+                          <p className="text-[13px] font-medium text-orange-600">
+                            {lineCost > 0 ? `₹${lineCost.toLocaleString()}` : '—'}
+                          </p>
+                        </div>
+                      );
+                    })}
+                    <div className="flex items-center justify-between px-4 py-2 bg-orange-50">
+                      <p className="text-[12px] font-medium text-orange-700 uppercase tracking-wide">Total Parts Cost</p>
+                      <p className="text-[13px] font-medium text-orange-700">₹{modalPartsCost.toLocaleString()}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Final cost input */}
+              <div>
+                <label className="block text-[11px] font-medium text-gray-700 uppercase tracking-wide mb-2">Final Invoice Amount (₹) *</label>
+                <input
+                  className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-[18px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 transition-all text-center"
+                  type="number"
+                  value={actualCostInput}
+                  onChange={e => setActualCostInput(e.target.value)}
+                  placeholder={String(modalJob?.estimatedCost ?? 0)}
+                />
+              </div>
+
+              {/* Profit breakdown preview */}
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2">
+                <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-3">Profit Breakdown Preview</p>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Banknote size={13} className="text-green-500" />
+                    <span className="text-[12px] text-gray-600">Total Invoice</span>
+                  </div>
+                  <span className="text-[13px] font-medium text-gray-900">₹{modalFinalCost.toLocaleString()}</span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Package size={13} className="text-orange-400" />
+                    <span className="text-[12px] text-gray-600">Parts Cost</span>
+                  </div>
+                  <span className="text-[13px] font-medium text-orange-600">− ₹{modalPartsCost.toLocaleString()}</span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Wrench size={13} className="text-teal-500" />
+                    <span className="text-[12px] text-gray-600">Service Charge</span>
+                  </div>
+                  <span className="text-[13px] font-medium text-teal-600">₹{modalServiceCharge.toLocaleString()}</span>
+                </div>
+
+                <div className="border-t border-gray-200 pt-2 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {modalProfit >= 0
+                      ? <TrendingUp size={13} className="text-purple-500" />
+                      : <TrendingDown size={13} className="text-red-500" />
+                    }
+                    <span className="text-[12px] font-medium text-gray-700">Net Profit</span>
+                  </div>
+                  <span className={`text-[15px] font-medium ${modalProfit >= 0 ? 'text-purple-600' : 'text-red-600'}`}>
+                    {modalProfit >= 0 ? '+' : ''}₹{modalProfit.toLocaleString()}
+                    {modalFinalCost > 0 && (
+                      <span className="text-[11px] ml-1 font-normal opacity-70">
+                        ({Math.round((modalProfit / modalFinalCost) * 100)}%)
+                      </span>
+                    )}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
+              <Button text="Cancel" variant="outline" onClick={() => setBillingModal(null)} className="w-full" />
+              <button
+                onClick={() => printInvoice({
+                  job: modalJob,
+                  customer: modalCustomer,
+                  device: modalDevice,
+                  engineer: modalEngineer,
+                  approvedParts: modalApprovedParts,
+                  inventory,
+                  finalCost: modalFinalCost,
+                  partsCost: modalPartsCost,
+                  serviceCharge: modalServiceCharge,
+                })}
+                className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-[13px] transition-colors bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 w-full"
+              >
+                <Printer size={15} />
+                Print Invoice
+              </button>
+              <Button text="Collect & Mark Delivered" variant="success" onClick={() => handleMarkDelivered(billingModal)} className="w-full" />
+            </div>
+          </div>
+        </div>
+      )}
+      </>)}
+    </div>
+  );
+};
