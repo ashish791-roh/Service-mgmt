@@ -4,6 +4,37 @@ import { requireSession, LIMITS, checkLengths } from '@/lib/auth';
 import { writeAuditLog } from '@/lib/auditLog';
 import { rateLimiter, getClientIP, RATE_LIMITS } from '@/lib/rateLimit';
 
+// ── Validation helpers ───────────────────────────────────────────────────────
+
+/**
+ * Accepts:
+ *   - 10-digit local numbers:          9876543210
+ *   - With country code (+ or 00):     +919876543210  /  00919876543210
+ *   - Spaces, hyphens, dots as separators: +91 98765-43210
+ * Rejects anything with letters or fewer than 7 / more than 15 digits (ITU E.164).
+ */
+const PHONE_RE = /^\+?(\d[\s\-.]?){7,15}\d$/;
+
+/** Basic RFC-5321 sanity check — not a full parser, but catches obvious garbage. */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+function validatePhone(phone: string): string | null {
+    const digits = phone.replace(/[\s\-.()+]/g, '');
+    if (!/^\d+$/.test(digits))      return 'Phone number must contain digits only (spaces, hyphens, dots, and + are allowed).';
+    if (!PHONE_RE.test(phone))      return 'Phone number must be between 7 and 15 digits.';
+    return null;
+}
+
+function validateEmail(email: string): string | null {
+    if (!EMAIL_RE.test(email)) return 'Invalid email address.';
+    return null;
+}
+
+function validateName(name: string): string | null {
+    if (name.trim().length < 2) return 'Name must be at least 2 characters.';
+    return null;
+}
+
 // ── Rate-limit helper shared by all handlers ────────────────────────────────
 async function checkRateLimit(request: Request, userId: string) {
     const ip = getClientIP(request);
@@ -40,6 +71,20 @@ export async function PUT(request: Request) {
             [body.email,   'email',   LIMITS.email],
         ]);
         if (lengthError) return NextResponse.json({ error: lengthError }, { status: 400 });
+
+        // ── Field-level validation ───────────────────────────────────
+        if (body.name != null) {
+            const err = validateName(body.name);
+            if (err) return NextResponse.json({ error: err }, { status: 400 });
+        }
+        if (body.phone != null) {
+            const err = validatePhone(body.phone.trim());
+            if (err) return NextResponse.json({ error: err }, { status: 400 });
+        }
+        if (body.email != null && body.email.trim() !== '') {
+            const err = validateEmail(body.email.trim());
+            if (err) return NextResponse.json({ error: err }, { status: 400 });
+        }
 
         const updated = await prisma.customer.update({
             where: { id },
@@ -151,10 +196,12 @@ export async function POST(request: Request) {
     try {
         const body = await request.json();
 
+        // ── Required fields ──────────────────────────────────────────
         if (!body.name || !body.phone) {
             return NextResponse.json({ error: 'name and phone are required.' }, { status: 400 });
         }
 
+        // ── Length limits ────────────────────────────────────────────
         const lengthError = checkLengths([
             [body.name,    'name',    LIMITS.name],
             [body.phone,   'phone',   LIMITS.phone],
@@ -162,6 +209,30 @@ export async function POST(request: Request) {
             [body.email,   'email',   LIMITS.email],
         ]);
         if (lengthError) return NextResponse.json({ error: lengthError }, { status: 400 });
+
+        // ── Field-level validation ───────────────────────────────────
+        const nameErr = validateName(body.name);
+        if (nameErr) return NextResponse.json({ error: nameErr }, { status: 400 });
+
+        const phoneErr = validatePhone(body.phone.trim());
+        if (phoneErr) return NextResponse.json({ error: phoneErr }, { status: 400 });
+
+        if (body.email != null && body.email.trim() !== '') {
+            const emailErr = validateEmail(body.email.trim());
+            if (emailErr) return NextResponse.json({ error: emailErr }, { status: 400 });
+        }
+
+        // ── Duplicate phone check ────────────────────────────────────
+        const existing = await prisma.customer.findFirst({
+            where: { phone: body.phone.trim() },
+            select: { id: true, name: true },
+        });
+        if (existing) {
+            return NextResponse.json(
+                { error: `A customer with this phone number already exists (${existing.name}).` },
+                { status: 409 }
+            );
+        }
 
         const customer = await prisma.customer.create({
             data: {
