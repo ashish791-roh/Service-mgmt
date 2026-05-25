@@ -227,6 +227,15 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
   type __Unused = __Check
 }
 
+// Validate ../../src/app/api/sla-config/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/sla-config">> = Specific
+  const handler = {} as typeof import("../../src/app/api/sla-config/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
 // Validate ../../src/app/api/track/route.ts
 {
   type __IsExpected<Specific extends RouteHandlerConfig<"/api/track">> = Specific
@@ -249,6 +258,15 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
 {
   type __IsExpected<Specific extends RouteHandlerConfig<"/api/users">> = Specific
   const handler = {} as typeof import("../../src/app/api/users/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../src/app/api/warranty-config/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/warranty-config">> = Specific
+  const handler = {} as typeof import("../../src/app/api/warranty-config/route.js")
   type __Check = __IsExpected<typeof handler>
   // @ts-ignore
   type __Unused = __Check

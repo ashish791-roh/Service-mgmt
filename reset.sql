@@ -1,0 +1,1 @@
+TRUNCATE TABLE "SaleItem", "Sale", "Payment", "PartRequest", "Notification", "Job", "Device", "Customer", "InventoryItem" CASCADE;

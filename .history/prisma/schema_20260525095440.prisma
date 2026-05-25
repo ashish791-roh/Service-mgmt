@@ -1,0 +1,210 @@
+generator client {
+  provider = "prisma-client-js"
+  }
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ── User Management ───────────────────────────────────────────────
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      String   // "admin" | "reception" | "engineer"
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignedJobs  Job[]          @relation("EngineerJobs")
+  partRequests  PartRequest[]
+  notifications Notification[]
+  jobActivities JobActivity[]
+}
+
+// ── Customer Management ───────────────────────────────────────────
+model Customer {
+  id        String   @id @default(uuid())
+  name      String
+  phone     String
+  email     String? @db.VarChar(254)
+  address   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  jobs    Job[]
+  devices Device[]
+}
+
+// ── Device Details ────────────────────────────────────────────────
+model Device {
+  id         String   @id @default(uuid())
+  customerId String
+  type       String
+  brand      String
+  model      String
+  serialNo   String?
+  createdAt  DateTime @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  jobs     Job[]
+  
+  @@index([customerId])
+}
+
+// ── Job Workflow ──────────────────────────────────────────────────
+model Job {
+  id            String    @id @default(uuid())
+  customerId    String
+  deviceId      String
+  engineerId    String?
+  problemDesc   String
+  status        String    @default("New")
+  estimatedCost Float?
+  actualCost    Float?
+  repairNotes   String?
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  customer     Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  device       Device        @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  engineer     User?         @relation("EngineerJobs", fields: [engineerId], references: [id], onDelete: SetNull)
+  partRequests PartRequest[]
+  payment      Payment?
+
+  checklist    Json?
+  rating       Int?
+  feedback     String?
+  linkedJobId  String?
+  linkedJob    Job?          @relation("JobWarranty", fields: [linkedJobId], references: [id])
+  warrantyJobs Job[]         @relation("JobWarranty")
+  activities   JobActivity[]
+  photos       JobPhoto[]
+  advanceAmount Float? @default(0)
+  
+  @@index([customerId])
+  @@index([deviceId])
+  @@index([engineerId])
+  @@index([status])
+  @@index([linkedJobId])
+}
+
+model JobActivity {
+  id        String   @id @default(uuid())
+  jobId     String
+  userId    String
+  action    String
+  details   String?
+  createdAt DateTime @default(now())
+
+  job  Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([jobId])
+  @@index([userId])
+}
+
+model JobPhoto {
+  id        String   @id @default(uuid())
+  jobId     String
+  url       String
+  type      String   // "before" | "after"
+  
+  @@index([jobId])
+  createdAt DateTime @default(now())
+
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+}
+
+// ── Parts Request System ──────────────────────────────────────────
+model PartRequest {
+  id         String    @id @default(uuid())
+  jobId      String
+  engineerId String
+  partName   String
+  quantity   Int
+  reason     String
+  status     String    @default("Pending")
+  reviewedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt, onDelete: Cascade)
+  engineer User @relation(fields: [engineerId], references: [id], onDelete: Cascade)
+  
+  @@index([jobId])
+  @@index([engineerI
+  job      Job  @relation(fields: [jobId], references: [id])
+  engineer User @relation(fields: [engineerId], references: [id])
+}
+
+// ── Revenue & Billing ─────────────────────────────────────────────
+model Payment {
+  id            String   @id @default(uuid())
+  jobId         String   @unique
+  serviceCharge Float    @default(0)
+  partsCost     Float    @default(0)
+  totalBill     Float    @default(0), onDelete: Cascade)
+  
+  @@index([jobId]
+  status        String   @default("Unpaid")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  job Job @relation(fields: [jobId], references: [id])
+}
+
+// ── Inventory ─────────────────────────────────────────────────────
+model InventoryItem {
+  id          String   @id @default(uuid())
+  name        String
+  sku         String   @unique
+  category    String
+  quantity    Int      @default(0)
+  minQuantity Int      @default(5)
+  unitPrice   Float
+  location    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ── Notifications ─────────────────────────────────────────────────
+model Notification {
+  id        String   @id @default(uuid()), onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([jobId]
+  userId    String
+  message   String
+  read      Boolean  @default(false)
+  jobId     String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Session {
+  token     String   @id @db.VarChar(64)
+  userId    String
+  payload   Json
+  expiresAt DateTime
+  idleAt    DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// ── SLA Configuration ─────────────────────────────────────────────
+model SLAConfig {
+  id            String   @id @default("sla-config")
+  tiers         Json     // Array of { deviceType, warningHours, criticalHours }
+  updatedAt     DateTime @updatedAt
+}
+
+// ── Warranty Configuration ────────────────────────────────────────
+model WarrantyConfig {
+  id            String   @id @default("warranty-config")
+  entries       Json     // Array of { deviceType, days }
+  updatedAt     DateTime @updatedAt
+}

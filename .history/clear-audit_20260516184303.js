@@ -1,0 +1,5 @@
+﻿const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
+prisma.$executeRawUnsafe('TRUNCATE TABLE "AuditLog"')
+  .then(() => { console.log('Audit log cleared!'); process.exit(0); })
+  .catch(e => { console.error(e.message); process.exit(1); });
