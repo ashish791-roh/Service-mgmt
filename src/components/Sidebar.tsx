@@ -30,7 +30,7 @@ const NAV_ITEMS: NavItem[] = [
 
 const SECTIONS = [
   { label: 'Overview', ids: ['dashboard', 'analytics', 'reports'] },
-  { label: 'Operations', ids: ['customers', 'jobs', 'assign', 'my-jobs', 'parts'] },
+  { label: 'Operations', ids: ['jobs', 'assign', 'my-jobs', 'parts'] },
   { label: 'Management', ids: ['users', 'inventory','sales', 'billing'] },
   { label: 'System', ids: ['notifications', 'settings', 'audit-log'] },
 ];
