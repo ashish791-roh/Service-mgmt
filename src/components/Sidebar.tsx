@@ -8,7 +8,7 @@ import {
   Settings, Shield, ShoppingCart
 } from 'lucide-react';
 
-interface NavItem { id: string; label: string; icon: any; roles: Role[]; }
+interface NavItem { id: string; label: string; icon: React.ComponentType<{ size?: number; className?: string; strokeWidth?: number }>; roles: Role[]; }
 
 const NAV_ITEMS: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'reception', 'engineer'] },

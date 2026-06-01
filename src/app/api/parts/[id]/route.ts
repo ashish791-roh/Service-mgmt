@@ -21,7 +21,7 @@ export async function PUT(
         }
 
         // ── Block approval of requests that are awaiting stock ────────────────
-        const existing = await prisma.partRequest.findUnique({ where: { id }, select: { status: true } });
+        const existing = await prisma.partRequest.findUnique({ where: { id }, select: { status: true, partName: true } });
         if (existing?.status === 'AwaitingStock') {
             return NextResponse.json(
                 { error: 'Cannot approve or reject a part request that is awaiting stock. Stock must be added to inventory first.' },
@@ -29,26 +29,34 @@ export async function PUT(
             );
         }
 
+        // Look up the inventory item by name (case-insensitive) to get unit cost and id
+        let unitCost = 0;
+        let inventoryItem: { id: string; unitPrice: number; quantity: number } | null = null;
+
+        if (body.status === 'Approved' && existing?.partName) {
+            inventoryItem = await prisma.inventoryItem.findFirst({
+                where: {
+                    name: { equals: existing.partName, mode: 'insensitive' },
+                },
+                select: { id: true, unitPrice: true, quantity: true },
+            });
+            if (inventoryItem) {
+                unitCost = inventoryItem.unitPrice;
+            }
+        }
+
         const partRequest = await prisma.partRequest.update({
             where: { id },
             data: {
                 status: body.status,
                 reviewedAt: new Date(),
+                unitCost: body.status === 'Approved' ? unitCost : null,
             },
         });
 
         // ── Auto-add parts cost to job estimatedCost on approval ─────────────
         if (body.status === 'Approved' && partRequest.jobId && partRequest.partName) {
             try {
-                // Look up the inventory item by name (case-insensitive) to get unit cost and id
-                const inventoryItem = await prisma.inventoryItem.findFirst({
-                    where: {
-                        name: { equals: partRequest.partName, mode: 'insensitive' },
-                    },
-                    select: { id: true, unitPrice: true, quantity: true },
-                });
-
-                const unitCost = inventoryItem?.unitPrice ?? 0;
                 const partLineCost = unitCost * (partRequest.quantity ?? 1);
 
                 if (partLineCost > 0) {
@@ -129,9 +137,12 @@ export async function PUT(
             updatedAt: partRequest.updatedAt.toISOString(),
             reviewedAt: partRequest.reviewedAt?.toISOString() ?? undefined,
         });
-    } catch (error: any) {
-        if (error.code === 'P2025') {
-            return NextResponse.json({ error: 'Part request not found.' }, { status: 404 });
+    } catch (error) {
+        if (error && typeof error === 'object' && 'code' in error) {
+            const err = error as { code: string };
+            if (err.code === 'P2025') {
+                return NextResponse.json({ error: 'Part request not found.' }, { status: 404 });
+            }
         }
         console.error('[api/parts/[id] PUT]', error);
         return NextResponse.json({ error: 'Failed to update part request.' }, { status: 500 });
@@ -167,7 +178,7 @@ export async function PATCH(
             updatedAt: updated.updatedAt.toISOString(),
             reviewedAt: updated.reviewedAt?.toISOString() ?? undefined,
         });
-    } catch (error: any) {
+    } catch (error) {
         console.error('[api/parts/[id] PATCH]', error);
         return NextResponse.json({ error: 'Failed to promote part request.' }, { status: 500 });
     }

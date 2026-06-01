@@ -75,9 +75,12 @@ export async function POST(request: Request) {
             createdAt: payment.createdAt.toISOString(),
             updatedAt: payment.updatedAt.toISOString(),
         }, { status: 201 });
-    } catch (error: any) {
-        if (error.code === 'P2002') {
-            return NextResponse.json({ error: 'A payment record already exists for this job.' }, { status: 409 });
+    } catch (error) {
+        if (error && typeof error === 'object' && 'code' in error) {
+            const err = error as { code: string };
+            if (err.code === 'P2002') {
+                return NextResponse.json({ error: 'A payment record already exists for this job.' }, { status: 409 });
+            }
         }
         console.error('[api/payments POST]', error);
         return NextResponse.json({ error: 'Failed to create payment record.' }, { status: 500 });

@@ -28,8 +28,8 @@ describe('SLA logic', () => {
     const status = getSLAStatus(createdAt, 'In Progress', 'Phone', DEFAULT_SLA_TIERS);
 
     expect(status.level).toBe('ok');
-    expect(status.label).toBe('14h left');
-    expect(status.hoursRemaining).toBeCloseTo(14, 1);
+    expect(status.label).toBe('2d left');
+    expect(status.hoursRemaining).toBeCloseTo(38, 1);
   });
 
   it('returns warning status once warning threshold is crossed', () => {

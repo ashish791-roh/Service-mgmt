@@ -11,7 +11,6 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  password: string;
   role: Role;
   active: boolean;
   avatar?: string;
@@ -61,6 +60,8 @@ export interface JobPhoto {
 
 export interface Job {
   id: string;
+  invoiceNumber?: string | null;
+  paymentMethod?: string | null;
   customerId: string;
   deviceId: string;
   assignedEngineerId: string | null;
@@ -93,6 +94,7 @@ export interface PartRequest {
   quantity: number;
   reason: string;
   status: PartRequestStatus;
+  unitCost?: number | null;
   createdAt: string;
   reviewedAt?: string;
   /** Inventory status at submission time — shown as alert to admin/reception */
@@ -145,4 +147,14 @@ export interface Notification {
   read: boolean;
   createdAt: string;
   jobId?: string;
+}
+
+export interface DashboardStats {
+  totalCompletedJobs: number;
+  totalPendingJobs: number;
+  totalEngineers: number;
+  activeEngineers: number;
+  pendingPartsCount: number;
+  lowStockCount: number;
+  totalRevenue: number;
 }

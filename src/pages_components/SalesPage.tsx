@@ -5,7 +5,35 @@ import {
   DollarSign, AlertTriangle, ChevronDown, ChevronRight,
   User, Phone, FileText, CheckCircle, Trash2,
 } from 'lucide-react';
-import type { Sale } from '../types';
+import type { Sale, Customer, User as UserType, InventoryItem, DashboardStats } from '../types';
+
+// ── UI Component Props ───────────────────────────────────────────
+
+interface MetricCardProps {
+  title: string;
+  value: string | number;
+  icon: React.ComponentType<{ size?: number; strokeWidth?: number }>;
+  color: 'teal' | 'green' | 'orange' | 'purple';
+  sub?: string;
+}
+
+interface ButtonProps {
+  text: string;
+  onClick: () => void;
+  variant?: 'primary' | 'success' | 'outline' | 'danger';
+  className?: string;
+  icon?: React.ComponentType<{ size?: number }>;
+  disabled?: boolean;
+}
+
+interface InputProps {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  type?: string;
+  required?: boolean;
+}
 
 // ── Shared UI primitives ─────────────────────────────────────────
 
@@ -25,7 +53,7 @@ const Card = ({ children, className = '' }: { children: React.ReactNode; classNa
   </div>
 );
 
-const MetricCard = ({ title, value, icon: Icon, color, sub }: any) => {
+const MetricCard: React.FC<MetricCardProps> = ({ title, value, icon: Icon, color, sub }) => {
   const colorMap: Record<string, string> = {
     teal: 'text-teal-500 bg-teal-50',
     green: 'text-green-500 bg-green-50',
@@ -49,8 +77,8 @@ const MetricCard = ({ title, value, icon: Icon, color, sub }: any) => {
   );
 };
 
-const Button = ({ text, onClick, variant = 'primary', className = '', icon: Icon, disabled }: any) => {
-  const styles: any = {
+const Button: React.FC<ButtonProps> = ({ text, onClick, variant = 'primary', className = '', icon: Icon, disabled }) => {
+  const styles: Record<string, string> = {
     primary: 'bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50',
     success: 'bg-green-500 text-white hover:bg-green-600 disabled:opacity-50',
     outline: 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50',
@@ -68,7 +96,7 @@ const Button = ({ text, onClick, variant = 'primary', className = '', icon: Icon
   );
 };
 
-const Input = ({ label, value, onChange, placeholder, type = 'text', required }: any) => (
+const Input: React.FC<InputProps> = ({ label, value, onChange, placeholder, type = 'text', required }) => (
   <div className="flex flex-col gap-1.5">
     <label className="text-[12px] font-medium text-gray-600 uppercase tracking-wide">
       {label}{required && <span className="text-rose-500 ml-0.5">*</span>}
@@ -97,7 +125,13 @@ interface NewSaleModalProps {
 }
 
 const NewSaleModal: React.FC<NewSaleModalProps> = ({ onClose, onCreated }) => {
-  const { inventory, customers, addSale, currentUser } = useApp() as any;
+  const appContext = useApp();
+  const { inventory, customers, addSale, currentUser } = appContext as {
+    inventory: InventoryItem[];
+    customers: Customer[];
+    addSale: (sale: { companyName: string; contactName: string; phone: string; notes: string; customerId?: string; items: { inventoryItemId: string; quantity: number; unitPrice?: number }[] }) => Promise<{ ok: boolean; error?: string; sale?: Sale }>;
+    currentUser: UserType | null;
+  };
   const canEditRate = currentUser?.role === 'admin';
 
   const [companyName, setCompanyName] = useState('');
@@ -112,7 +146,7 @@ const NewSaleModal: React.FC<NewSaleModalProps> = ({ onClose, onCreated }) => {
   // Deduplicate customers: keep only the first record per unique name+phone combo
   const uniqueCustomers = useMemo(() => {
     const seen = new Set<string>();
-    return (customers as any[]).filter((c: any) => {
+    return customers.filter((c: Customer) => {
       const key = `${c.name.trim().toLowerCase()}|${c.phone.trim()}`;
       if (seen.has(key)) return false;
       seen.add(key);
@@ -120,7 +154,7 @@ const NewSaleModal: React.FC<NewSaleModalProps> = ({ onClose, onCreated }) => {
     });
   }, [customers]);
 
-  const availableItems = (inventory as any[]).filter(i => i.quantity > 0);
+  const availableItems = (inventory as InventoryItem[]).filter(i => i.quantity > 0);
 
   const addLine = () => setLineItems(prev => [...prev, { inventoryItemId: '', quantity: 1, customRate: '' }]);
   const removeLine = (idx: number) => setLineItems(prev => prev.filter((_, i) => i !== idx));
@@ -135,7 +169,7 @@ const NewSaleModal: React.FC<NewSaleModalProps> = ({ onClose, onCreated }) => {
     }));
   };
 
-  const getInvItem = (id: string) => (inventory as any[]).find(i => i.id === id);
+  const getInvItem = (id: string) => (inventory as InventoryItem[]).find(i => i.id === id);
 
   const getEffectiveRate = (li: LineItem) => {
     const inv = getInvItem(li.inventoryItemId);
@@ -220,7 +254,7 @@ const NewSaleModal: React.FC<NewSaleModalProps> = ({ onClose, onCreated }) => {
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white"
                 >
                   <option value="">— None —</option>
-                  {uniqueCustomers.map((c: any) => (
+                  {uniqueCustomers.map((c: Customer) => (
                     <option key={c.id} value={c.id}>{c.name} ({c.phone})</option>
                   ))}
                 </select>
@@ -255,7 +289,7 @@ const NewSaleModal: React.FC<NewSaleModalProps> = ({ onClose, onCreated }) => {
                         className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white"
                       >
                         <option value="">— Select item —</option>
-                        {availableItems.map((i: any) => (
+                        {availableItems.map((i: InventoryItem) => (
                           <option key={i.id} value={i.id}>
                             {i.name} (Stock: {i.quantity}) — ₹{i.unitCost.toLocaleString()}
                           </option>
@@ -356,9 +390,9 @@ const NewSaleModal: React.FC<NewSaleModalProps> = ({ onClose, onCreated }) => {
 
 // ── Sale Row ──────────────────────────────────────────────────────
 
-const SaleRow: React.FC<{ sale: Sale; users: any[] }> = ({ sale, users }) => {
+const SaleRow: React.FC<{ sale: Sale; users: UserType[] }> = ({ sale, users }) => {
   const [expanded, setExpanded] = useState(false);
-  const creator = users.find((u: any) => u.id === sale.createdById);
+  const creator = users.find((u: UserType) => u.id === sale.createdById);
 
   return (
     <div className="border-b border-gray-100 last:border-0">
@@ -479,38 +513,76 @@ const SaleRow: React.FC<{ sale: Sale; users: any[] }> = ({ sale, users }) => {
 // ── Main SalesPage ────────────────────────────────────────────────
 
 export const SalesPage: React.FC = () => {
-  const { sales, inventory, users, currentUser } = useApp() as any;
+  const appContext = useApp();
+  const { inventory, users, currentUser, stats } = appContext as {
+    inventory: InventoryItem[];
+    users: UserType[];
+    currentUser: UserType | null;
+    stats: DashboardStats | null;
+  };
   const [showModal, setShowModal] = useState(false);
-  const [search, setSearch] = useState('');
+  const [searchValue, setSearchValue] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase();
-    return (sales as Sale[]).filter(s =>
-      s.saleNumber.toLowerCase().includes(q) ||
-      s.companyName.toLowerCase().includes(q) ||
-      s.contactName.toLowerCase().includes(q) ||
-      s.phone.toLowerCase().includes(q)
-    );
-  }, [sales, search]);
-
-  // Metrics
-  const totalRevenue = (sales as Sale[]).reduce((sum, s) => sum + s.totalAmount, 0);
-  const totalSales = (sales as Sale[]).length;
-  const todaySales = (sales as Sale[]).filter(s => {
-    const d = new Date(s.createdAt);
-    const now = new Date();
-    return d.toDateString() === now.toDateString();
+  const [salesList, setSalesList] = useState<Sale[]>([]);
+  const [totalSalesCount, setTotalSalesCount] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [metrics, setMetrics] = useState({
+    totalRevenue: 0,
+    todaySalesCount: 0,
+    todayRevenue: 0,
   });
-  const todayRevenue = todaySales.reduce((sum, s) => sum + s.totalAmount, 0);
-  const lowStockCount = (inventory as any[]).filter(i => i.quantity <= i.minStock).length;
+
+  const limit = 15;
+
+  const fetchSalesList = async (page: number, searchTerm: string) => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/sales?page=${page}&limit=${limit}&search=${encodeURIComponent(searchTerm)}`);
+      const data = await res.json();
+      if (res.ok && data.sales) {
+        setSalesList(data.sales);
+        setTotalSalesCount(data.total);
+        setTotalPages(Math.ceil(data.total / limit) || 1);
+        if (data.metrics) {
+          setMetrics(data.metrics);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch sales list', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchValue);
+      setCurrentPage(1); // Reset to first page on search change
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchValue]);
+
+  React.useEffect(() => {
+    fetchSalesList(currentPage, debouncedSearch);
+  }, [currentPage, debouncedSearch]);
 
   const handleCreated = (sale: Sale) => {
     setShowModal(false);
     setSuccessMsg(`Sale ${sale.saleNumber} recorded successfully!`);
     setTimeout(() => setSuccessMsg(''), 4000);
+    // Refresh page 1
+    if (currentPage === 1) {
+      fetchSalesList(1, debouncedSearch);
+    } else {
+      setCurrentPage(1);
+    }
   };
 
+  const lowStockCount = stats?.lowStockCount ?? (inventory as InventoryItem[]).filter(i => i.quantity <= i.minStock).length;
   const canRecord = currentUser?.role === 'admin' || currentUser?.role === 'reception';
 
   return (
@@ -542,7 +614,6 @@ export const SalesPage: React.FC = () => {
           <AlertTriangle size={16} className="shrink-0" />
           <span>
             <strong>{lowStockCount}</strong> inventory item{lowStockCount !== 1 ? 's are' : ' is'} at or below minimum stock level.
-            {' '}<button onClick={() => {}} className="underline hover:no-underline font-medium">View Inventory</button>
           </span>
         </div>
       )}
@@ -551,22 +622,22 @@ export const SalesPage: React.FC = () => {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
           title="Total Sales"
-          value={totalSales}
+          value={totalSalesCount}
           icon={ShoppingCart}
           color="teal"
         />
         <MetricCard
           title="Total Revenue"
-          value={`₹${totalRevenue.toLocaleString()}`}
+          value={`₹${metrics.totalRevenue.toLocaleString()}`}
           icon={TrendingUp}
           color="green"
         />
         <MetricCard
           title="Today's Sales"
-          value={todaySales.length}
+          value={metrics.todaySalesCount}
           icon={DollarSign}
           color="purple"
-          sub={todaySales.length > 0 ? `₹${todayRevenue.toLocaleString()}` : undefined}
+          sub={metrics.todaySalesCount > 0 ? `₹${metrics.todayRevenue.toLocaleString()}` : undefined}
         />
         <MetricCard
           title="Low Stock Items"
@@ -586,8 +657,8 @@ export const SalesPage: React.FC = () => {
             <input
               type="text"
               placeholder="Search by sale #, company, contact..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
+              value={searchValue}
+              onChange={e => setSearchValue(e.target.value)}
               className="pl-8 pr-3 py-2 border border-gray-200 rounded-lg text-[12px] focus:outline-none focus:ring-2 focus:ring-teal-500 w-64"
             />
           </div>
@@ -603,20 +674,54 @@ export const SalesPage: React.FC = () => {
           <div className="w-28 text-right">Amount</div>
         </div>
 
-        {filtered.length === 0 ? (
+        {loading ? (
+          <div className="flex justify-center items-center py-16 text-gray-500 text-[13px]">
+            Loading sales...
+          </div>
+        ) : salesList.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-gray-400">
             <ShoppingCart size={40} className="mb-3 opacity-40" />
             <p className="text-[13px] font-medium text-gray-500">
-              {search ? 'No sales match your search' : 'No sales recorded yet'}
+              {searchValue ? 'No sales match your search' : 'No sales recorded yet'}
             </p>
-            {!search && canRecord && (
+            {!searchValue && canRecord && (
               <p className="text-[12px] text-gray-400 mt-1">Click "Record Sale" to get started</p>
             )}
           </div>
         ) : (
-          filtered.map(sale => (
-            <SaleRow key={sale.id} sale={sale} users={users} />
-          ))
+          <>
+            <div className="divide-y divide-gray-100">
+              {salesList.map(sale => (
+                <SaleRow key={sale.id} sale={sale} users={users} />
+              ))}
+            </div>
+
+            {/* Pagination Controls */}
+            <div className="flex items-center justify-between border-t border-gray-100 px-4 py-3 bg-gray-50">
+              <p className="text-[12px] text-gray-500">
+                Showing <span className="font-medium text-gray-800">{(currentPage - 1) * limit + 1}–{Math.min(currentPage * limit, totalSalesCount)}</span> of <span className="font-medium text-gray-800">{totalSalesCount.toLocaleString()}</span> sales
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  disabled={currentPage === 1 || loading}
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  className="px-3 py-1.5 rounded-lg border border-gray-200 text-[12px] font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Prev
+                </button>
+                <span className="text-[12px] text-gray-500 px-1">
+                  {currentPage} / {totalPages}
+                </span>
+                <button
+                  disabled={currentPage >= totalPages || loading}
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  className="px-3 py-1.5 rounded-lg border border-gray-200 text-[12px] font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </Card>
 

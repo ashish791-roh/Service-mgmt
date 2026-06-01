@@ -101,7 +101,7 @@
         "transform": "lodash/{{member}}"
       }
     },
-    "outputFileTracingRoot": "C:\\Users\\pkad0\\Documents\\Project\\service-mgmt",
+    "outputFileTracingRoot": "D:\\MyDocuments\\Project\\service-mgmt",
     "experimental": {
       "useSkewCookie": false,
       "cacheLife": {
@@ -295,10 +295,10 @@
       "@neondatabase/serverless"
     ],
     "turbopack": {
-      "root": "C:\\Users\\pkad0\\Documents\\Project\\service-mgmt"
+      "root": "D:\\MyDocuments\\Project\\service-mgmt"
     }
   },
-  "appDir": "C:\\Users\\pkad0\\Documents\\Project\\service-mgmt",
+  "appDir": "D:\\MyDocuments\\Project\\service-mgmt",
   "relativeAppDir": "",
   "files": [
     ".next\\routes-manifest.json",

@@ -1,13 +1,103 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireSession, LIMITS, checkLengths } from '@/lib/auth';
+import { requireSession } from '@/lib/auth';
 import { notifyCustomerStatusChange } from '@/lib/customerNotifications';
 import { writeAuditLog } from '@/lib/auditLog';
 import { rateLimiter, getClientIP, RATE_LIMITS } from '@/lib/rateLimit';
+import { validateBody, JobCreateSchema } from '@/lib/validation';
+import type { Prisma } from '@prisma/client';
+
+// GET /api/jobs — admin, reception, engineer
+export async function GET(request: Request) {
+    const auth = await requireSession(request, ['admin', 'reception', 'engineer']);
+    if ('error' in auth) return auth.error;
+
+    // Rate limiting
+    const ip = getClientIP(request);
+    const limitCheck = await rateLimiter.check(
+        `api:jobs:get:${auth.user.id}:${ip}`,
+        RATE_LIMITS.MODERATE
+    );
+    if (limitCheck.isLimited) {
+        return NextResponse.json(
+            { error: `Too many requests. Try again in ${limitCheck.retryAfter} seconds.` },
+            { status: 429, headers: { 'Retry-After': limitCheck.retryAfter.toString() } }
+        );
+    }
+
+    try {
+        const { searchParams } = new URL(request.url);
+        const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10));
+        const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') ?? '20', 10)));
+        const status = searchParams.get('status') || '';
+        const search = searchParams.get('search')?.trim() || '';
+
+        const where: Prisma.JobWhereInput = {};
+        
+        // Role restrictions
+        if (auth.user.role === 'engineer') {
+            where.engineerId = auth.user.id;
+        } else {
+            const engineerId = searchParams.get('engineerId');
+            if (engineerId) where.engineerId = engineerId;
+        }
+
+        if (status) {
+            where.status = status;
+        }
+
+        if (search) {
+            where.OR = [
+                { problemDesc: { contains: search, mode: 'insensitive' } },
+                { customer: { name: { contains: search, mode: 'insensitive' } } },
+                { device: { model: { contains: search, mode: 'insensitive' } } },
+                { device: { brand: { contains: search, mode: 'insensitive' } } },
+            ];
+        }
+
+        const [jobs, total] = await Promise.all([
+            prisma.job.findMany({
+                where,
+                orderBy: { createdAt: 'desc' },
+                take: limit,
+                skip: (page - 1) * limit,
+                include: { activities: true, photos: true, customer: true, device: true },
+            }),
+            prisma.job.count({ where }),
+        ]);
+
+        return NextResponse.json({
+            jobs: jobs.map((job: any) => ({
+                ...job,
+                problemDescription: job.problemDesc,
+                assignedEngineerId: job.engineerId,
+                estimatedCost: job.estimatedCost ?? 0,
+                advanceAmount: job.advanceAmount ?? 0,
+                createdAt: job.createdAt.toISOString(),
+                updatedAt: job.updatedAt.toISOString(),
+                completedAt: job.completedAt?.toISOString() ?? undefined,
+                activities: job.activities.map((a: any) => ({
+                    ...a,
+                    createdAt: a.createdAt.toISOString(),
+                })),
+                photos: job.photos.map((p: any) => ({
+                    ...p,
+                    createdAt: p.createdAt.toISOString(),
+                })),
+            })),
+            total,
+            page,
+            limit,
+        });
+    } catch (error) {
+        console.error('[api/jobs GET]', error);
+        return NextResponse.json({ error: 'Failed to fetch jobs.' }, { status: 500 });
+    }
+}
 
 // POST /api/jobs — admin or reception
 export async function POST(request: Request) {
-    const auth = await requireSession(['admin', 'reception']);
+    const auth = await requireSession(request, ['admin', 'reception']);
     if ('error' in auth) return auth.error;
 
     // ── Rate limiting ─────────────────────────────────────────────
@@ -24,43 +114,40 @@ export async function POST(request: Request) {
     }
 
     try {
-        const body = await request.json();
+        const validation = await validateBody(request, JobCreateSchema);
+        if (!validation.success) return validation.errorResponse;
+        const body = validation.data;
 
-        if (!body.customerId || !body.deviceId || !body.problemDescription) {
-            return NextResponse.json(
-                { error: 'customerId, deviceId and problemDescription are required.' },
-                { status: 400 }
-            );
-        }
+        const jobStatus = body.assignedEngineerId ? 'Assigned' : 'New';
 
-        // Input length caps
-        const lengthError = checkLengths([
-            [body.problemDescription, 'problemDescription', LIMITS.notes],
-        ]);
-        if (lengthError) {
-            return NextResponse.json({ error: lengthError }, { status: 400 });
-        }
-
-        const jobStatus = body.status || 'New';
+        // ── Auto-generate invoice number ──
+        const year = new Date().getFullYear();
+        const jobCount = await prisma.job.count({
+            where: {
+                createdAt: {
+                    gte: new Date(`${year}-01-01T00:00:00.000Z`),
+                    lt: new Date(`${year + 1}-01-01T00:00:00.000Z`)
+                }
+            }
+        });
+        const invoiceNumber = `INV-${year}-${String(jobCount + 1).padStart(4, '0')}`;
 
         const job = await prisma.job.create({
             data: {
+                invoiceNumber,
                 customerId: body.customerId,
                 deviceId: body.deviceId,
                 engineerId: body.assignedEngineerId || null,
                 problemDesc: body.problemDescription,
                 status: jobStatus,
-                estimatedCost: body.estimatedCost ? parseFloat(body.estimatedCost) : null,
-                advanceAmount: body.advanceAmount ? parseFloat(body.advanceAmount) : null,
-                checklist: body.checklist || undefined,
-                rating: body.rating || undefined,
-                feedback: body.feedback || undefined,
-                linkedJobId: body.linkedJobId || undefined,
+                estimatedCost: body.estimatedCost,
+                advanceAmount: body.advanceAmount,
+                linkedJobId: body.linkedJobId || null,
                 activities: {
                     create: {
                         userId: auth.user.id,
                         action: 'Created Job',
-                        details: `Job created with status ${jobStatus}`
+                        details: `Job created with status ${jobStatus} and Invoice Number ${invoiceNumber}`
                     }
                 }
             },
@@ -79,6 +166,7 @@ export async function POST(request: Request) {
                 deviceId: job.deviceId,
                 engineerId: job.engineerId,
                 estimatedCost: job.estimatedCost,
+                invoiceNumber: job.invoiceNumber,
             },
         }).catch(() => {});
 
@@ -110,7 +198,7 @@ export async function POST(request: Request) {
                 notifyCustomerStatusChange({
                     customerName: customer.name,
                     phone: customer.phone,
-                    email: (customer as any).email ?? null,
+                    email: customer.email ?? null,
                     jobId: job.id,
                     newStatus: notifyStatus,
                     deviceInfo,

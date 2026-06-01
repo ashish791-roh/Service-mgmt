@@ -2,15 +2,41 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { StatusBadge, UrgencyDot, Toast, useToast } from '../components/ui';
 import { CheckCircle2, X, ChevronRight, CheckCircle } from 'lucide-react';
+import type { Job, Customer, Device, User } from '../types';
 
-const Card = ({ children, className = "" }: any) => (
-  <div className={`bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden ${className}`}>
+// ── UI Component Props ───────────────────────────────────────────
+
+interface CardProps {
+  children: React.ReactNode;
+  className?: string;
+  onClick?: () => void;
+}
+
+interface ButtonProps {
+  icon?: React.ComponentType<{ size?: number }>;
+  text: string;
+  onClick: () => void;
+  variant?: 'primary' | 'success' | 'outline';
+  className?: string;
+  disabled?: boolean;
+}
+
+interface EngineerHistoryDrawerProps {
+  engineer: User | null;
+  jobs: Job[];
+  customers: Customer[];
+  devices: Device[];
+  onClose: () => void;
+}
+
+const Card: React.FC<CardProps> = ({ children, className = "", onClick }) => (
+  <div onClick={onClick} className={`bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden ${className}`}>
     {children}
   </div>
 );
 
-const Button = ({ icon: Icon, text, onClick, variant = 'primary', className = "", disabled = false }: any) => {
-  const styles: any = {
+const Button: React.FC<ButtonProps> = ({ icon: Icon, text, onClick, variant = 'primary', className = "", disabled = false }) => {
+  const styles: Record<string, string> = {
     primary:       "bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed",
     success:       "bg-green-500 text-white hover:bg-green-600",
     outline:       "bg-white border border-gray-200 text-gray-700 hover:bg-gray-50",
@@ -33,20 +59,20 @@ const PageHeader = ({ title, subtitle }: { title: string; subtitle: string }) =>
 );
 
 // ── Engineer History Drawer ─────────────────────────────────────────────────
-const EngineerHistoryDrawer = ({ engineer, jobs, customers, devices, onClose }: any) => {
+const EngineerHistoryDrawer: React.FC<EngineerHistoryDrawerProps> = ({ engineer, jobs, customers, devices, onClose }) => {
   const [tab, setTab] = useState<'active' | 'all'>('active');
   if (!engineer) return null;
 
-  const engJobs = jobs.filter((j: any) => j.assignedEngineerId === engineer.id);
-  const activeJobs = engJobs.filter((j: any) => ['Assigned', 'In Progress'].includes(j.status));
-  const completedJobs = engJobs.filter((j: any) => ['Completed', 'Delivered'].includes(j.status));
-  const overdueJobs = activeJobs.filter((j: any) => {
+  const engJobs = jobs.filter((j: Job) => j.assignedEngineerId === engineer.id);
+  const activeJobs = engJobs.filter((j: Job) => ['Assigned', 'In Progress'].includes(j.status));
+  const completedJobs = engJobs.filter((j: Job) => ['Completed', 'Delivered'].includes(j.status));
+  const overdueJobs = activeJobs.filter((j: Job) => {
     const daysOld = Math.floor((Date.now() - new Date(j.createdAt).getTime()) / 86400000);
     return daysOld > 10;
   });
-  const totalRevenue = completedJobs.reduce((s: number, j: any) => s + (j.actualCost ?? j.estimatedCost), 0);
+  const totalRevenue = completedJobs.reduce((s: number, j: Job) => s + (j.actualCost ?? j.estimatedCost), 0);
 
-  const displayJobs = tab === 'active' ? activeJobs : engJobs.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const displayJobs = tab === 'active' ? activeJobs : engJobs.sort((a: Job, b: Job) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   const jobStatusColors: Record<string, string> = {
     'New':         'border-cyan-400 text-cyan-700 bg-cyan-50',
@@ -118,9 +144,9 @@ const EngineerHistoryDrawer = ({ engineer, jobs, customers, devices, onClose }: 
               <CheckCircle size={32} className="text-gray-300 mb-3" />
               <p className="text-[13px] font-medium text-gray-500">No jobs in this view</p>
             </div>
-          ) : displayJobs.map((job: any) => {
-            const customer = customers.find((c: any) => c.id === job.customerId);
-            const device = devices.find((d: any) => d.id === job.deviceId);
+          ) : displayJobs.map((job: Job) => {
+            const customer = customers.find((c: Customer) => c.id === job.customerId);
+            const device = devices.find((d: Device) => d.id === job.deviceId);
             const daysOld = Math.floor((Date.now() - new Date(job.createdAt).getTime()) / 86400000);
             const isOverdue = ['Assigned', 'In Progress'].includes(job.status) && daysOld > 10;
             const style = jobStatusColors[job.status] || 'border-gray-300 text-gray-700 bg-gray-50';
@@ -165,7 +191,7 @@ const EngineerHistoryDrawer = ({ engineer, jobs, customers, devices, onClose }: 
 export const AssignJobsPage: React.FC = () => {
   const { jobs, customers, devices, users, assignEngineer } = useApp();
   const { toast, show } = useToast();
-  const [selectedEngineer, setSelectedEngineer] = useState<any>(null);
+  const [selectedEngineer, setSelectedEngineer] = useState<User | null>(null);
 
   const engineers = users.filter(u => u.role === 'engineer' && u.active);
   const unassigned = jobs.filter(j => j.id && !j.assignedEngineerId && !['Completed', 'Delivered'].includes(j.status));

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireSession, LIMITS, checkLengths } from '@/lib/auth';
+import { requireSession } from '@/lib/auth';
 import {
     notifyCustomerStatusChange,
     sendWarrantySms,
@@ -8,6 +8,8 @@ import {
 } from '@/lib/customerNotifications';
 import { fireWebhooks } from '@/lib/webhooks';
 import { writeAuditLog, auditDiff } from '@/lib/auditLog';
+import { validateBody, JobUpdateSchema, JobPatchSchema } from '@/lib/validation';
+import type { Prisma, Job } from '@prisma/client';
 
 // ── Server-side warranty duration helper ──────────────────────────────────────
 // Mirrors the client-side warrantyConfig.ts defaults.
@@ -47,7 +49,7 @@ const CUSTOMER_NOTIFY_STATUSES = new Set<NotifiableStatus>([
 
 // ── Helper: fetch customer + device and send notification ─────────
 async function sendCustomerNotification(
-    job: any,
+    job: Job,
     newStatus: NotifiableStatus
 ): Promise<void> {
     try {
@@ -70,7 +72,7 @@ async function sendCustomerNotification(
         await notifyCustomerStatusChange({
             customerName: customer.name,
             phone: customer.phone,
-            email: (customer as any).email ?? null,
+            email: customer.email ?? null,
             jobId: job.id,
             newStatus,
             deviceInfo,
@@ -88,21 +90,14 @@ export async function PUT(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
-    const auth = await requireSession(['admin', 'reception']);
+    const auth = await requireSession(request, ['admin', 'reception']);
     if ('error' in auth) return auth.error;
 
     try {
         const { id: jobId } = await params;
-        const body = await request.json();
-
-        const lengthError = checkLengths([
-            [body.repairNotes, 'repairNotes', LIMITS.notes],
-            [body.problemDescription, 'problemDescription', LIMITS.notes],
-            [body.reassignReason, 'reassignReason', 500],
-        ]);
-        if (lengthError) {
-            return NextResponse.json({ error: lengthError }, { status: 400 });
-        }
+        const validation = await validateBody(request, JobUpdateSchema);
+        if (!validation.success) return validation.errorResponse;
+        const body = validation.data;
 
         // Fetch the current job so we can detect a status change
         const existingJob = await prisma.job.findUnique({ where: { id: jobId } });
@@ -133,20 +128,29 @@ export async function PUT(
             );
         }
 
-        const data: any = {};
+        const data: Prisma.JobUpdateInput = {};
         if (body.status !== undefined) data.status = body.status;
-        if (body.assignedEngineerId !== undefined) data.engineerId = body.assignedEngineerId;
+        if (body.assignedEngineerId !== undefined) {
+            data.engineer = body.assignedEngineerId
+                ? { connect: { id: body.assignedEngineerId } }
+                : { disconnect: true };
+        }
         if (body.repairNotes !== undefined) data.repairNotes = body.repairNotes;
-        if (body.actualCost !== undefined) data.actualCost = parseFloat(body.actualCost);
+        if (body.actualCost !== undefined) data.actualCost = body.actualCost;
         if (body.checklist !== undefined) data.checklist = body.checklist;
-        if (body.rating !== undefined) data.rating = parseInt(body.rating, 10);
+        if (body.rating !== undefined) data.rating = body.rating;
         if (body.feedback !== undefined) data.feedback = body.feedback;
-        if (body.linkedJobId !== undefined) data.linkedJobId = body.linkedJobId;
+        if (body.linkedJobId !== undefined) {
+            data.linkedJob = body.linkedJobId
+                ? { connect: { id: body.linkedJobId } }
+                : { disconnect: true };
+        }
         if (body.status === 'Completed') data.completedAt = new Date();
         // ── Editable core job fields (admin/reception) ────────────
         if (body.problemDescription !== undefined) data.problemDesc = body.problemDescription;
-        if (body.estimatedCost !== undefined) data.estimatedCost = parseFloat(body.estimatedCost);
-        if (body.advanceAmount !== undefined) data.advanceAmount = parseFloat(body.advanceAmount);
+        if (body.estimatedCost !== undefined) data.estimatedCost = body.estimatedCost;
+        if (body.advanceAmount !== undefined) data.advanceAmount = body.advanceAmount;
+        if (body.paymentMethod !== undefined) data.paymentMethod = body.paymentMethod;
 
         const activitiesToCreate = [];
         if (body.status && body.status !== existingJob.status) {
@@ -178,11 +182,11 @@ export async function PUT(
         if (body.problemDescription !== undefined && body.problemDescription !== existingJob.problemDesc) {
             activitiesToCreate.push({ userId: auth.user.id, action: 'Job Details Edited', details: 'Problem description was updated by admin/reception' });
         }
-        if (body.estimatedCost !== undefined && parseFloat(body.estimatedCost) !== existingJob.estimatedCost) {
-            activitiesToCreate.push({ userId: auth.user.id, action: 'Job Details Edited', details: `Estimated cost updated to ₹${parseFloat(body.estimatedCost).toLocaleString()}` });
+        if (body.estimatedCost !== undefined && body.estimatedCost !== existingJob.estimatedCost) {
+            activitiesToCreate.push({ userId: auth.user.id, action: 'Job Details Edited', details: `Estimated cost updated to ₹${body.estimatedCost.toLocaleString()}` });
         }
-        if (body.advanceAmount !== undefined && parseFloat(body.advanceAmount) !== existingJob.advanceAmount) {
-            activitiesToCreate.push({ userId: auth.user.id, action: 'Job Details Edited', details: `Advance amount updated to ₹${parseFloat(body.advanceAmount).toLocaleString()}` });
+        if (body.advanceAmount !== undefined && body.advanceAmount !== existingJob.advanceAmount) {
+            activitiesToCreate.push({ userId: auth.user.id, action: 'Job Details Edited', details: `Advance amount updated to ₹${body.advanceAmount.toLocaleString()}` });
         }
         if (body.rating !== undefined && body.rating !== existingJob.rating) {
             activitiesToCreate.push({ userId: auth.user.id, action: 'CSAT Rated', details: `Customer rated ${body.rating} stars` });
@@ -211,6 +215,7 @@ export async function PUT(
                 problemDesc:        existingJob.problemDesc,
                 estimatedCost:      existingJob.estimatedCost,
                 advanceAmount:      existingJob.advanceAmount,
+                paymentMethod:      existingJob.paymentMethod,
             };
             const auditAfter: Record<string, unknown> = {
                 status:             job.status,
@@ -223,6 +228,7 @@ export async function PUT(
                 problemDesc:        job.problemDesc,
                 estimatedCost:      job.estimatedCost,
                 advanceAmount:      job.advanceAmount,
+                paymentMethod:      job.paymentMethod,
             };
             auditDiff(actor, 'job', jobId, auditBefore, auditAfter).catch(() => {});
         }
@@ -313,9 +319,12 @@ export async function PUT(
                 createdAt: a.createdAt.toISOString()
             })) : []
         });
-    } catch (error: any) {
-        if (error.code === 'P2025') {
-            return NextResponse.json({ error: 'Job not found.' }, { status: 404 })
+    } catch (error) {
+        if (error && typeof error === 'object' && 'code' in error) {
+            const err = error as { code: string };
+            if (err.code === 'P2025') {
+                return NextResponse.json({ error: 'Job not found.' }, { status: 404 });
+            }
         }
         console.error('[api/jobs/[id] PUT]', error);
         return NextResponse.json({ error: 'Failed to update job.' }, { status: 500 });
@@ -332,14 +341,16 @@ export async function PATCH(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
-    const auth = await requireSession(['engineer']);
+    const auth = await requireSession(request, ['engineer']);
     if ('error' in auth) return auth.error;
 
     const { user } = auth;
 
     try {
         const { id: jobId } = await params;
-        const body = await request.json();
+        const validation = await validateBody(request, JobPatchSchema);
+        if (!validation.success) return validation.errorResponse;
+        const body = validation.data;
 
         // ── Validate status value ─────────────────────────────────
         if (body.status !== undefined && !ENGINEER_ALLOWED_STATUSES.includes(body.status)) {
@@ -347,14 +358,6 @@ export async function PATCH(
                 { error: `Engineers may only set status to: ${ENGINEER_ALLOWED_STATUSES.join(', ')}.` },
                 { status: 400 }
             );
-        }
-
-        // ── Validate repairNotes length ───────────────────────────
-        const lengthError = checkLengths([
-            [body.repairNotes, 'repairNotes', LIMITS.notes],
-        ]);
-        if (lengthError) {
-            return NextResponse.json({ error: lengthError }, { status: 400 });
         }
 
         // ── Ownership check — fetch job first ─────────────────────
@@ -372,8 +375,6 @@ export async function PATCH(
         }
 
         // ── Bug 8: Engineer cannot update status on an unassigned job ─────
-        // This is a safeguard — engineers should only ever see their own jobs
-        // (filtered client-side), but the API enforces the rule independently.
         if (body.status !== undefined && !existing.engineerId) {
             return NextResponse.json(
                 { error: 'This job has no assigned engineer. Ask reception to assign it before updating.' },
@@ -402,7 +403,7 @@ export async function PATCH(
         }
 
         // ── Build safe update payload ─────────────────────────────
-        const data: any = {};
+        const data: Prisma.JobUpdateInput = {};
         if (body.status !== undefined) data.status = body.status as EngineerAllowedStatus;
         if (body.repairNotes !== undefined) data.repairNotes = body.repairNotes;
         if (body.checklist !== undefined) data.checklist = body.checklist;
@@ -464,7 +465,7 @@ export async function PATCH(
                     if (warrantyDays > 0) {
                         await sendWarrantySms({
                             customerName: wCustomer.name,
-                            phone: (wCustomer as any).phone ?? '',
+                            phone: wCustomer.phone,
                             jobId: job.id,
                             warrantyDays,
                             deviceInfo: wDevice
@@ -506,21 +507,23 @@ export async function PATCH(
                 createdAt: a.createdAt.toISOString()
             })) : []
         });
-    } catch (error: any) {
-        if (error.code === 'P2025') {
-            return NextResponse.json({ error: 'Job not found.' }, { status: 404 });
+    } catch (error) {
+        if (error && typeof error === 'object' && 'code' in error) {
+            const err = error as { code: string };
+            if (err.code === 'P2025') {
+                return NextResponse.json({ error: 'Job not found.' }, { status: 404 });
+            }
         }
         console.error('[api/jobs/[id] PATCH]', error);
         return NextResponse.json({ error: 'Failed to update job.' }, { status: 500 });
     }
 }
 
-// DELETE /api/jobs/[id] — admin or reception only
 export async function DELETE(
-    _request: Request,
+    request: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
-    const auth = await requireSession(['admin', 'reception']);
+    const auth = await requireSession(request, ['admin', 'reception']);
     if ('error' in auth) return auth.error;
 
     const { id: jobId } = await params;
@@ -560,8 +563,13 @@ export async function DELETE(
         }).catch(() => {});
 
         return NextResponse.json({ ok: true });
-    } catch (error: any) {
-        if (error?.code === 'P2025') return NextResponse.json({ error: 'Job not found.' }, { status: 404 });
+    } catch (error) {
+        if (error && typeof error === 'object' && 'code' in error) {
+            const err = error as { code: string };
+            if (err.code === 'P2025') {
+                return NextResponse.json({ error: 'Job not found.' }, { status: 404 });
+            }
+        }
         console.error('[api/jobs/[id] DELETE]', error);
         return NextResponse.json({ error: 'Failed to delete job.' }, { status: 500 });
     }

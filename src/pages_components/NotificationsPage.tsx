@@ -12,8 +12,17 @@ const PageHeader = ({ title, subtitle, action }: { title: string, subtitle: stri
   </div>
 );
 
-const Button = ({ text, onClick, variant = 'primary', className = "", icon: Icon, disabled }: any) => {
-  const styles: any = {
+interface ButtonProps {
+  text: string;
+  onClick?: () => void;
+  variant?: 'primary' | 'success' | 'danger' | 'outline' | 'outline_danger' | 'teal';
+  className?: string;
+  icon?: React.ComponentType<{ size?: number; className?: string }>;
+  disabled?: boolean;
+}
+
+const Button = ({ text, onClick, variant = 'primary', className = "", icon: Icon, disabled }: ButtonProps) => {
+  const styles: Record<NonNullable<ButtonProps['variant']>, string> = {
     primary: "bg-gray-900 text-white hover:bg-gray-800",
     success: "bg-green-500 text-white hover:bg-green-600",
     danger: "bg-rose-500 text-white hover:bg-rose-600",

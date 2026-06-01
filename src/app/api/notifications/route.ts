@@ -50,7 +50,7 @@ export async function POST(request: Request) {
         });
 
         return NextResponse.json({ created: users.length });
-    } catch (error: any) {
+    } catch (error) {
         console.error('[api/notifications POST]', error);
         return NextResponse.json({ error: 'Failed to post announcement.' }, { status: 500 });
     }
@@ -108,9 +108,12 @@ export async function PUT(request: Request) {
             ...notification,
             createdAt: notification.createdAt.toISOString(),
         });
-    } catch (error: any) {
-        if (error.code === 'P2025') {
-            return NextResponse.json({ error: 'Notification not found.' }, { status: 404 });
+    } catch (error) {
+        if (error && typeof error === 'object' && 'code' in error) {
+            const err = error as { code: string };
+            if (err.code === 'P2025') {
+                return NextResponse.json({ error: 'Notification not found.' }, { status: 404 });
+            }
         }
         console.error('[api/notifications PUT]', error);
         return NextResponse.json({ error: 'Failed to update notification.' }, { status: 500 });

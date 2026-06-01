@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import type { JobPhoto } from '@prisma/client';
 
 // ── Default SLA hours (mirrors DEFAULT_SLA_TIERS in lib/sla.ts) ───────────────
 const SLA_HOURS: Record<string, { warning: number; critical: number }> = {
@@ -115,7 +116,7 @@ export async function GET(request: Request) {
                         device: device
                             ? { brand: device.brand, type: device.type, model: device.model }
                             : null,
-                        photos: job.photos.map((p: any) => ({
+                        photos: job.photos.map((p: JobPhoto) => ({
                             id: p.id,
                             url: p.url,
                             type: p.type,
@@ -169,7 +170,7 @@ export async function GET(request: Request) {
                 device: device
                     ? { brand: device.brand, type: device.type, model: device.model }
                     : null,
-                photos: job.photos.map((p: any) => ({
+                photos: job.photos.map((p: JobPhoto) => ({
                     id: p.id,
                     url: p.url,
                     type: p.type,

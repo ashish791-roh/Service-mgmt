@@ -38,6 +38,7 @@ import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
+import type { Prisma } from '@prisma/client';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -91,18 +92,18 @@ export async function createSession(
   const expiresAt = new Date(now.getTime() + SESSION_TTL_MS);
   const idleAt    = new Date(now.getTime() + SESSION_IDLE_MS);
 
-  await (prisma as any).session.create({
+  await prisma.session.create({
     data: {
       token,
       userId:    user.id,
-      payload:   { ...user, csrfToken } as any,
+      payload:   { ...user, csrfToken } as Prisma.InputJsonValue,
       expiresAt,
       idleAt,
     },
   });
 
   // Best-effort background prune of expired sessions
-  (prisma as any).session
+  prisma.session
     .deleteMany({ where: { expiresAt: { lt: now } } })
     .catch(() => {});
 
@@ -112,14 +113,14 @@ export async function createSession(
 /** Destroy a session by token (logout). */
 export async function destroySession(token: string): Promise<void> {
   try {
-    await (prisma as any).session.deleteMany({ where: { token } });
+    await prisma.session.deleteMany({ where: { token } });
   } catch { /**/ }
 }
 
 /** Destroy ALL sessions for a user (e.g. account deactivated). */
 export async function destroyAllSessionsForUser(userId: string): Promise<void> {
   try {
-    await (prisma as any).session.deleteMany({ where: { userId } });
+    await prisma.session.deleteMany({ where: { userId } });
   } catch { /**/ }
 }
 
@@ -132,7 +133,7 @@ export async function getSession(
   token: string
 ): Promise<(SessionUser & { csrfToken: string }) | null> {
   try {
-    const session = await (prisma as any).session.findUnique({ where: { token } });
+    const session = await prisma.session.findUnique({ where: { token } });
     if (!session) return null;
 
     const now = new Date();
@@ -151,11 +152,11 @@ export async function getSession(
 
     // Bump idle clock (fire-and-forget)
     const newIdleAt = new Date(now.getTime() + SESSION_IDLE_MS);
-    ;(prisma as any).session
+    prisma.session
       .update({ where: { token }, data: { idleAt: newIdleAt } })
       .catch(() => {});
 
-    return session.payload as SessionUser & { csrfToken: string };
+    return session.payload as unknown as SessionUser & { csrfToken: string };
   } catch {
     return null;
   }
@@ -175,7 +176,7 @@ export async function maybeRotateSession(
   user: SessionUser & { csrfToken: string }
 ): Promise<{ token: string; csrfToken: string } | null> {
   try {
-    const session = await (prisma as any).session.findUnique({
+    const session = await prisma.session.findUnique({
       where:  { token: oldToken },
       select: { createdAt: true, expiresAt: true, idleAt: true },
     });
@@ -188,11 +189,11 @@ export async function maybeRotateSession(
     const newCsrfToken = makeCsrfToken();
     const now          = new Date();
 
-    await (prisma as any).session.create({
+    await prisma.session.create({
       data: {
         token:     newToken,
         userId:    user.id,
-        payload:   { ...user, csrfToken: newCsrfToken } as any,
+        payload:   { ...user, csrfToken: newCsrfToken } as Prisma.InputJsonValue,
         expiresAt: session.expiresAt,  // preserve absolute expiry
         idleAt:    new Date(now.getTime() + SESSION_IDLE_MS),
       },

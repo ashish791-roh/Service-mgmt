@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
 import { requireSession, destroyAllSessionsForUser, LIMITS, checkLengths } from '@/lib/auth';
 import { writeAuditLog } from '@/lib/auditLog';
+import type { Prisma } from '@prisma/client';
 
 // PUT /api/users/:id — admin only
 export async function PUT(
@@ -32,7 +33,7 @@ export async function PUT(
             return NextResponse.json({ error: lengthError }, { status: 400 });
         }
 
-        const updateData: any = {};
+        const updateData: Prisma.UserUpdateInput = {};
 
         if (typeof body.isActive === 'boolean') {
             // Prevent admin from deactivating themselves
@@ -70,7 +71,7 @@ export async function PUT(
                 writeAuditLog({
                     actor: { id: auth.user.id, name: auth.user.name, role: auth.user.role },
                     action: 'update', entity: 'user', entityId: id, field: f,
-                    newValue: f === 'password' ? '[redacted]' : (updateData as any)[f],
+                    newValue: f === 'password' ? '[redacted]' : updateData[f as keyof Prisma.UserUpdateInput],
                 }).catch(() => {});
             }
             if (body.password && body.password.length >= 4) {
@@ -89,12 +90,15 @@ export async function PUT(
             joinedAt: safeUser.createdAt.toISOString().slice(0, 10),
             createdAt: safeUser.createdAt.toISOString(),
         });
-    } catch (error: any) {
-        if (error.code === 'P2025') {
-            return NextResponse.json({ error: 'User not found.' }, { status: 404 });
-        }
-        if (error.code === 'P2002') {
-            return NextResponse.json({ error: 'Email already in use.' }, { status: 409 });
+    } catch (error) {
+        if (error && typeof error === 'object' && 'code' in error) {
+            const err = error as { code: string };
+            if (err.code === 'P2025') {
+                return NextResponse.json({ error: 'User not found.' }, { status: 404 });
+            }
+            if (err.code === 'P2002') {
+                return NextResponse.json({ error: 'Email already in use.' }, { status: 409 });
+            }
         }
         console.error('[api/users/[id] PUT]', error);
         return NextResponse.json({ error: 'Failed to update user.' }, { status: 500 });
@@ -142,9 +146,12 @@ export async function DELETE(
         }).catch(() => {});
 
         return NextResponse.json({ success: true });
-    } catch (error: any) {
-        if (error.code === 'P2025') {
-            return NextResponse.json({ error: 'User not found.' }, { status: 404 });
+    } catch (error) {
+        if (error && typeof error === 'object' && 'code' in error) {
+            const err = error as { code: string };
+            if (err.code === 'P2025') {
+                return NextResponse.json({ error: 'User not found.' }, { status: 404 });
+            }
         }
         console.error('[api/users/[id] DELETE]', error);
         return NextResponse.json({ error: 'Failed to delete user.' }, { status: 500 });

@@ -1,13 +1,7 @@
 /**
  * FixHub Webhook Engine
  *
- * Webhook configurations are now stored in the `Webhook` table via Prisma,
- * replacing the previous flat JSON file which silently failed on serverless
- * deployments (Vercel, Railway) where the filesystem is read-only.
- *
- * Migration: run the SQL in `migrations/add_webhook_table.sql` once against
- * your database, or let the auto-bootstrap in `ensureTable()` handle it on
- * first request.
+ * Webhook configurations are stored in the `Webhook` table via Prisma.
  *
  * Supported event types:
  *  - job.status_changed
@@ -17,32 +11,8 @@
  */
 
 import crypto from 'crypto';
+import type { Webhook, Prisma } from '@prisma/client';
 import { prisma } from './prisma';
-
-// ── Table bootstrap ───────────────────────────────────────────────────────────
-// Creates the Webhook table if it doesn't exist yet. This is idempotent and
-// safe to call on every cold-start — the IF NOT EXISTS guards prevent any work
-// on subsequent calls once the table is in place.
-
-let _tableReady = false;
-
-async function ensureTable(): Promise<void> {
-  if (_tableReady) return;
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS "Webhook" (
-      "id"        TEXT         NOT NULL DEFAULT gen_random_uuid()::text,
-      "name"      TEXT         NOT NULL,
-      "url"       TEXT         NOT NULL,
-      "secret"    TEXT,
-      "events"    TEXT         NOT NULL,   -- JSON array stored as TEXT
-      "active"    BOOLEAN      NOT NULL DEFAULT true,
-      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      CONSTRAINT "Webhook_pkey" PRIMARY KEY ("id")
-    )
-  `);
-  _tableReady = true;
-}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -79,7 +49,7 @@ export interface WebhookDeliveryResult {
 
 // ── DB row → WebhookConfig ────────────────────────────────────────────────────
 
-function rowToConfig(row: any): WebhookConfig {
+function rowToConfig(row: Webhook): WebhookConfig {
   return {
     id: row.id,
     name: row.name,
@@ -99,104 +69,57 @@ function rowToConfig(row: any): WebhookConfig {
 // ── Public CRUD ───────────────────────────────────────────────────────────────
 
 export async function getAllWebhooks(): Promise<WebhookConfig[]> {
-  await ensureTable();
-  const rows = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT * FROM "Webhook" ORDER BY "createdAt" DESC`
-  );
+  const rows = await prisma.webhook.findMany({
+    orderBy: { createdAt: 'desc' },
+  });
   return rows.map(rowToConfig);
 }
 
 export async function getWebhookById(id: string): Promise<WebhookConfig | undefined> {
-  await ensureTable();
-  const rows = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT * FROM "Webhook" WHERE "id" = $1`,
-    id
-  );
-  return rows.length > 0 ? rowToConfig(rows[0]) : undefined;
+  const row = await prisma.webhook.findUnique({ where: { id } });
+  return row ? rowToConfig(row) : undefined;
 }
 
 export async function createWebhook(
   input: Omit<WebhookConfig, 'id' | 'createdAt' | 'updatedAt'>
 ): Promise<WebhookConfig> {
-  await ensureTable();
-  const now = new Date();
-  const id = crypto.randomUUID();
-  const eventsJson = JSON.stringify(input.events);
-
-  await prisma.$executeRawUnsafe(
-    `INSERT INTO "Webhook" ("id","name","url","secret","events","active","createdAt","updatedAt")
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-    id,
-    input.name,
-    input.url,
-    input.secret ?? null,
-    eventsJson,
-    input.active,
-    now,
-    now
-  );
-
-  return {
-    id,
-    name: input.name,
-    url: input.url,
-    secret: input.secret,
-    events: input.events,
-    active: input.active,
-    createdAt: now.toISOString(),
-    updatedAt: now.toISOString(),
-  };
+  const webhook = await prisma.webhook.create({
+    data: {
+      name: input.name,
+      url: input.url,
+      secret: input.secret ?? null,
+      events: JSON.stringify(input.events),
+      active: input.active,
+    },
+  });
+  return rowToConfig(webhook);
 }
 
 export async function updateWebhook(
   id: string,
   patch: Partial<Omit<WebhookConfig, 'id' | 'createdAt'>>
 ): Promise<WebhookConfig | null> {
-  await ensureTable();
+  const data: Prisma.WebhookUpdateInput = {};
+  
+  if (patch.name !== undefined) data.name = patch.name;
+  if (patch.url !== undefined) data.url = patch.url;
+  if ('secret' in patch) data.secret = patch.secret ?? null;
+  if (patch.events !== undefined) data.events = JSON.stringify(patch.events);
+  if (patch.active !== undefined) data.active = patch.active;
 
-  // Build SET clause dynamically from provided fields only
-  const setClauses: string[] = ['"updatedAt" = $1'];
-  const values: any[] = [new Date()];
-  let paramIdx = 2;
+  const webhook = await prisma.webhook.update({
+    where: { id },
+    data,
+  });
 
-  if (patch.name !== undefined) {
-    setClauses.push(`"name" = $${paramIdx++}`);
-    values.push(patch.name);
-  }
-  if (patch.url !== undefined) {
-    setClauses.push(`"url" = $${paramIdx++}`);
-    values.push(patch.url);
-  }
-  if ('secret' in patch) {
-    setClauses.push(`"secret" = $${paramIdx++}`);
-    values.push(patch.secret ?? null);
-  }
-  if (patch.events !== undefined) {
-    setClauses.push(`"events" = $${paramIdx++}`);
-    values.push(JSON.stringify(patch.events));
-  }
-  if (patch.active !== undefined) {
-    setClauses.push(`"active" = $${paramIdx++}`);
-    values.push(patch.active);
-  }
-
-  values.push(id); // WHERE clause param
-  await prisma.$executeRawUnsafe(
-    `UPDATE "Webhook" SET ${setClauses.join(', ')} WHERE "id" = $${paramIdx}`,
-    ...values
-  );
-
-  return (await getWebhookById(id)) ?? null;
+  return rowToConfig(webhook);
 }
 
 export async function deleteWebhook(id: string): Promise<boolean> {
-  await ensureTable();
-  const result = await prisma.$executeRawUnsafe(
-    `DELETE FROM "Webhook" WHERE "id" = $1`,
-    id
-  );
-  // $executeRawUnsafe returns affected row count
-  return (result as unknown as number) > 0;
+  const result = await prisma.webhook.delete({
+    where: { id },
+  });
+  return !!result;
 }
 
 // ── Signing ───────────────────────────────────────────────────────────────────
@@ -253,9 +176,10 @@ export async function fireWebhooks(
         });
         console.log(`[webhook] ${event} → ${hook.url} → ${res.status}`);
         return { webhookId: hook.id, url: hook.url, ok: res.ok, status: res.status };
-      } catch (err: any) {
-        console.error(`[webhook] ${event} → ${hook.url} failed:`, err?.message);
-        return { webhookId: hook.id, url: hook.url, ok: false, error: err?.message };
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : 'Unknown error';
+        console.error(`[webhook] ${event} → ${hook.url} failed:`, errMsg);
+        return { webhookId: hook.id, url: hook.url, ok: false, error: errMsg };
       }
     })
   );
@@ -293,7 +217,7 @@ export async function testWebhook(hook: WebhookConfig): Promise<WebhookDeliveryR
       signal: AbortSignal.timeout(10_000),
     });
     return { webhookId: hook.id, url: hook.url, ok: res.ok, status: res.status };
-  } catch (err: any) {
-    return { webhookId: hook.id, url: hook.url, ok: false, error: err?.message };
+  } catch (err) {
+    return { webhookId: hook.id, url: hook.url, ok: false, error: err instanceof Error ? err.message : 'Unknown error' };
   }
 }

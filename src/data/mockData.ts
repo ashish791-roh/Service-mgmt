@@ -1,11 +1,11 @@
 import type { User, Customer, Device, Job, PartRequest, InventoryItem, Notification } from '../types';
 
 export const mockUsers: User[] = [
-  { id: 'u1', name: 'Arjun Sharma', email: 'admin@fixhub.com', password: 'admin123', role: 'admin', active: true, joinedAt: '2024-01-10' },
-  { id: 'u2', name: 'Priya Mehta', email: 'reception@fixhub.com', password: 'rec123', role: 'reception', active: true, joinedAt: '2024-02-15' },
-  { id: 'u3', name: 'Rohan Verma', email: 'eng1@fixhub.com', password: 'eng123', role: 'engineer', active: true, joinedAt: '2024-03-01' },
-  { id: 'u4', name: 'Kiran Nair', email: 'eng2@fixhub.com', password: 'eng456', role: 'engineer', active: true, joinedAt: '2024-03-15' },
-  { id: 'u5', name: 'Deepak Singh', email: 'eng3@fixhub.com', password: 'eng789', role: 'engineer', active: false, joinedAt: '2024-04-01' },
+  { id: 'u1', name: 'Arjun Sharma', email: 'admin@fixhub.com', role: 'admin', active: true, joinedAt: '2024-01-10' },
+  { id: 'u2', name: 'Priya Mehta', email: 'reception@fixhub.com', role: 'reception', active: true, joinedAt: '2024-02-15' },
+  { id: 'u3', name: 'Rohan Verma', email: 'eng1@fixhub.com', role: 'engineer', active: true, joinedAt: '2024-03-01' },
+  { id: 'u4', name: 'Kiran Nair', email: 'eng2@fixhub.com', role: 'engineer', active: true, joinedAt: '2024-03-15' },
+  { id: 'u5', name: 'Deepak Singh', email: 'eng3@fixhub.com', role: 'engineer', active: false, joinedAt: '2024-04-01' },
 ];
 
 export const mockCustomers: Customer[] = [

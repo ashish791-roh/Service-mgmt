@@ -83,9 +83,12 @@ export async function POST(request: Request) {
             joinedAt: safeUser.createdAt.toISOString().slice(0, 10),
             createdAt: safeUser.createdAt.toISOString(),
         }, { status: 201 });
-    } catch (error: any) {
-        if (error.code === 'P2002') {
-            return NextResponse.json({ error: 'A user with this email already exists.' }, { status: 409 });
+    } catch (error) {
+        if (error && typeof error === 'object' && 'code' in error) {
+            const err = error as { code: string };
+            if (err.code === 'P2002') {
+                return NextResponse.json({ error: 'A user with this email already exists.' }, { status: 409 });
+            }
         }
         console.error('[api/users POST]', error);
         return NextResponse.json({ error: 'Failed to create user.' }, { status: 500 });

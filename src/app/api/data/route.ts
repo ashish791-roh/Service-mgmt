@@ -2,10 +2,14 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireSession } from '@/lib/auth';
 import { rateLimiter, getClientIP, RATE_LIMITS } from '@/lib/rateLimit';
+import type { Prisma } from '@prisma/client';
+import type { JobWithRelations } from '@/types/prisma';
+
+// ── Prisma Include-Aware Return Types ──────────────────────────────
 
 // ── Mappers ───────────────────────────────────────────────────────
 
-function mapJob(j: any) {
+function mapJob(j: JobWithRelations) {
     return {
         ...j,
         problemDescription: j.problemDesc,
@@ -15,18 +19,18 @@ function mapJob(j: any) {
         createdAt: j.createdAt.toISOString(),
         updatedAt: j.updatedAt.toISOString(),
         completedAt: j.completedAt?.toISOString() ?? undefined,
-        activities: j.activities ? j.activities.map((a: any) => ({
+        activities: j.activities ? j.activities.map((a) => ({
             ...a,
             createdAt: a.createdAt.toISOString()
         })) : [],
-        photos: j.photos ? j.photos.map((p: any) => ({
+        photos: j.photos ? j.photos.map((p) => ({
             ...p,
             createdAt: p.createdAt.toISOString()
         })) : []
     };
 }
 
-function mapUser(u: any) {
+function mapUser(u: Prisma.UserGetPayload<{}>) {
     const { password: _, ...rest } = u;
     return {
         ...rest,
@@ -36,7 +40,7 @@ function mapUser(u: any) {
     };
 }
 
-function mapInventory(i: any) {
+function mapInventory(i: Prisma.InventoryItemGetPayload<{}>) {
     return {
         ...i,
         unitCost: i.unitPrice,
@@ -46,68 +50,50 @@ function mapInventory(i: any) {
     };
 }
 
-// ── Sales helpers ─────────────────────────────────────────────────
-async function ensureSalesTables() {
-    await prisma.$executeRawUnsafe(`
-        CREATE TABLE IF NOT EXISTS "Sale" (
-            "id"          TEXT        NOT NULL DEFAULT gen_random_uuid()::text,
-            "saleNumber"  TEXT        NOT NULL,
-            "customerId"  TEXT,
-            "companyName" TEXT,
-            "contactName" TEXT,
-            "phone"       TEXT,
-            "notes"       TEXT,
-            "totalAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
-            "paidAt"      TIMESTAMP(3),
-            "createdById" TEXT        NOT NULL,
-            "createdAt"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            "updatedAt"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            CONSTRAINT "Sale_pkey" PRIMARY KEY ("id")
-        )
-    `);
-    // Migrate existing tables: add paidAt column if missing
-    await prisma.$executeRawUnsafe(`
-        ALTER TABLE "Sale" ADD COLUMN IF NOT EXISTS "paidAt" TIMESTAMP(3)
-    `).catch(() => {});
-    await prisma.$executeRawUnsafe(`
-        CREATE TABLE IF NOT EXISTS "SaleItem" (
-            "id"              TEXT         NOT NULL DEFAULT gen_random_uuid()::text,
-            "saleId"          TEXT         NOT NULL,
-            "inventoryItemId" TEXT         NOT NULL,
-            "itemName"        TEXT         NOT NULL,
-            "quantity"        INTEGER      NOT NULL,
-            "unitPrice"       DOUBLE PRECISION NOT NULL,
-            "subtotal"        DOUBLE PRECISION NOT NULL,
-            CONSTRAINT "SaleItem_pkey" PRIMARY KEY ("id"),
-            CONSTRAINT "SaleItem_saleId_fkey"
-                FOREIGN KEY ("saleId") REFERENCES "Sale"("id") ON DELETE CASCADE
-        )
-    `);
-    await prisma.$executeRawUnsafe(
-        `CREATE UNIQUE INDEX IF NOT EXISTS "Sale_saleNumber_key" ON "Sale"("saleNumber")`
-    );
+function mapCustomer(c: Prisma.CustomerGetPayload<{}>) {
+    return {
+        ...c,
+        createdAt: c.createdAt.toISOString(),
+        updatedAt: c.updatedAt.toISOString(),
+    };
 }
 
-async function fetchSalesWithItems() {
-    await ensureSalesTables();
-    const sales = await prisma.$queryRawUnsafe<any[]>(
-        `SELECT * FROM "Sale" ORDER BY "createdAt" DESC`
-    );
-    const saleIds = sales.map((s: any) => s.id);
-    let allItems: any[] = [];
-    if (saleIds.length > 0) {
-        allItems = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT * FROM "SaleItem" WHERE "saleId" = ANY($1::text[])`,
-            saleIds
-        );
-    }
-    const itemsBySale = allItems.reduce((acc: any, i: any) => {
-        acc[i.saleId] = acc[i.saleId] || [];
-        acc[i.saleId].push(i);
-        return acc;
-    }, {} as Record<string, any[]>);
+function mapDevice(d: Prisma.DeviceGetPayload<{}>) {
+    return {
+        ...d,
+        serialNumber: d.serialNo,
+        createdAt: d.createdAt.toISOString(),
+    };
+}
 
-    return sales.map((s: any) => ({
+function mapPartRequest(r: Prisma.PartRequestGetPayload<{}>) {
+    return {
+        ...r,
+        createdAt: r.createdAt.toISOString(),
+        updatedAt: r.updatedAt.toISOString(),
+        reviewedAt: r.reviewedAt?.toISOString() ?? undefined,
+    };
+}
+
+function mapNotification(n: Prisma.NotificationGetPayload<{}>) {
+    return {
+        ...n,
+        createdAt: n.createdAt.toISOString(),
+    };
+}
+
+type SaleWithItems = Prisma.SaleGetPayload<{
+    include: { items: true }
+}>;
+
+async function fetchSalesWithItems(limit?: number) {
+    const sales = await prisma.sale.findMany({
+        orderBy: { createdAt: 'desc' },
+        ...(limit ? { take: limit } : {}),
+        include: { items: true },
+    });
+
+    return sales.map((s: SaleWithItems) => ({
         id: s.id,
         saleNumber: s.saleNumber,
         customerId: s.customerId ?? null,
@@ -115,21 +101,19 @@ async function fetchSalesWithItems() {
         contactName: s.contactName ?? '',
         phone: s.phone ?? '',
         notes: s.notes ?? '',
-        totalAmount: Number(s.totalAmount),
-        paidAt: s.paidAt
-            ? (s.paidAt instanceof Date ? s.paidAt.toISOString() : String(s.paidAt))
-            : null,
+        totalAmount: s.totalAmount,
+        paidAt: s.paidAt ? s.paidAt.toISOString() : null,
         createdById: s.createdById,
-        createdAt: s.createdAt instanceof Date ? s.createdAt.toISOString() : String(s.createdAt),
-        updatedAt: s.updatedAt instanceof Date ? s.updatedAt.toISOString() : String(s.updatedAt),
-        items: (itemsBySale[s.id] ?? []).map((i: any) => ({
+        createdAt: s.createdAt.toISOString(),
+        updatedAt: s.updatedAt.toISOString(),
+        items: s.items.map((i) => ({
             id: i.id,
             saleId: i.saleId,
             inventoryItemId: i.inventoryItemId,
             itemName: i.itemName,
-            quantity: Number(i.quantity),
-            unitPrice: Number(i.unitPrice),
-            subtotal: Number(i.subtotal),
+            quantity: i.quantity,
+            unitPrice: i.unitPrice,
+            subtotal: i.subtotal,
         })),
     }));
 }
@@ -165,27 +149,30 @@ export async function GET(request: Request) {
         if (user.role === 'engineer') {
             const [myJobs, allPartRequests, myNotifications, allDevices, allCustomers, allInventory] =
                 await Promise.all([
-                    // Jobs assigned to this engineer
+                    // Jobs assigned to this engineer (limit to 50 recent)
                     prisma.job.findMany({
                         where: { engineerId: user.id },
                         orderBy: { createdAt: 'desc' },
+                        take: 50,
                         include: { activities: true, photos: true },
                     }),
-                    // Part requests submitted by this engineer
+                    // Part requests submitted by this engineer (limit to 50 recent)
                     prisma.partRequest.findMany({
                         where: { engineerId: user.id },
                         orderBy: { createdAt: 'desc' },
+                        take: 50,
                     }),
-                    // Notifications for this engineer only
+                    // Notifications for this engineer only (limit to 50 recent)
                     prisma.notification.findMany({
                         where: { userId: user.id },
                         orderBy: { createdAt: 'desc' },
+                        take: 50,
                     }),
-                    // Devices and customers are needed to display job details
-                    prisma.device.findMany({ orderBy: { createdAt: 'desc' } }),
-                    prisma.customer.findMany({ orderBy: { createdAt: 'desc' } }),
+                    // Devices and customers are needed to display job details (limit to 50 recent)
+                    prisma.device.findMany({ orderBy: { createdAt: 'desc' }, take: 50 }),
+                    prisma.customer.findMany({ orderBy: { createdAt: 'desc' }, take: 50 }),
                     // Inventory for autocomplete suggestions (limited data)
-                    prisma.inventoryItem.findMany({ orderBy: { name: 'asc' } }),
+                    prisma.inventoryItem.findMany({ orderBy: { name: 'asc' }, take: 50 }),
                 ]);
 
             // Only expose the engineer's own profile — no other users
@@ -195,35 +182,19 @@ export async function GET(request: Request) {
                 // Only the engineer themselves — no other users visible
                 users: selfUser ? [mapUser(selfUser)] : [],
                 // Customers and devices needed to render job details (read-only context)
-                customers: allCustomers.map((c: any) => ({
-                    ...c,
-                    createdAt: c.createdAt.toISOString(),
-                    updatedAt: c.updatedAt.toISOString(),
-                })),
-                devices: allDevices.map((d: any) => ({
-                    ...d,
-                    serialNumber: d.serialNo,
-                    createdAt: d.createdAt.toISOString(),
-                })),
+                customers: allCustomers.map(mapCustomer),
+                devices: allDevices.map(mapDevice),
                 jobs: myJobs.map(mapJob),
-                partRequests: allPartRequests.map((r: any) => ({
-                    ...r,
-                    createdAt: r.createdAt.toISOString(),
-                    updatedAt: r.updatedAt.toISOString(),
-                    reviewedAt: r.reviewedAt?.toISOString() ?? undefined,
-                })),
+                partRequests: allPartRequests.map(mapPartRequest),
                 // Expose limited inventory data to engineers for part autocomplete
-                inventory: allInventory.map((i: any) => ({
+                inventory: allInventory.map((i) => ({
                     id: i.id,
                     name: i.name,
                     category: i.category,
                     quantity: i.quantity,
                 })),
                 sales: [],
-                notifications: myNotifications.map((n: any) => ({
-                    ...n,
-                    createdAt: n.createdAt.toISOString(),
-                })),
+                notifications: myNotifications.map(mapNotification),
             });
         }
 
@@ -237,87 +208,129 @@ export async function GET(request: Request) {
                 partRequests,
                 inventory,
                 notifications,
+                criticalInventory,
+                totalCompletedJobs,
+                totalPendingJobs,
+                totalEngineers,
+                activeEngineers,
+                pendingPartsCount,
+                lowStockCountResult
             ] = await Promise.all([
                 // Reception only needs the engineers list (to assign/display names)
                 // They do NOT see admin accounts or other reception accounts
                 prisma.user.findMany({
                     where: { role: 'engineer' },
                     orderBy: { createdAt: 'asc' },
+                    take: 50,
                 }),
-                prisma.customer.findMany({ orderBy: { createdAt: 'desc' } }),
-                prisma.device.findMany({ orderBy: { createdAt: 'desc' } }),
-                prisma.job.findMany({ orderBy: { createdAt: 'desc' }, include: { activities: true, photos: true } }),
-                prisma.partRequest.findMany({ orderBy: { createdAt: 'desc' } }),
-                prisma.inventoryItem.findMany({ orderBy: { name: 'asc' } }),
+                prisma.customer.findMany({ orderBy: { createdAt: 'desc' }, take: 20 }),
+                prisma.device.findMany({ orderBy: { createdAt: 'desc' }, take: 20 }),
+                prisma.job.findMany({ orderBy: { createdAt: 'desc' }, take: 100, include: { activities: true, photos: true } }),
+                prisma.partRequest.findMany({ orderBy: { createdAt: 'desc' }, take: 50 }),
+                prisma.inventoryItem.findMany({ orderBy: { name: 'asc' }, take: 50 }),
                 // Reception sees all notifications (they may act on part-request decisions)
-                prisma.notification.findMany({ orderBy: { createdAt: 'desc' } }),
+                prisma.notification.findMany({ orderBy: { createdAt: 'desc' }, take: 50 }),
+                // Pre-query critical inventory items to ensure dashboard alerts work
+                prisma.$queryRaw<Prisma.InventoryItemGetPayload<{}>[]>`SELECT * FROM "InventoryItem" WHERE "quantity" <= "minQuantity" LIMIT 10`,
+                // Compute stats
+                prisma.job.count({ where: { status: { in: ['Completed', 'Delivered'] } } }),
+                prisma.job.count({ where: { status: { in: ['New', 'Assigned', 'In Progress'] } } }),
+                prisma.user.count({ where: { role: 'engineer' } }),
+                prisma.user.count({ where: { role: 'engineer', isActive: true } }),
+                prisma.partRequest.count({ where: { status: { in: ['Pending', 'AwaitingStock'] } } }),
+                prisma.$queryRaw<Array<{count: bigint}>>`SELECT COUNT(*) as count FROM "InventoryItem" WHERE "quantity" <= "minQuantity"`,
             ]);
+
+            const mappedCritical = (criticalInventory ?? []).map(mapInventory);
+            const mappedNormal = inventory.map(mapInventory);
+            const combinedInventory = Array.from(new Map([...mappedCritical, ...mappedNormal].map(i => [i.id, i])).values());
+            const lowStockCount = Number(lowStockCountResult?.[0]?.count ?? 0);
 
             return NextResponse.json({
                 users: engineers.map(mapUser),
-                customers: customers.map((c: any) => ({
-                    ...c,
-                    createdAt: c.createdAt.toISOString(),
-                    updatedAt: c.updatedAt.toISOString(),
-                })),
-                devices: devices.map((d: any) => ({
-                    ...d,
-                    serialNumber: d.serialNo,
-                    createdAt: d.createdAt.toISOString(),
-                })),
+                customers: customers.map(mapCustomer),
+                devices: devices.map(mapDevice),
                 jobs: jobs.map(mapJob),
-                partRequests: partRequests.map((r: any) => ({
-                    ...r,
-                    createdAt: r.createdAt.toISOString(),
-                    updatedAt: r.updatedAt.toISOString(),
-                    reviewedAt: r.reviewedAt?.toISOString() ?? undefined,
-                })),
-                inventory: inventory.map(mapInventory),
-                notifications: notifications.map((n: any) => ({
-                    ...n,
-                    createdAt: n.createdAt.toISOString(),
-                })),
-                sales: await fetchSalesWithItems(),
+                partRequests: partRequests.map(mapPartRequest),
+                inventory: combinedInventory,
+                notifications: notifications.map(mapNotification),
+                sales: await fetchSalesWithItems(100),
+                stats: {
+                    totalCompletedJobs,
+                    totalPendingJobs,
+                    totalEngineers,
+                    activeEngineers,
+                    pendingPartsCount,
+                    lowStockCount,
+                    totalRevenue: 0, // Not shared with reception
+                }
             });
         }
 
         // ── Admin: full data ──────────────────────────────────────
-        const [users, customers, devices, jobs, partRequests, inventory, notifications] =
-            await Promise.all([
-                prisma.user.findMany({ orderBy: { createdAt: 'asc' } }),
-                prisma.customer.findMany({ orderBy: { createdAt: 'desc' } }),
-                prisma.device.findMany({ orderBy: { createdAt: 'desc' } }),
-                prisma.job.findMany({ orderBy: { createdAt: 'desc' }, include: { activities: true, photos: true } }),
-                prisma.partRequest.findMany({ orderBy: { createdAt: 'desc' } }),
-                prisma.inventoryItem.findMany({ orderBy: { name: 'asc' } }),
-                prisma.notification.findMany({ orderBy: { createdAt: 'desc' } }),
-            ]);
+        const [
+            users,
+            customers,
+            devices,
+            jobs,
+            partRequests,
+            inventory,
+            notifications,
+            criticalInventory,
+            totalCompletedJobs,
+            totalPendingJobs,
+            totalEngineers,
+            activeEngineers,
+            pendingPartsCount,
+            lowStockCountResult,
+            totalRevenueJobs,
+            totalRevenueSales
+        ] = await Promise.all([
+            prisma.user.findMany({ orderBy: { createdAt: 'asc' }, take: 50 }),
+            prisma.customer.findMany({ orderBy: { createdAt: 'desc' }, take: 20 }),
+            prisma.device.findMany({ orderBy: { createdAt: 'desc' }, take: 20 }),
+            prisma.job.findMany({ orderBy: { createdAt: 'desc' }, take: 100, include: { activities: true, photos: true } }),
+            prisma.partRequest.findMany({ orderBy: { createdAt: 'desc' }, take: 50 }),
+            prisma.inventoryItem.findMany({ orderBy: { name: 'asc' }, take: 50 }),
+            prisma.notification.findMany({ orderBy: { createdAt: 'desc' }, take: 50 }),
+            // Pre-query critical inventory items to ensure dashboard alerts work
+            prisma.$queryRaw<Prisma.InventoryItemGetPayload<{}>[]>`SELECT * FROM "InventoryItem" WHERE "quantity" <= "minQuantity" LIMIT 10`,
+            // Compute stats
+            prisma.job.count({ where: { status: { in: ['Completed', 'Delivered'] } } }),
+            prisma.job.count({ where: { status: { in: ['New', 'Assigned', 'In Progress'] } } }),
+            prisma.user.count({ where: { role: 'engineer' } }),
+            prisma.user.count({ where: { role: 'engineer', isActive: true } }),
+            prisma.partRequest.count({ where: { status: { in: ['Pending', 'AwaitingStock'] } } }),
+            prisma.$queryRaw<Array<{count: bigint}>>`SELECT COUNT(*) as count FROM "InventoryItem" WHERE "quantity" <= "minQuantity"`,
+            prisma.$queryRaw<Array<{sum: number | null}>>`SELECT SUM(COALESCE("actualCost", COALESCE("estimatedCost", 0))) as sum FROM "Job" WHERE "status" IN ('Completed', 'Delivered')`,
+            prisma.$queryRaw<Array<{sum: number | null}>>`SELECT SUM(COALESCE("totalAmount", 0)) as sum FROM "Sale"`,
+        ]);
+
+        const mappedCritical = (criticalInventory ?? []).map(mapInventory);
+        const mappedNormal = inventory.map(mapInventory);
+        const combinedInventory = Array.from(new Map([...mappedCritical, ...mappedNormal].map(i => [i.id, i])).values());
+        
+        const lowStockCount = Number(lowStockCountResult?.[0]?.count ?? 0);
+        const totalRevenue = Number(totalRevenueJobs?.[0]?.sum ?? 0) + Number(totalRevenueSales?.[0]?.sum ?? 0);
 
         return NextResponse.json({
             users: users.map(mapUser),
-            customers: customers.map((c: any) => ({
-                ...c,
-                createdAt: c.createdAt.toISOString(),
-                updatedAt: c.updatedAt.toISOString(),
-            })),
-            devices: devices.map((d: any) => ({
-                ...d,
-                serialNumber: d.serialNo,
-                createdAt: d.createdAt.toISOString(),
-            })),
+            customers: customers.map(mapCustomer),
+            devices: devices.map(mapDevice),
             jobs: jobs.map(mapJob),
-            partRequests: partRequests.map((r: any) => ({
-                ...r,
-                createdAt: r.createdAt.toISOString(),
-                updatedAt: r.updatedAt.toISOString(),
-                reviewedAt: r.reviewedAt?.toISOString() ?? undefined,
-            })),
-            inventory: inventory.map(mapInventory),
-            notifications: notifications.map((n: any) => ({
-                ...n,
-                createdAt: n.createdAt.toISOString(),
-            })),
-            sales: await fetchSalesWithItems(),
+            partRequests: partRequests.map(mapPartRequest),
+            inventory: combinedInventory,
+            notifications: notifications.map(mapNotification),
+            sales: await fetchSalesWithItems(100),
+            stats: {
+                totalCompletedJobs,
+                totalPendingJobs,
+                totalEngineers,
+                activeEngineers,
+                pendingPartsCount,
+                lowStockCount,
+                totalRevenue,
+            }
         });
 
     } catch (error) {

@@ -1,39 +1,11 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireSession, LIMITS, checkLengths } from '@/lib/auth';
+import { requireSession } from '@/lib/auth';
 import { writeAuditLog } from '@/lib/auditLog';
 import { rateLimiter, getClientIP, RATE_LIMITS } from '@/lib/rateLimit';
-
-// ── Validation helpers ───────────────────────────────────────────────────────
-
-/**
- * Accepts:
- *   - 10-digit local numbers:          9876543210
- *   - With country code (+ or 00):     +919876543210  /  00919876543210
- *   - Spaces, hyphens, dots as separators: +91 98765-43210
- * Rejects anything with letters or fewer than 7 / more than 15 digits (ITU E.164).
- */
-const PHONE_RE = /^\+?(\d[\s\-.]?){7,15}\d$/;
-
-/** Basic RFC-5321 sanity check — not a full parser, but catches obvious garbage. */
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-
-function validatePhone(phone: string): string | null {
-    const digits = phone.replace(/[\s\-.()+]/g, '');
-    if (!/^\d+$/.test(digits))      return 'Phone number must contain digits only (spaces, hyphens, dots, and + are allowed).';
-    if (!PHONE_RE.test(phone))      return 'Phone number must be between 7 and 15 digits.';
-    return null;
-}
-
-function validateEmail(email: string): string | null {
-    if (!EMAIL_RE.test(email)) return 'Invalid email address.';
-    return null;
-}
-
-function validateName(name: string): string | null {
-    if (name.trim().length < 2) return 'Name must be at least 2 characters.';
-    return null;
-}
+import { validateBody, CustomerCreateSchema, CustomerUpdateSchema } from '@/lib/validation';
+import type { Prisma } from '@prisma/client';
+import type { CustomerWithRelations } from '@/types/prisma';
 
 // ── Rate-limit helper shared by all handlers ────────────────────────────────
 async function checkRateLimit(request: Request, userId: string) {
@@ -45,16 +17,88 @@ async function checkRateLimit(request: Request, userId: string) {
     return result;
 }
 
-// PUT /api/customers?id=xxx — admin or reception
-export async function PUT(request: Request) {
-    const auth = await requireSession(['admin', 'reception']);
+// GET /api/customers — admin, reception, engineer
+export async function GET(request: Request) {
+    const auth = await requireSession(['admin', 'reception', 'engineer']);
     if ('error' in auth) return auth.error;
 
-    const limit = await checkRateLimit(request, auth.user.id);
-    if (limit.isLimited) {
+    const limitCheck = await checkRateLimit(request, auth.user.id);
+    if (limitCheck.isLimited) {
         return NextResponse.json(
-            { error: `Too many requests. Try again in ${limit.retryAfter} seconds.` },
-            { status: 429, headers: { 'Retry-After': limit.retryAfter.toString() } }
+            { error: `Too many requests. Try again in ${limitCheck.retryAfter} seconds.` },
+            { status: 429, headers: { 'Retry-After': limitCheck.retryAfter.toString() } }
+        );
+    }
+
+    try {
+        const { searchParams } = new URL(request.url);
+        const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10));
+        const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') ?? '20', 10)));
+        const search = searchParams.get('search')?.trim() || '';
+
+        const where: Prisma.CustomerWhereInput = {};
+        if (search) {
+            where.OR = [
+                { name: { contains: search, mode: 'insensitive' } },
+                { phone: { contains: search } },
+            ];
+        }
+
+        const [customers, total] = await Promise.all([
+            prisma.customer.findMany({
+                where,
+                orderBy: { createdAt: 'desc' },
+                take: limit,
+                skip: (page - 1) * limit,
+                include: {
+                    jobs: true,
+                    devices: true,
+                },
+            }),
+            prisma.customer.count({ where }),
+        ]);
+
+        return NextResponse.json({
+            customers: customers.map((c: CustomerWithRelations) => ({
+                ...c,
+                createdAt: c.createdAt.toISOString(),
+                updatedAt: c.updatedAt.toISOString(),
+                jobs: (c.jobs || []).map((j) => ({
+                    ...j,
+                    problemDescription: j.problemDesc,
+                    assignedEngineerId: j.engineerId,
+                    estimatedCost: j.estimatedCost ?? 0,
+                    advanceAmount: j.advanceAmount ?? 0,
+                    createdAt: j.createdAt.toISOString(),
+                    updatedAt: j.updatedAt.toISOString(),
+                    completedAt: j.completedAt?.toISOString() ?? undefined,
+                })),
+                devices: (c.devices || []).map((d) => ({
+                    ...d,
+                    serialNumber: d.serialNo,
+                    createdAt: d.createdAt.toISOString(),
+                })),
+            })),
+            total,
+            page,
+            limit,
+        });
+    } catch (error) {
+        console.error('[api/customers GET]', error);
+        return NextResponse.json({ error: 'Failed to fetch customers.' }, { status: 500 });
+    }
+}
+
+// PUT /api/customers?id=xxx — admin or reception
+export async function PUT(request: Request) {
+    const auth = await requireSession(request, ['admin', 'reception']);
+    if ('error' in auth) return auth.error;
+
+    const limitCheck = await checkRateLimit(request, auth.user.id);
+    if (limitCheck.isLimited) {
+        return NextResponse.json(
+            { error: `Too many requests. Try again in ${limitCheck.retryAfter} seconds.` },
+            { status: 429, headers: { 'Retry-After': limitCheck.retryAfter.toString() } }
         );
     }
 
@@ -63,53 +107,34 @@ export async function PUT(request: Request) {
         const id = searchParams.get('id');
         if (!id) return NextResponse.json({ error: 'id is required.' }, { status: 400 });
 
-        const body = await request.json();
-        const lengthError = checkLengths([
-            [body.name,    'name',    LIMITS.name],
-            [body.phone,   'phone',   LIMITS.phone],
-            [body.address, 'address', LIMITS.address],
-            [body.email,   'email',   LIMITS.email],
-        ]);
-        if (lengthError) return NextResponse.json({ error: lengthError }, { status: 400 });
+        const validation = await validateBody(request, CustomerUpdateSchema);
+        if (!validation.success) return validation.errorResponse;
+        const body = validation.data;
 
-        // ── Field-level validation ───────────────────────────────────
-        if (body.name != null) {
-            const err = validateName(body.name);
-            if (err) return NextResponse.json({ error: err }, { status: 400 });
-        }
-        if (body.phone != null) {
-            const err = validatePhone(body.phone.trim());
-            if (err) return NextResponse.json({ error: err }, { status: 400 });
-        }
-        if (body.email != null && body.email.trim() !== '') {
-            const err = validateEmail(body.email.trim());
-            if (err) return NextResponse.json({ error: err }, { status: 400 });
-        }
+        const updateData: Prisma.CustomerUpdateInput = {};
+        if (body.name !== undefined) updateData.name = body.name;
+        if (body.phone !== undefined) updateData.phone = body.phone;
+        if (body.address !== undefined) updateData.address = body.address || null;
+        if (body.email !== undefined) updateData.email = body.email || null;
 
         const updated = await prisma.customer.update({
             where: { id },
-            data: {
-                ...(body.name    != null ? { name:    body.name.trim() }                        : {}),
-                ...(body.phone   != null ? { phone:   body.phone.trim() }                       : {}),
-                ...(body.address != null ? { address: body.address.trim() || null }             : {}),
-                ...(body.email   != null ? { email:   body.email.trim().toLowerCase() || null } : {}),
-            } as any,
+            data: updateData,
         });
 
         // ── Audit log — customer updated ────────────────────────────
         {
             const actor = { id: auth.user.id, name: auth.user.name, role: auth.user.role };
-            const changedFields: string[] = [];
-            if (body.name    != null) changedFields.push('name');
-            if (body.phone   != null) changedFields.push('phone');
-            if (body.address != null) changedFields.push('address');
-            if (body.email   != null) changedFields.push('email');
-            for (const f of changedFields) {
-                writeAuditLog({
-                    actor, action: 'update', entity: 'customer', entityId: id, field: f,
-                    oldValue: (updated as any)[f],
-                    newValue: (body as any)[f],
-                }).catch(() => {});
+            type CustomerField = keyof typeof body;
+            const trackedFields: CustomerField[] = ['name', 'phone', 'address', 'email'];
+            for (const f of trackedFields) {
+                if (body[f] !== undefined) {
+                    writeAuditLog({
+                        actor, action: 'update', entity: 'customer', entityId: id, field: f,
+                        oldValue: updated[f],
+                        newValue: body[f],
+                    }).catch(() => { });
+                }
             }
         }
 
@@ -118,23 +143,28 @@ export async function PUT(request: Request) {
             createdAt: updated.createdAt.toISOString(),
             updatedAt: updated.updatedAt.toISOString(),
         });
-    } catch (error: any) {
+    } catch (error) {
         console.error('[api/customers PUT]', error);
-        if (error?.code === 'P2025') return NextResponse.json({ error: 'Customer not found.' }, { status: 404 });
+        if (error && typeof error === 'object' && 'code' in error) {
+            const err = error as { code: string };
+            if (err.code === 'P2025') {
+                return NextResponse.json({ error: 'Customer not found.' }, { status: 404 });
+            }
+        }
         return NextResponse.json({ error: 'Failed to update customer.' }, { status: 500 });
     }
 }
 
 // DELETE /api/customers?id=xxx — admin or reception
 export async function DELETE(request: Request) {
-    const auth = await requireSession(['admin', 'reception']);
+    const auth = await requireSession(request, ['admin', 'reception']);
     if ('error' in auth) return auth.error;
 
-    const limit = await checkRateLimit(request, auth.user.id);
-    if (limit.isLimited) {
+    const limitCheck = await checkRateLimit(request, auth.user.id);
+    if (limitCheck.isLimited) {
         return NextResponse.json(
-            { error: `Too many requests. Try again in ${limit.retryAfter} seconds.` },
-            { status: 429, headers: { 'Retry-After': limit.retryAfter.toString() } }
+            { error: `Too many requests. Try again in ${limitCheck.retryAfter} seconds.` },
+            { status: 429, headers: { 'Retry-After': limitCheck.retryAfter.toString() } }
         );
     }
 
@@ -170,61 +200,42 @@ export async function DELETE(request: Request) {
         writeAuditLog({
             actor: { id: auth.user.id, name: auth.user.name, role: auth.user.role },
             action: 'delete', entity: 'customer', entityId: id,
-        }).catch(() => {}); // Ignore audit log failures
+        }).catch(() => { }); // Ignore audit log failures
 
         return NextResponse.json({ ok: true });
-    } catch (error: any) {
+    } catch (error) {
         console.error('[api/customers DELETE]', error);
-        if (error?.code === 'P2025') return NextResponse.json({ error: 'Customer not found.' }, { status: 404 });
+        if (error && typeof error === 'object' && 'code' in error) {
+            const err = error as { code: string };
+            if (err.code === 'P2025') {
+                return NextResponse.json({ error: 'Customer not found.' }, { status: 404 });
+            }
+        }
         return NextResponse.json({ error: 'Failed to delete customer.' }, { status: 500 });
     }
 }
 
 // POST /api/customers — admin or reception
 export async function POST(request: Request) {
-    const auth = await requireSession(['admin', 'reception']);
+    const auth = await requireSession(request, ['admin', 'reception']);
     if ('error' in auth) return auth.error;
 
-    const limit = await checkRateLimit(request, auth.user.id);
-    if (limit.isLimited) {
+    const limitCheck = await checkRateLimit(request, auth.user.id);
+    if (limitCheck.isLimited) {
         return NextResponse.json(
-            { error: `Too many requests. Try again in ${limit.retryAfter} seconds.` },
-            { status: 429, headers: { 'Retry-After': limit.retryAfter.toString() } }
+            { error: `Too many requests. Try again in ${limitCheck.retryAfter} seconds.` },
+            { status: 429, headers: { 'Retry-After': limitCheck.retryAfter.toString() } }
         );
     }
 
     try {
-        const body = await request.json();
-
-        // ── Required fields ──────────────────────────────────────────
-        if (!body.name || !body.phone) {
-            return NextResponse.json({ error: 'name and phone are required.' }, { status: 400 });
-        }
-
-        // ── Length limits ────────────────────────────────────────────
-        const lengthError = checkLengths([
-            [body.name,    'name',    LIMITS.name],
-            [body.phone,   'phone',   LIMITS.phone],
-            [body.address, 'address', LIMITS.address],
-            [body.email,   'email',   LIMITS.email],
-        ]);
-        if (lengthError) return NextResponse.json({ error: lengthError }, { status: 400 });
-
-        // ── Field-level validation ───────────────────────────────────
-        const nameErr = validateName(body.name);
-        if (nameErr) return NextResponse.json({ error: nameErr }, { status: 400 });
-
-        const phoneErr = validatePhone(body.phone.trim());
-        if (phoneErr) return NextResponse.json({ error: phoneErr }, { status: 400 });
-
-        if (body.email != null && body.email.trim() !== '') {
-            const emailErr = validateEmail(body.email.trim());
-            if (emailErr) return NextResponse.json({ error: emailErr }, { status: 400 });
-        }
+        const validation = await validateBody(request, CustomerCreateSchema);
+        if (!validation.success) return validation.errorResponse;
+        const body = validation.data;
 
         // ── Duplicate phone check ────────────────────────────────────
         const existing = await prisma.customer.findFirst({
-            where: { phone: body.phone.trim() },
+            where: { phone: body.phone },
             select: { id: true, name: true },
         });
         if (existing) {
@@ -236,11 +247,11 @@ export async function POST(request: Request) {
 
         const customer = await prisma.customer.create({
             data: {
-                name:    body.name.trim(),
-                phone:   body.phone.trim(),
-                address: body.address?.trim() || null,
-                ...(body.email != null ? { email: body.email.trim().toLowerCase() } : {}),
-            } as any,
+                name: body.name,
+                phone: body.phone,
+                address: body.address || null,
+                email: body.email || null,
+            },
         });
 
         // ── Audit log — customer created ────────────────────────────
@@ -248,7 +259,7 @@ export async function POST(request: Request) {
             actor: { id: auth.user.id, name: auth.user.name, role: auth.user.role },
             action: 'create', entity: 'customer', entityId: customer.id,
             meta: { name: customer.name, phone: customer.phone },
-        }).catch(() => {});
+        }).catch(() => { });
 
         return NextResponse.json({
             ...customer,

@@ -1,43 +1,38 @@
 generator client {
   provider = "prisma-client-js"
-  }
+}
 
 datasource db {
   provider = "postgresql"
 }
 
-// ── User Management ───────────────────────────────────────────────
 model User {
-  id        String   @id @default(uuid())
-  name      String
-  email     String   @unique
-  password  String
-  role      String   // "admin" | "reception" | "engineer"
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
+  id            String         @id @default(uuid())
+  name          String
+  email         String         @unique
+  password      String
+  role          String
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
   assignedJobs  Job[]          @relation("EngineerJobs")
-  partRequests  PartRequest[]
-  notifications Notification[]
   jobActivities JobActivity[]
+  notifications Notification[]
+  partRequests  PartRequest[]
 }
 
-// ── Customer Management ───────────────────────────────────────────
 model Customer {
   id        String   @id @default(uuid())
   name      String
   phone     String
-  email     String? @db.VarChar(254)
   address   String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  jobs    Job[]
-  devices Device[]
+  email     String?  @db.VarChar(254)
+  devices   Device[]
+  jobs      Job[]
 }
 
-// ── Device Details ────────────────────────────────────────────────
 model Device {
   id         String   @id @default(uuid())
   customerId String
@@ -46,44 +41,42 @@ model Device {
   model      String
   serialNo   String?
   createdAt  DateTime @default(now())
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  jobs       Job[]
 
-  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  jobs     Job[]
-  
   @@index([customerId])
 }
 
-// ── Job Workflow ──────────────────────────────────────────────────
 model Job {
-  id            String    @id @default(uuid())
+  id            String        @id @default(uuid())
   customerId    String
   deviceId      String
   engineerId    String?
   problemDesc   String
-  status        String    @default("New")
+  status        String        @default("New")
   estimatedCost Float?
   actualCost    Float?
   repairNotes   String?
   completedAt   DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  checklist     Json?
+  feedback      String?
+  linkedJobId   String?
+  rating        Int?
+  advanceAmount Float?        @default(0)
+  invoiceNumber String?       @unique
+  paymentMethod String?
+  customer      Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  device        Device        @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  engineer      User?         @relation("EngineerJobs", fields: [engineerId], references: [id])
+  linkedJob     Job?          @relation("JobWarranty", fields: [linkedJobId], references: [id])
+  warrantyJobs  Job[]         @relation("JobWarranty")
+  activities    JobActivity[]
+  photos        JobPhoto[]
+  partRequests  PartRequest[]
+  payment       Payment?
 
-  customer     Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  device       Device        @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  engineer     User?         @relation("EngineerJobs", fields: [engineerId], references: [id], onDelete: SetNull)
-  partRequests PartRequest[]
-  payment      Payment?
-
-  checklist    Json?
-  rating       Int?
-  feedback     String?
-  linkedJobId  String?
-  linkedJob    Job?          @relation("JobWarranty", fields: [linkedJobId], references: [id])
-  warrantyJobs Job[]         @relation("JobWarranty")
-  activities   JobActivity[]
-  photos       JobPhoto[]
-  advanceAmount Float? @default(0)
-  
   @@index([customerId])
   @@index([deviceId])
   @@index([engineerId])
@@ -98,10 +91,9 @@ model JobActivity {
   action    String
   details   String?
   createdAt DateTime @default(now())
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  job  Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
   @@index([jobId])
   @@index([userId])
 }
@@ -110,15 +102,13 @@ model JobPhoto {
   id        String   @id @default(uuid())
   jobId     String
   url       String
-  type      String   // "before" | "after"
+  type      String
   createdAt DateTime @default(now())
-
   job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  
+
   @@index([jobId])
 }
 
-// ── Parts Request System ──────────────────────────────────────────
 model PartRequest {
   id         String    @id @default(uuid())
   jobId      String
@@ -130,15 +120,14 @@ model PartRequest {
   reviewedAt DateTime?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
+  unitCost   Float?
+  engineer   User      @relation(fields: [engineerId], references: [id], onDelete: Cascade)
+  job        Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
-  job      Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  engineer User @relation(fields: [engineerId], references: [id], onDelete: Cascade)
-  
   @@index([jobId])
   @@index([engineerId])
 }
 
-// ── Revenue & Billing ─────────────────────────────────────────────
 model Payment {
   id            String   @id @default(uuid())
   jobId         String   @unique
@@ -148,13 +137,11 @@ model Payment {
   status        String   @default("Unpaid")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  job           Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
-  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  
   @@index([jobId])
 }
 
-// ── Inventory ─────────────────────────────────────────────────────
 model InventoryItem {
   id          String   @id @default(uuid())
   name        String
@@ -168,7 +155,6 @@ model InventoryItem {
   updatedAt   DateTime @updatedAt
 }
 
-// ── Notifications ─────────────────────────────────────────────────
 model Notification {
   id        String   @id @default(uuid())
   userId    String
@@ -176,9 +162,8 @@ model Notification {
   read      Boolean  @default(false)
   jobId     String?
   createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
   @@index([userId])
   @@index([jobId])
 }
@@ -188,23 +173,83 @@ model Session {
   userId    String
   payload   Json
   expiresAt DateTime
-  idleAt    DateTime @default(now())
   createdAt DateTime @default(now())
+  idleAt    DateTime @default(now())
 
   @@index([userId])
   @@index([expiresAt])
 }
 
-// ── SLA Configuration ─────────────────────────────────────────────
 model SLAConfig {
-  id            String   @id @default("sla-config")
-  tiers         Json     // Array of { deviceType, warningHours, criticalHours }
-  updatedAt     DateTime @updatedAt
+  id        String   @id @default("sla-config")
+  tiers     Json
+  updatedAt DateTime @updatedAt
 }
 
-// ── Warranty Configuration ────────────────────────────────────────
 model WarrantyConfig {
-  id            String   @id @default("warranty-config")
-  entries       Json     // Array of { deviceType, days }
-  updatedAt     DateTime @updatedAt
+  id        String   @id @default("warranty-config")
+  entries   Json
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  timestamp DateTime @default(now())
+  userId    String
+  userName  String
+  userRole  String
+  action    String
+  entity    String
+  entityId  String?
+  field     String?
+  oldValue  String?
+  newValue  String?
+  meta      String?
+
+  @@index([timestamp(sort: Desc)])
+  @@index([entity, entityId])
+  @@index([userId])
+}
+
+model Webhook {
+  id        String   @id @default(uuid())
+  name      String
+  url       String
+  secret    String?
+  events    String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Sale {
+  id          String     @id @default(uuid())
+  saleNumber  String     @unique
+  customerId  String?
+  companyName String
+  contactName String
+  phone       String
+  notes       String?
+  totalAmount Float      @default(0)
+  paidAt      DateTime?
+  createdById String
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  items       SaleItem[]
+
+  @@index([createdAt(sort: Desc)])
+  @@index([customerId])
+}
+
+model SaleItem {
+  id              String @id @default(uuid())
+  saleId          String
+  inventoryItemId String
+  itemName        String
+  quantity        Int
+  unitPrice       Float
+  subtotal        Float
+  sale            Sale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([saleId])
 }

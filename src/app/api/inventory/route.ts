@@ -3,9 +3,10 @@ import { prisma } from '@/lib/prisma';
 import { requireSession, LIMITS, checkLengths } from '@/lib/auth';
 import { writeAuditLog } from '@/lib/auditLog';
 import { rateLimiter, getClientIP, RATE_LIMITS } from '@/lib/rateLimit';
+import type { InventoryItem, Prisma } from '@prisma/client';
 
 // Helper: normalise DB row → frontend InventoryItem shape
-function mapItem(i: any) {
+function mapItem(i: InventoryItem) {
     return {
         ...i,
         unitCost: i.unitPrice,
@@ -19,6 +20,77 @@ function mapItem(i: any) {
 async function checkRateLimit(request: Request, userId: string) {
     const ip = getClientIP(request);
     return rateLimiter.check(`api:inventory:${userId}:${ip}`, RATE_LIMITS.MODERATE);
+}
+
+// GET /api/inventory — admin, reception, engineer
+export async function GET(request: Request) {
+    const auth = await requireSession(['admin', 'reception', 'engineer']);
+    if ('error' in auth) return auth.error;
+
+    const limitCheck = await checkRateLimit(request, auth.user.id);
+    if (limitCheck.isLimited) {
+        return NextResponse.json(
+            { error: `Too many requests. Try again in ${limitCheck.retryAfter} seconds.` },
+            { status: 429, headers: { 'Retry-After': limitCheck.retryAfter.toString() } }
+        );
+    }
+
+    try {
+        const { searchParams } = new URL(request.url);
+        const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10));
+        const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') ?? '20', 10)));
+        const search = searchParams.get('search')?.trim() || '';
+        const category = searchParams.get('category')?.trim() || '';
+
+        const where: Prisma.InventoryItemWhereInput = {};
+        if (category && category !== 'All') {
+            where.category = category;
+        }
+        if (search) {
+            where.OR = [
+                { name: { contains: search, mode: 'insensitive' } },
+                { category: { contains: search, mode: 'insensitive' } },
+                { sku: { contains: search, mode: 'insensitive' } },
+            ];
+        }
+
+        const [items, total, categoriesResult, lowStockCountResult, totalValueResult, criticalItemsResult] = await Promise.all([
+            prisma.inventoryItem.findMany({
+                where,
+                orderBy: { name: 'asc' },
+                take: limit,
+                skip: (page - 1) * limit,
+            }),
+            prisma.inventoryItem.count({ where }),
+            prisma.inventoryItem.groupBy({
+                by: ['category'],
+                orderBy: { category: 'asc' },
+            }),
+            prisma.$queryRaw<Array<{count: bigint}>>`SELECT COUNT(*) as count FROM "InventoryItem" WHERE "quantity" <= "minQuantity"`,
+            prisma.$queryRaw<Array<{sum: number}>>`SELECT SUM("quantity" * "unitPrice") as sum FROM "InventoryItem"`,
+            prisma.$queryRaw<InventoryItem[]>`SELECT * FROM "InventoryItem" WHERE "quantity" <= "minQuantity" LIMIT 20`,
+        ]);
+
+        const lowStockCount = Number(lowStockCountResult?.[0]?.count ?? 0);
+        const totalValue = Number(totalValueResult?.[0]?.sum ?? 0);
+
+        return NextResponse.json({
+            inventory: items.map(mapItem),
+            total,
+            page,
+            limit,
+            categories: ['All', ...categoriesResult.map(c => c.category)],
+            metrics: {
+                totalItems: await prisma.inventoryItem.count(),
+                lowStockCount,
+                totalValue,
+            },
+            criticalItems: (criticalItemsResult ?? []).map(mapItem),
+        });
+    } catch (error) {
+        console.error('[api/inventory GET]', error);
+        return NextResponse.json({ error: 'Failed to fetch inventory.' }, { status: 500 });
+    }
 }
 
 // POST /api/inventory — admin or reception only
@@ -76,9 +148,12 @@ export async function POST(request: Request) {
         }).catch(() => {});
 
         return NextResponse.json(mapItem(item), { status: 201 });
-    } catch (error: any) {
-        if (error.code === 'P2002') {
-            return NextResponse.json({ error: 'An item with this SKU already exists.' }, { status: 409 });
+    } catch (error) {
+        if (error && typeof error === 'object' && 'code' in error) {
+            const err = error as { code: string };
+            if (err.code === 'P2002') {
+                return NextResponse.json({ error: 'An item with this SKU already exists.' }, { status: 409 });
+            }
         }
         console.error('[api/inventory POST]', error);
         return NextResponse.json({ error: 'Failed to add inventory item.' }, { status: 500 });
@@ -107,7 +182,7 @@ export async function PUT(request: Request) {
 
         // Full edit (price + minStock) mode
         if (body.unitCost !== undefined || body.minStock !== undefined) {
-            const updateData: any = {};
+            const updateData: Prisma.InventoryItemUpdateInput = {};
             if (body.unitCost !== undefined) {
                 const cost = parseFloat(body.unitCost);
                 if (!Number.isFinite(cost) || cost < 0) {
@@ -163,9 +238,12 @@ export async function PUT(request: Request) {
         }).catch(() => {});
 
         return NextResponse.json(mapItem(item));
-    } catch (error: any) {
-        if (error.code === 'P2025') {
-            return NextResponse.json({ error: 'Inventory item not found.' }, { status: 404 });
+    } catch (error) {
+        if (error && typeof error === 'object' && 'code' in error) {
+            const err = error as { code: string };
+            if (err.code === 'P2025') {
+                return NextResponse.json({ error: 'Inventory item not found.' }, { status: 404 });
+            }
         }
         console.error('[api/inventory PUT]', error);
         return NextResponse.json({ error: 'Failed to update inventory.' }, { status: 500 });
@@ -202,9 +280,12 @@ export async function DELETE(request: Request) {
         }).catch(() => {});
 
         return NextResponse.json({ ok: true });
-    } catch (error: any) {
-        if (error.code === 'P2025') {
-            return NextResponse.json({ error: 'Inventory item not found.' }, { status: 404 });
+    } catch (error) {
+        if (error && typeof error === 'object' && 'code' in error) {
+            const err = error as { code: string };
+            if (err.code === 'P2025') {
+                return NextResponse.json({ error: 'Inventory item not found.' }, { status: 404 });
+            }
         }
         console.error('[api/inventory DELETE]', error);
         return NextResponse.json({ error: 'Failed to delete inventory item.' }, { status: 500 });

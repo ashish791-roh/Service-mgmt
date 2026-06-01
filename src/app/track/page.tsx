@@ -273,8 +273,8 @@ function JobDetail({ jobId, onBack }: { jobId: string; onBack: () => void }) {
             setJob(data);
             setLastRefreshed(new Date());
             setError(null);
-        } catch (err: any) {
-            setError(err.message || 'Failed to load job.');
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to load job.');
         } finally {
             setLoading(false);
         }

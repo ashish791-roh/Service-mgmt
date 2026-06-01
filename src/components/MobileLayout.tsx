@@ -8,7 +8,7 @@ import {
   Settings, ShoppingCart, ChevronRight, X, Menu,
 } from 'lucide-react';
 
-interface NavItem { id: string; label: string; shortLabel: string; icon: any; roles: Role[]; }
+interface NavItem { id: string; label: string; shortLabel: string; icon: React.ComponentType<{ size?: number; className?: string; strokeWidth?: number }>; roles: Role[]; }
 
 const NAV_ITEMS: NavItem[] = [
   { id: 'dashboard',     label: 'Dashboard',       shortLabel: 'Home',    icon: LayoutDashboard,  roles: ['admin', 'reception', 'engineer'] },

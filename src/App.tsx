@@ -18,7 +18,7 @@ import { SystemSettingsPage } from './pages_components/SystemSettingsPage';
 import { 
   LayoutDashboard, Users, BarChart3, LineChart, 
   Wrench, Pin, Nut, Box, 
-  Wallet, ClipboardList, Bell, ChevronRight, Search, Menu, Settings, ShoppingCart, Shield
+  Wallet, ClipboardList, Bell, ChevronRight, Search, Menu, Settings, ShoppingCart, Shield, AlertCircle
 } from 'lucide-react';
 
 const PAGE_LABELS: Record<string, string> = {
@@ -38,7 +38,7 @@ const PAGE_ICONS: Record<string, any> = {
 };
 
 function AppContent() {
-  const { currentUser, hydrated } = useApp();
+  const { currentUser, hydrated, isLoading, error, retryLoad } = useApp();
   // ── SLA breach watcher — runs after login ─────────────────────
   useSLAWatcher();
   const [activePage, setActivePage] = useState<string>('dashboard');
@@ -72,6 +72,45 @@ function AppContent() {
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
           <p className="text-[13px] text-gray-400 font-medium">Loading…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-900 text-white px-4">
+        <div className="flex flex-col items-center p-8 rounded-2xl bg-slate-800/80 border border-red-500/30 shadow-2xl max-w-md w-full text-center space-y-6">
+          <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center border border-red-500/20 text-red-400">
+            <AlertCircle size={32} />
+          </div>
+          <div className="space-y-2">
+            <h3 className="text-xl font-bold text-slate-100">Connection Failed</h3>
+            <p className="text-sm text-slate-400 leading-relaxed">{error}</p>
+          </div>
+          <button
+            onClick={() => retryLoad()}
+            className="w-full py-3 px-4 bg-teal-500 hover:bg-teal-400 text-slate-900 font-semibold rounded-xl transition-all shadow-lg hover:shadow-teal-500/20 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 focus:ring-offset-slate-900 active:scale-95"
+          >
+            Retry Connection
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (currentUser && isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-900 text-white">
+        <div className="flex flex-col items-center gap-4 p-8 rounded-2xl bg-slate-800/50 backdrop-blur-md border border-slate-700/50 shadow-2xl max-w-sm w-full text-center">
+          <div className="relative w-16 h-16">
+            <div className="absolute inset-0 border-4 border-teal-500/20 rounded-full" />
+            <div className="absolute inset-0 border-4 border-t-teal-400 rounded-full animate-spin animate-duration-1000" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-slate-100 font-sans">Synchronizing Data</h3>
+            <p className="text-xs text-teal-400 mt-1 animate-pulse font-sans">Connecting to database...</p>
+          </div>
         </div>
       </div>
     );
