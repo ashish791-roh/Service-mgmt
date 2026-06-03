@@ -152,7 +152,7 @@ function AppContent() {
               <div className="flex items-center gap-2 text-sm">
                 <span className="text-slate-400 font-medium">FixHub</span>
                 <ChevronRight size={12} className="text-slate-300" />
-                <span className="font-semibold text-slate-800">
+                <span className="font-semibold text-slate-800" style={{ fontFamily: "'Syne', sans-serif" }}>
                   {PAGE_LABELS[activePage] ?? activePage}
                 </span>
               </div>

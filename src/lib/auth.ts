@@ -341,6 +341,14 @@ export async function requireSession(
 
   // ── Session rotation ─────────────────────────────────────────────────────────
   const rotated = await maybeRotateSession(token, { ...user, csrfToken: storedCsrf });
+  if (rotated) {
+    try {
+      cookieStore.set(sessionCookieOptions(rotated.token));
+      cookieStore.set(csrfCookieOptions(rotated.csrfToken));
+    } catch (e) {
+      console.warn('[auth] Failed to set rotated cookies in current context:', e);
+    }
+  }
 
   return { user: user as SessionUser, ...(rotated ? { rotated } : {}) };
 }

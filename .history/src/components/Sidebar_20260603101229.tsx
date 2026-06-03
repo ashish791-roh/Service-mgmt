@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Users, BarChart3, LineChart,
   UserSquare2, Wrench, Pin, Nut, Box,
   Wallet, ClipboardList, Bell, LogOut, Wrench as ToolIcon,
-  Settings, Shield, ShoppingCart, Cloud
+  Settings, Shield, ShoppingCart
 } from 'lucide-react';
 
 interface NavItem { id: string; label: string; icon: React.ComponentType<{ size?: number; className?: string; strokeWidth?: number }>; roles: Role[]; }

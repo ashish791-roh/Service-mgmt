@@ -19,7 +19,6 @@ model User {
   jobActivities JobActivity[]
   notifications Notification[]
   partRequests  PartRequest[]
-  tallyDocuments TallyDocument[]
 }
 
 model Customer {
@@ -256,17 +255,15 @@ model SaleItem {
 }
 
 model TallySyncSetting {
-  id                    String   @id @default("tally-sync-settings")
-  enabled               Boolean  @default(false)
-  host                  String   @default("localhost")
-  port                  Int      @default(9000)
-  companyName           String   @default("")
-  syncStatus            String   @default("idle")
-  mockMode              Boolean  @default(false)
-  autoPushOnApproval    Boolean  @default(true)
-  lastTestedAt          DateTime?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  id           String   @id @default("tally-sync-settings")
+  enabled      Boolean  @default(false)
+  host         String   @default("localhost")
+  port         Int      @default(9000)
+  companyName  String   @default("")
+  syncStatus   String   @default("idle")
+  lastTestedAt DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model TallyLedger {
