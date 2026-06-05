@@ -10,6 +10,7 @@ import { fireWebhooks } from '@/lib/webhooks';
 import { writeAuditLog, auditDiff } from '@/lib/auditLog';
 import { validateBody, JobUpdateSchema, JobPatchSchema } from '@/lib/validation';
 import type { Prisma, Job } from '@prisma/client';
+import { pushJobToTally } from '@/lib/tally';
 
 // ── Server-side warranty duration helper ──────────────────────────────────────
 // Mirrors the client-side warrantyConfig.ts defaults.
@@ -305,6 +306,10 @@ export async function PUT(
             }).catch(err => console.error('[webhook PUT] fire error:', err));
         }
 
+        if (statusChanged && newStatus === 'Delivered') {
+            pushJobToTally(job.id).catch(err => console.error('[Tally Auto-Push PUT] Error:', err));
+        }
+
         return NextResponse.json({
             ...job,
             problemDescription: job.problemDesc,
@@ -491,6 +496,10 @@ export async function PATCH(
                 estimatedCost: job.estimatedCost ?? 0,
                 updatedAt: job.updatedAt.toISOString(),
             }).catch(err => console.error('[webhook PATCH] fire error:', err));
+        }
+
+        if (statusChanged && newStatus === 'Delivered') {
+            pushJobToTally(job.id).catch(err => console.error('[Tally Auto-Push PATCH] Error:', err));
         }
 
         return NextResponse.json({

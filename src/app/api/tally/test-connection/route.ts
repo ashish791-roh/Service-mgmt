@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireSession } from '@/lib/auth';
 import { getClientIP, rateLimiter, RATE_LIMITS } from '@/lib/rateLimit';
-import { getTallySettings, saveTallySettings, testTallyConnection } from '@/lib/tally';
+import { getTallySettings, saveTallySettings, testTallyConnection, syncTallyMasters } from '@/lib/tally';
 
 export async function POST(request: Request) {
   const auth = await requireSession(request, ['admin']);
@@ -29,6 +29,9 @@ export async function POST(request: Request) {
     };
 
     const result = await testTallyConnection(merged);
+    if (result.success) {
+      await syncTallyMasters(merged);
+    }
     await saveTallySettings({ ...merged, lastTestedAt: new Date().toISOString(), syncStatus: result.success ? 'ready' : 'failed' });
 
     return NextResponse.json({ result });

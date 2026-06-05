@@ -6,6 +6,7 @@ import { writeAuditLog } from '@/lib/auditLog';
 import fs from 'fs/promises';
 import path from 'path';
 import { randomUUID } from 'crypto';
+import os from 'os';
 
 export async function POST(request: Request) {
   const auth = await requireSession(request, ['admin']);
@@ -32,8 +33,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'A file upload is required.' }, { status: 400 });
     }
 
+    if (file.size > 10 * 1024 * 1024) {
+      return NextResponse.json({ error: 'File size exceeds 10 MB limit.' }, { status: 400 });
+    }
+
+    if (file.type !== 'application/pdf' && !file.type.startsWith('image/')) {
+      return NextResponse.json({ error: 'Invalid file type. Only PDF and image files are allowed.' }, { status: 400 });
+    }
+
     const fileName = file.name || 'uploaded-document';
-    const tmpDir = path.join(process.cwd(), '.next', 'tally-temp');
+    const ext = path.extname(fileName).toLowerCase();
+    const allowedExtensions = ['.pdf', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.tiff'];
+    if (!allowedExtensions.includes(ext)) {
+      return NextResponse.json({ error: 'Invalid file extension. Only PDF and image files are allowed.' }, { status: 400 });
+    }
+
+    const tmpDir = path.join(os.tmpdir(), 'tally-temp');
     await fs.mkdir(tmpDir, { recursive: true });
     const safePath = path.join(tmpDir, `${randomUUID()}-${fileName}`);
     await fs.writeFile(safePath, Buffer.from(await file.arrayBuffer()));

@@ -12,6 +12,7 @@ export interface TallySettingsPayload {
 export interface TallyDashboardStats {
   totalDocuments: number;
   autoApproved: number;
+  pushed: number;
   pendingReviews: number;
   failedEntries: number;
   successRate: number;
@@ -61,11 +62,11 @@ export async function loadTallyDocuments() {
   return (await res.json()) as { documents: any[] };
 }
 
-export async function approveTallyDocument(documentId: string, action: 'approve' | 'reject') {
+export async function approveTallyDocument(documentId: string, action: 'approve' | 'reject', extractedData?: any, force?: boolean) {
   const res = await fetch('/api/tally/approve', {
     method: 'POST',
     headers: jsonHeaders(),
-    body: JSON.stringify({ documentId, action }),
+    body: JSON.stringify({ documentId, action, extractedData, force }),
   });
   return res;
 }
@@ -81,6 +82,16 @@ export async function uploadTallyDocument(file: File, documentType: string) {
       'x-csrf-token': getCsrfToken(),
     },
     body: formData,
+  });
+  return res;
+}
+
+export async function deleteTallyDocument(documentId: string) {
+  const res = await fetch(`/api/tally/documents/${documentId}`, {
+    method: 'DELETE',
+    headers: {
+      'x-csrf-token': getCsrfToken(),
+    },
   });
   return res;
 }

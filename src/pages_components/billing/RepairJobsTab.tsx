@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Banknote, Hourglass, CheckCircle, TrendingUp, X, Wrench, Package, TrendingDown, Printer } from 'lucide-react';
+import { Banknote, Hourglass, CheckCircle, TrendingUp, X, Wrench, Package, TrendingDown, Printer, Cloud } from 'lucide-react';
 import type { JobStatus, Job, PartRequest, InventoryItem } from '../../types';
 import { printInvoice } from './InvoicePrinter';
 
@@ -116,6 +116,30 @@ export const RepairJobsTab: React.FC = () => {
   const [paymentMethodInput, setPaymentMethodInput] = useState('Cash');
   const [filter, setFilter] = useState<'pending-billing' | 'delivered' | 'all'>('pending-billing');
   const tableRef = useRef<HTMLDivElement>(null);
+
+  const [pushingJobs, setPushingJobs] = useState<Record<string, boolean>>({});
+
+  const handleRetroactivePush = async (jobId: string) => {
+    setPushingJobs(prev => ({ ...prev, [jobId]: true }));
+    try {
+      const response = await fetch('/api/tally/push-job', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId }),
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        alert(data.message || 'Job invoice successfully pushed to Tally!');
+      } else {
+        alert(data.error || data.message || 'Failed to push job to Tally.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Network error pushing job to Tally.');
+    } finally {
+      setPushingJobs(prev => ({ ...prev, [jobId]: false }));
+    }
+  };
 
   // ── Derived job lists ──────────────────────────────────────────────────────
   const completedJobs = jobs.filter((j) => j.status === 'Completed');
@@ -398,35 +422,48 @@ export const RepairJobsTab: React.FC = () => {
                           }}
                         />
                       ) : (
-                        <button
-                          onClick={() => {
-                            const c = customers.find((cust) => cust.id === job.customerId);
-                            const d = devices.find((dev) => dev.id === job.deviceId);
-                            const e = users.find((u) => u.id === job.assignedEngineerId);
-                            const ap = partRequests.filter((pr) => pr.jobId === job.id && pr.status === 'Approved');
-                            const { partsCost, serviceCharge } = calcProfitBreakdown(job, partRequests, inventory);
-                            const res = printInvoice({
-                              job,
-                              customer: c,
-                              device: d,
-                              engineer: e,
-                              approvedParts: ap,
-                              inventory,
-                              finalCost: job.actualCost ?? job.estimatedCost ?? 0,
-                              partsCost,
-                              serviceCharge,
-                              advanceAmount: job.advanceAmount ?? 0
-                            });
-                            if (res && !res.ok && res.error) {
-                              alert(res.error);
-                            }
-                          }}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-600 text-[11px] font-medium rounded-lg uppercase tracking-wide hover:bg-gray-200 transition-colors"
-                          title="Print Invoice"
-                        >
-                          <Printer size={12} />
-                          Invoice
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              const c = customers.find((cust) => cust.id === job.customerId);
+                              const d = devices.find((dev) => dev.id === job.deviceId);
+                              const e = users.find((u) => u.id === job.assignedEngineerId);
+                              const ap = partRequests.filter((pr) => pr.jobId === job.id && pr.status === 'Approved');
+                              const { partsCost, serviceCharge } = calcProfitBreakdown(job, partRequests, inventory);
+                              const res = printInvoice({
+                                job,
+                                customer: c,
+                                device: d,
+                                engineer: e,
+                                approvedParts: ap,
+                                inventory,
+                                finalCost: job.actualCost ?? job.estimatedCost ?? 0,
+                                partsCost,
+                                serviceCharge,
+                                advanceAmount: job.advanceAmount ?? 0
+                              });
+                              if (res && !res.ok && res.error) {
+                                alert(res.error);
+                              }
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-600 text-[11px] font-medium rounded-lg uppercase tracking-wide hover:bg-gray-200 transition-colors"
+                            title="Print Invoice"
+                          >
+                            <Printer size={12} />
+                            Invoice
+                          </button>
+                          {job.status === 'Delivered' && (
+                            <button
+                              onClick={() => handleRetroactivePush(job.id)}
+                              disabled={pushingJobs[job.id]}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-50 text-teal-700 text-[11px] font-medium rounded-lg uppercase tracking-wide hover:bg-teal-100 disabled:opacity-60 transition-colors"
+                              title="Push to Tally"
+                            >
+                              <Cloud size={12} />
+                              {pushingJobs[job.id] ? 'Pushing...' : 'Tally'}
+                            </button>
+                          )}
+                        </div>
                       )}
                     </td>
                   </tr>
