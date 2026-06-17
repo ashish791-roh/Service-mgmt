@@ -19,10 +19,22 @@ export async function PUT(
         const { id } = await params;
         const body = await request.json();
 
+        const targetUser = await prisma.user.findUnique({ where: { id } });
+        if (!targetUser) {
+            return NextResponse.json({ error: 'User not found.' }, { status: 404 });
+        }
+
+        // Only super_admin can modify a super_admin
+        if (targetUser.role === 'super_admin' && auth.user.role !== 'super_admin') {
+            return NextResponse.json({ error: 'Forbidden: Cannot modify a super_admin user.' }, { status: 403 });
+        }
+
         if (body.role) {
-            const validRoles = ['admin', 'reception', 'engineer'];
+            const validRoles = auth.user.role === 'super_admin'
+                ? ['admin', 'reception', 'engineer', 'super_admin']
+                : ['admin', 'reception', 'engineer'];
             if (!validRoles.includes(body.role)) {
-                return NextResponse.json({ error: 'role must be admin, reception, or engineer.' }, { status: 400 });
+                return NextResponse.json({ error: 'Invalid role.' }, { status: 400 });
             }
         }
 
@@ -133,6 +145,16 @@ export async function DELETE(
                 { error: 'You cannot delete your own account.' },
                 { status: 400 }
             );
+        }
+
+        const targetUser = await prisma.user.findUnique({ where: { id } });
+        if (!targetUser) {
+            return NextResponse.json({ error: 'User not found.' }, { status: 404 });
+        }
+
+        // Only super_admin can delete a super_admin
+        if (targetUser.role === 'super_admin' && auth.user.role !== 'super_admin') {
+            return NextResponse.json({ error: 'Forbidden: Cannot delete a super_admin user.' }, { status: 403 });
         }
 
         // Kill all sessions for the user being deleted before removing the record

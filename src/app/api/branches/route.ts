@@ -69,15 +69,12 @@ export async function POST(request: Request) {
     // Generate credentials
     const adminPassword = `admin_${cleanId}`;
     const receptionPassword = `reception_${cleanId}`;
-    const engineerPassword = `engineer_${cleanId}`;
 
     const adminHashed = await bcrypt.hash(adminPassword, 10);
     const receptionHashed = await bcrypt.hash(receptionPassword, 10);
-    const engineerHashed = await bcrypt.hash(engineerPassword, 10);
 
     const adminEmail = `admin@${cleanId}.com`;
     const receptionEmail = `reception@${cleanId}.com`;
-    const engineerEmail = `engineer@${cleanId}.com`;
 
     // Create default users for this branch
     await prisma.user.createMany({
@@ -94,13 +91,6 @@ export async function POST(request: Request) {
           email: receptionEmail,
           password: receptionHashed,
           role: 'reception',
-          branchId: cleanId,
-        },
-        {
-          name: `${cleanName} Engineer`,
-          email: engineerEmail,
-          password: engineerHashed,
-          role: 'engineer',
           branchId: cleanId,
         },
       ],
@@ -137,7 +127,6 @@ export async function POST(request: Request) {
       credentials: {
         admin: { email: adminEmail, password: adminPassword },
         reception: { email: receptionEmail, password: receptionPassword },
-        engineer: { email: engineerEmail, password: engineerPassword },
       }
     }, { status: 201 });
   } catch (error) {

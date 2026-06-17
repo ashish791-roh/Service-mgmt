@@ -51,6 +51,13 @@ export const UserManagement: React.FC = () => {
   const [form, setForm] = useState({ name: '', email: '', password: '', role: 'engineer' as Role });
   const [editForm, setEditForm] = useState({ name: '', email: '', role: 'engineer' as Role, password: '' });
 
+  const visibleUsers = users.filter(u => {
+    if (u.role === 'super_admin' && currentUser?.role !== 'super_admin') {
+      return false;
+    }
+    return true;
+  });
+
   const handleAdd = async () => {
     if (!form.name || !form.email || !form.password) { show('Fill all fields', 'error'); return; }
     if (form.password.length < 6) { show('Password must be at least 6 characters', 'error'); return; }
@@ -94,16 +101,17 @@ export const UserManagement: React.FC = () => {
   };
 
   const roleColors: Record<string, string> = {
-    admin:     'bg-teal-100 text-teal-700',
-    reception: 'bg-pink-100 text-pink-700',
-    engineer:  'bg-blue-100 text-blue-700',
+    admin:       'bg-teal-100 text-teal-700',
+    reception:   'bg-pink-100 text-pink-700',
+    engineer:    'bg-blue-100 text-blue-700',
+    super_admin: 'bg-purple-100 text-purple-700',
   };
 
   return (
     <div className="max-w-[1400px] mx-auto pb-6 space-y-6">
       <PageHeader 
         title="Access Control" 
-        subtitle={`${users.length} registered system identities`} 
+        subtitle={`${visibleUsers.length} registered system identities`} 
         action={<GlowButton icon={UserPlus} text="Deploy New User" variant="vivid" onClick={() => setShowModal(true)} />}
       />
 
@@ -118,7 +126,7 @@ export const UserManagement: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {users.map((user) => (
+              {visibleUsers.map((user) => (
                 <tr key={user.id} className="hover:bg-gray-50 transition-colors group">
                   <td className={`px-6 py-4 border-l-4 ${user.active ? 'border-green-500' : 'border-gray-300'}`}>
                     <div className="flex items-center gap-3">
@@ -216,6 +224,7 @@ export const UserManagement: React.FC = () => {
                   <option value="engineer">Engineer</option>
                   <option value="reception">Reception/Manager</option>
                   <option value="admin">Administrator</option>
+                  {currentUser?.role === 'super_admin' && <option value="super_admin">Super Administrator</option>}
                 </select>
               </div>
             </div>
@@ -265,6 +274,7 @@ export const UserManagement: React.FC = () => {
                   <option value="engineer">Engineer</option>
                   <option value="reception">Reception/Manager</option>
                   <option value="admin">Administrator</option>
+                  {currentUser?.role === 'super_admin' && <option value="super_admin">Super Administrator</option>}
                 </select>
               </div>
             </div>

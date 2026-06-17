@@ -60,6 +60,7 @@ export interface SessionUser {
   name:     string;
   role:     'admin' | 'reception' | 'engineer' | 'super_admin';
   isActive: boolean;
+  branchId: string;
 }
 
 type AllowedRoles = ('admin' | 'reception' | 'engineer' | 'super_admin')[];

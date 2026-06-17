@@ -86,8 +86,9 @@ type SaleWithItems = Prisma.SaleGetPayload<{
     include: { items: true }
 }>;
 
-async function fetchSalesWithItems(limit?: number) {
+async function fetchSalesWithItems(limit?: number, branchId?: string) {
     const sales = await prisma.sale.findMany({
+        where: branchId ? { branchId } : {},
         orderBy: { createdAt: 'desc' },
         ...(limit ? { take: limit } : {}),
         include: { items: true },
@@ -151,28 +152,28 @@ export async function GET(request: Request) {
                 await Promise.all([
                     // Jobs assigned to this engineer (limit to 50 recent)
                     prisma.job.findMany({
-                        where: { engineerId: user.id },
+                        where: { engineerId: user.id, branchId: user.branchId },
                         orderBy: { createdAt: 'desc' },
                         take: 50,
                         include: { activities: true, photos: true },
                     }),
                     // Part requests submitted by this engineer (limit to 50 recent)
                     prisma.partRequest.findMany({
-                        where: { engineerId: user.id },
+                        where: { engineerId: user.id, branchId: user.branchId },
                         orderBy: { createdAt: 'desc' },
                         take: 50,
                     }),
                     // Notifications for this engineer only (limit to 50 recent)
                     prisma.notification.findMany({
-                        where: { userId: user.id },
+                        where: { userId: user.id, branchId: user.branchId },
                         orderBy: { createdAt: 'desc' },
                         take: 50,
                     }),
                     // Devices and customers are needed to display job details (limit to 50 recent)
-                    prisma.device.findMany({ orderBy: { createdAt: 'desc' }, take: 50 }),
-                    prisma.customer.findMany({ orderBy: { createdAt: 'desc' }, take: 50 }),
+                    prisma.device.findMany({ where: { branchId: user.branchId }, orderBy: { createdAt: 'desc' }, take: 50 }),
+                    prisma.customer.findMany({ where: { branchId: user.branchId }, orderBy: { createdAt: 'desc' }, take: 50 }),
                     // Inventory for autocomplete suggestions (limited data)
-                    prisma.inventoryItem.findMany({ orderBy: { name: 'asc' }, take: 50 }),
+                    prisma.inventoryItem.findMany({ where: { branchId: user.branchId }, orderBy: { name: 'asc' }, take: 50 }),
                 ]);
 
             // Only expose the engineer's own profile — no other users
@@ -219,26 +220,26 @@ export async function GET(request: Request) {
                 // Reception only needs the engineers list (to assign/display names)
                 // They do NOT see admin accounts or other reception accounts
                 prisma.user.findMany({
-                    where: { role: 'engineer' },
+                    where: { role: 'engineer', branchId: user.branchId },
                     orderBy: { createdAt: 'asc' },
                     take: 50,
                 }),
-                prisma.customer.findMany({ orderBy: { createdAt: 'desc' }, take: 20 }),
-                prisma.device.findMany({ orderBy: { createdAt: 'desc' }, take: 20 }),
-                prisma.job.findMany({ orderBy: { createdAt: 'desc' }, take: 100, include: { activities: true, photos: true } }),
-                prisma.partRequest.findMany({ orderBy: { createdAt: 'desc' }, take: 50 }),
-                prisma.inventoryItem.findMany({ orderBy: { name: 'asc' }, take: 50 }),
+                prisma.customer.findMany({ where: { branchId: user.branchId }, orderBy: { createdAt: 'desc' }, take: 20 }),
+                prisma.device.findMany({ where: { branchId: user.branchId }, orderBy: { createdAt: 'desc' }, take: 20 }),
+                prisma.job.findMany({ where: { branchId: user.branchId }, orderBy: { createdAt: 'desc' }, take: 100, include: { activities: true, photos: true } }),
+                prisma.partRequest.findMany({ where: { branchId: user.branchId }, orderBy: { createdAt: 'desc' }, take: 50 }),
+                prisma.inventoryItem.findMany({ where: { branchId: user.branchId }, orderBy: { name: 'asc' }, take: 50 }),
                 // Reception sees all notifications (they may act on part-request decisions)
-                prisma.notification.findMany({ orderBy: { createdAt: 'desc' }, take: 50 }),
+                prisma.notification.findMany({ where: { branchId: user.branchId }, orderBy: { createdAt: 'desc' }, take: 50 }),
                 // Pre-query critical inventory items to ensure dashboard alerts work
-                prisma.$queryRaw<Prisma.InventoryItemGetPayload<{}>[]>`SELECT * FROM "InventoryItem" WHERE "quantity" <= "minQuantity" LIMIT 10`,
+                prisma.$queryRaw<Prisma.InventoryItemGetPayload<{}>[]>`SELECT * FROM "InventoryItem" WHERE "branchId" = ${user.branchId} AND "quantity" <= "minQuantity" LIMIT 10`,
                 // Compute stats
-                prisma.job.count({ where: { status: { in: ['Completed', 'Delivered'] } } }),
-                prisma.job.count({ where: { status: { in: ['New', 'Assigned', 'In Progress'] } } }),
-                prisma.user.count({ where: { role: 'engineer' } }),
-                prisma.user.count({ where: { role: 'engineer', isActive: true } }),
-                prisma.partRequest.count({ where: { status: { in: ['Pending', 'AwaitingStock'] } } }),
-                prisma.$queryRaw<Array<{count: bigint}>>`SELECT COUNT(*) as count FROM "InventoryItem" WHERE "quantity" <= "minQuantity"`,
+                prisma.job.count({ where: { status: { in: ['Completed', 'Delivered'] }, branchId: user.branchId } }),
+                prisma.job.count({ where: { status: { in: ['New', 'Assigned', 'In Progress'] }, branchId: user.branchId } }),
+                prisma.user.count({ where: { role: 'engineer', branchId: user.branchId } }),
+                prisma.user.count({ where: { role: 'engineer', isActive: true, branchId: user.branchId } }),
+                prisma.partRequest.count({ where: { status: { in: ['Pending', 'AwaitingStock'] }, branchId: user.branchId } }),
+                prisma.$queryRaw<Array<{count: bigint}>>`SELECT COUNT(*) as count FROM "InventoryItem" WHERE "branchId" = ${user.branchId} AND "quantity" <= "minQuantity"`,
             ]);
 
             const mappedCritical = (criticalInventory ?? []).map(mapInventory);
@@ -258,7 +259,7 @@ export async function GET(request: Request) {
                 partRequests: partRequests.map(mapPartRequest),
                 inventory: combinedInventory,
                 notifications: notifications.map(mapNotification),
-                sales: await fetchSalesWithItems(100),
+                sales: await fetchSalesWithItems(100, user.branchId),
                 isHQ: isHQVal,
                 branches,
                 stats: {
@@ -275,6 +276,7 @@ export async function GET(request: Request) {
         }
 
         // ── Admin: full data ──────────────────────────────────────
+        const isSuperAdmin = user.role === 'super_admin';
         const [
             users,
             customers,
@@ -293,24 +295,87 @@ export async function GET(request: Request) {
             totalRevenueJobs,
             totalRevenueSales
         ] = await Promise.all([
-            prisma.user.findMany({ orderBy: { createdAt: 'asc' }, take: 50 }),
-            prisma.customer.findMany({ orderBy: { createdAt: 'desc' }, take: 20 }),
-            prisma.device.findMany({ orderBy: { createdAt: 'desc' }, take: 20 }),
-            prisma.job.findMany({ orderBy: { createdAt: 'desc' }, take: 100, include: { activities: true, photos: true } }),
-            prisma.partRequest.findMany({ orderBy: { createdAt: 'desc' }, take: 50 }),
-            prisma.inventoryItem.findMany({ orderBy: { name: 'asc' }, take: 50 }),
-            prisma.notification.findMany({ orderBy: { createdAt: 'desc' }, take: 50 }),
+            prisma.user.findMany({
+                where: isSuperAdmin ? {} : { branchId: user.branchId },
+                orderBy: { createdAt: 'asc' },
+                take: 50
+            }),
+            prisma.customer.findMany({
+                where: isSuperAdmin ? {} : { branchId: user.branchId },
+                orderBy: { createdAt: 'desc' },
+                take: 20
+            }),
+            prisma.device.findMany({
+                where: isSuperAdmin ? {} : { branchId: user.branchId },
+                orderBy: { createdAt: 'desc' },
+                take: 20
+            }),
+            prisma.job.findMany({
+                where: isSuperAdmin ? {} : { branchId: user.branchId },
+                orderBy: { createdAt: 'desc' },
+                take: 100,
+                include: { activities: true, photos: true }
+            }),
+            prisma.partRequest.findMany({
+                where: isSuperAdmin ? {} : { branchId: user.branchId },
+                orderBy: { createdAt: 'desc' },
+                take: 50
+            }),
+            prisma.inventoryItem.findMany({
+                where: isSuperAdmin ? {} : { branchId: user.branchId },
+                orderBy: { name: 'asc' },
+                take: 50
+            }),
+            prisma.notification.findMany({
+                where: isSuperAdmin ? {} : { branchId: user.branchId },
+                orderBy: { createdAt: 'desc' },
+                take: 50
+            }),
             // Pre-query critical inventory items to ensure dashboard alerts work
-            prisma.$queryRaw<Prisma.InventoryItemGetPayload<{}>[]>`SELECT * FROM "InventoryItem" WHERE "quantity" <= "minQuantity" LIMIT 10`,
+            isSuperAdmin
+                ? prisma.$queryRaw<Prisma.InventoryItemGetPayload<{}>[]>`SELECT * FROM "InventoryItem" WHERE "quantity" <= "minQuantity" LIMIT 10`
+                : prisma.$queryRaw<Prisma.InventoryItemGetPayload<{}>[]>`SELECT * FROM "InventoryItem" WHERE "branchId" = ${user.branchId} AND "quantity" <= "minQuantity" LIMIT 10`,
             // Compute stats
-            prisma.job.count({ where: { status: { in: ['Completed', 'Delivered'] } } }),
-            prisma.job.count({ where: { status: { in: ['New', 'Assigned', 'In Progress'] } } }),
-            prisma.user.count({ where: { role: 'engineer' } }),
-            prisma.user.count({ where: { role: 'engineer', isActive: true } }),
-            prisma.partRequest.count({ where: { status: { in: ['Pending', 'AwaitingStock'] } } }),
-            prisma.$queryRaw<Array<{count: bigint}>>`SELECT COUNT(*) as count FROM "InventoryItem" WHERE "quantity" <= "minQuantity"`,
-            prisma.$queryRaw<Array<{sum: number | null}>>`SELECT SUM(COALESCE("actualCost", COALESCE("estimatedCost", 0))) as sum FROM "Job" WHERE "status" IN ('Completed', 'Delivered')`,
-            prisma.$queryRaw<Array<{sum: number | null}>>`SELECT SUM(COALESCE("totalAmount", 0)) as sum FROM "Sale"`,
+            prisma.job.count({
+                where: {
+                    status: { in: ['Completed', 'Delivered'] },
+                    ...(isSuperAdmin ? {} : { branchId: user.branchId })
+                }
+            }),
+            prisma.job.count({
+                where: {
+                    status: { in: ['New', 'Assigned', 'In Progress'] },
+                    ...(isSuperAdmin ? {} : { branchId: user.branchId })
+                }
+            }),
+            prisma.user.count({
+                where: {
+                    role: 'engineer',
+                    ...(isSuperAdmin ? {} : { branchId: user.branchId })
+                }
+            }),
+            prisma.user.count({
+                where: {
+                    role: 'engineer',
+                    isActive: true,
+                    ...(isSuperAdmin ? {} : { branchId: user.branchId })
+                }
+            }),
+            prisma.partRequest.count({
+                where: {
+                    status: { in: ['Pending', 'AwaitingStock'] },
+                    ...(isSuperAdmin ? {} : { branchId: user.branchId })
+                }
+            }),
+            isSuperAdmin
+                ? prisma.$queryRaw<Array<{count: bigint}>>`SELECT COUNT(*) as count FROM "InventoryItem" WHERE "quantity" <= "minQuantity"`
+                : prisma.$queryRaw<Array<{count: bigint}>>`SELECT COUNT(*) as count FROM "InventoryItem" WHERE "branchId" = ${user.branchId} AND "quantity" <= "minQuantity"`,
+            isSuperAdmin
+                ? prisma.$queryRaw<Array<{sum: number | null}>>`SELECT SUM(COALESCE("actualCost", COALESCE("estimatedCost", 0))) as sum FROM "Job" WHERE "status" IN ('Completed', 'Delivered')`
+                : prisma.$queryRaw<Array<{sum: number | null}>>`SELECT SUM(COALESCE("actualCost", COALESCE("estimatedCost", 0))) as sum FROM "Job" WHERE "branchId" = ${user.branchId} AND "status" IN ('Completed', 'Delivered')`,
+            isSuperAdmin
+                ? prisma.$queryRaw<Array<{sum: number | null}>>`SELECT SUM(COALESCE("totalAmount", 0)) as sum FROM "Sale"`
+                : prisma.$queryRaw<Array<{sum: number | null}>>`SELECT SUM(COALESCE("totalAmount", 0)) as sum FROM "Sale" WHERE "branchId" = ${user.branchId}`,
         ]);
 
         const mappedCritical = (criticalInventory ?? []).map(mapInventory);
@@ -332,7 +397,7 @@ export async function GET(request: Request) {
             partRequests: partRequests.map(mapPartRequest),
             inventory: combinedInventory,
             notifications: notifications.map(mapNotification),
-            sales: await fetchSalesWithItems(100),
+            sales: await fetchSalesWithItems(100, isSuperAdmin ? undefined : user.branchId),
             isHQ: isHQVal,
             branches,
             stats: {
