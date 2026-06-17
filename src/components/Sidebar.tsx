@@ -5,8 +5,11 @@ import {
   LayoutDashboard, Users, BarChart3, LineChart,
   UserSquare2, Wrench, Pin, Nut, Box,
   Wallet, ClipboardList, Bell, LogOut, Wrench as ToolIcon,
-  Settings, Shield, ShoppingCart, Cloud
+  Settings, Shield, ShoppingCart, Cloud, GitBranch
 } from 'lucide-react';
+
+
+
 
 interface NavItem { id: string; label: string; icon: React.ComponentType<{ size?: number; className?: string; strokeWidth?: number }>; roles: Role[]; }
 
@@ -23,18 +26,21 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'billing', label: 'Billing', icon: Wallet, roles: ['admin', 'reception'] },
   { id: 'sales', label: 'Sales', icon: ShoppingCart, roles: ['admin', 'reception'] },
   { id: 'tally', label: 'Tally Integration', icon: Cloud, roles: ['admin'] },
+  { id: 'branches', label: 'Branch Management', icon: GitBranch, roles: ['admin', 'super_admin'] },
   { id: 'my-jobs', label: 'My Jobs', icon: ClipboardList, roles: ['engineer'] },
-  { id: 'notifications', label: 'Notifications', icon: Bell, roles: ['admin', 'reception', 'engineer'] },
+  { id: 'notifications', label: 'Notifications', icon: Bell, roles: ['admin', 'reception', 'engineer', 'super_admin'] },
   { id: 'settings', label: 'System Settings', icon: Settings, roles: ['admin'] },
   { id: 'audit-log', label: 'Audit Log', icon: Shield, roles: ['admin'] },
 ];
+
 
 const SECTIONS = [
   { label: 'Overview', ids: ['dashboard', 'analytics', 'reports'] },
   { label: 'Operations', ids: ['jobs', 'assign', 'my-jobs', 'parts'] },
   { label: 'Management', ids: ['users', 'inventory','sales', 'billing'] },
-  { label: 'System', ids: ['notifications', 'tally', 'settings', 'audit-log'] },
+  { label: 'System', ids: ['notifications', 'tally', 'branches', 'settings', 'audit-log'] },
 ];
+
 
 interface SidebarProps {
   activePage: string;
@@ -44,18 +50,26 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ activePage, onNavigate, isOpen, setIsOpen }) => {
-  const { currentUser, logout, getUnreadCount } = useApp();
+  const { currentUser, logout, getUnreadCount, isHQ, branches, selectedBranchId, setSelectedBranchId } = useApp();
+
   if (!currentUser) return null;
 
   const unread = getUnreadCount(currentUser.id);
-  const filtered = NAV_ITEMS.filter(item => item.roles.includes(currentUser.role));
+  const filtered = NAV_ITEMS.filter(item => {
+    if (item.id === 'branches' && !isHQ) return false;
+    if (currentUser.role === 'super_admin') return true;
+    return item.roles.includes(currentUser.role as Role);
+  });
+
 
   const roleConfig: Record<string, { bgClass: string; label: string }> = {
     admin: { bgClass: 'bg-amber-500', label: 'Administrator' },
+    super_admin: { bgClass: 'bg-indigo-600', label: 'HQ Super Admin' },
     reception: { bgClass: 'bg-teal-500', label: 'Reception' },
     engineer: { bgClass: 'bg-cyan-500', label: 'Engineer' },
   };
-  const role = roleConfig[currentUser.role];
+  const role = roleConfig[currentUser.role] || { bgClass: 'bg-gray-500', label: currentUser.role };
+
 
   return (
     <>
@@ -84,6 +98,26 @@ export const Sidebar: React.FC<SidebarProps> = ({ activePage, onNavigate, isOpen
             </div>
           </div>
         </div>
+
+        {/* Branch Selector for HQ */}
+        {isHQ && (
+          <div className="px-5 py-4 border-b border-gray-800 bg-gray-950/20">
+            <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wider mb-2">Physical Branch</p>
+            <select
+              value={selectedBranchId}
+              onChange={(e) => setSelectedBranchId(e.target.value)}
+              className="w-full bg-gray-800 border border-gray-700 text-white text-[12px] font-medium rounded-lg focus:ring-teal-500 focus:border-teal-500 p-2 focus:outline-none transition-colors"
+            >
+              <option value="all">All Branches (HQ Consolidated)</option>
+              {branches.map((b: any) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
 
         {/* Nav */}
         <nav className="flex-1 px-3 py-6 overflow-y-auto space-y-6">

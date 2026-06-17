@@ -4,6 +4,8 @@ import bcrypt from 'bcryptjs';
 import { requireSession, destroyAllSessionsForUser, LIMITS, checkLengths } from '@/lib/auth';
 import { writeAuditLog } from '@/lib/auditLog';
 import type { Prisma } from '@prisma/client';
+import { captureChange } from '@/lib/branchSync';
+
 
 // PUT /api/users/:id — admin only
 export async function PUT(
@@ -57,6 +59,15 @@ export async function PUT(
             where: { id },
             data: updateData,
         });
+
+        // ── Outbox Sync ──────────────────────────────────────────────
+        captureChange({
+            entityType: 'User',
+            entityId: user.id,
+            action: 'update',
+            payload: user,
+        }).catch(err => console.error('[SyncOutbox] User update error:', err));
+
 
         // If the account was just deactivated, kill all active sessions immediately
         // so the user is logged out right away rather than waiting for token expiry.
@@ -139,6 +150,15 @@ export async function DELETE(
             prisma.notification.deleteMany({ where: { userId: id } }),
             prisma.user.delete({ where: { id } }),
         ]);
+
+        // ── Outbox Sync ──────────────────────────────────────────────
+        captureChange({
+            entityType: 'User',
+            entityId: id,
+            action: 'delete',
+            payload: {},
+        }).catch(err => console.error('[SyncOutbox] User delete error:', err));
+
 
         writeAuditLog({
             actor: { id: auth.user.id, name: auth.user.name, role: auth.user.role },

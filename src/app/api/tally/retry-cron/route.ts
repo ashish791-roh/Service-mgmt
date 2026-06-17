@@ -3,6 +3,13 @@ import { processTallyRetryQueue } from '@/lib/tally';
 
 export async function POST(request: Request) {
   const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret && process.env.NODE_ENV === 'production') {
+    return NextResponse.json(
+      { error: 'CRON_SECRET configuration is missing on the server.' },
+      { status: 500 }
+    );
+  }
+
   if (cronSecret) {
     const authHeader = request.headers.get('authorization');
     if (authHeader !== `Bearer ${cronSecret}`) {

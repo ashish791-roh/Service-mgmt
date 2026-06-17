@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireSession } from '@/lib/auth';
 import { getClientIP, rateLimiter, RATE_LIMITS } from '@/lib/rateLimit';
-import { buildVoucherXml } from '@/lib/tally';
+import { buildVoucherXml, getExtractedData } from '@/lib/tally';
 import { prisma } from '@/lib/prisma';
 
 export async function POST(request: Request) {
@@ -29,7 +29,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Document not found.' }, { status: 404 });
     }
 
-    const xml = buildVoucherXml(document.extractedData as any, voucherType as any);
+    const xml = buildVoucherXml(getExtractedData(document), voucherType as any);
 
     await prisma.tallyDocument.update({
       where: { id: documentId },

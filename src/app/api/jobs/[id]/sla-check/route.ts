@@ -54,7 +54,7 @@ export async function POST(
       where: { role: 'admin', isActive: true },
       select: { id: true },
     });
-    admins.forEach(a => recipientIds.add(a.id));
+    admins.forEach((a: any) => recipientIds.add(a.id));
 
     let notified = 0;
 

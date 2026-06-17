@@ -61,6 +61,13 @@ export async function PUT(req: NextRequest) {
       update: { entries: entriesJson },
     });
 
+    // ── HQ Config Broadcast ──────────────────────────────────────
+    const { getDeploymentRole } = await import('@/lib/branchContext');
+    if (getDeploymentRole() === 'hq') {
+      const { createDirective } = await import('@/lib/hqSyncEngine');
+      await createDirective('warranty_config', { entries: updated.entries });
+    }
+
     const entries = updated.entries as unknown as WarrantyEntry[];
     return NextResponse.json({
       ok: true,
@@ -73,4 +80,5 @@ export async function PUT(req: NextRequest) {
       { status: 500 }
     );
   }
+
 }

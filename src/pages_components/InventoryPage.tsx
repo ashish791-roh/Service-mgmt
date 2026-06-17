@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Box, AlertTriangle, DollarSign, Layers, Search, Plus, X, Pencil, Trash2 } from 'lucide-react';
+import { TallySyncBadge } from '../components/TallySyncBadge';
 import type { InventoryItem } from '../types';
 
 const PageHeader = ({ title, subtitle, action }: { title: string, subtitle: string, action?: React.ReactNode }) => (
@@ -307,9 +308,12 @@ export const InventoryPage: React.FC = () => {
                         <p className="text-[11px] font-normal text-gray-500 uppercase tracking-wide mt-0.5">Min: {item.minStock}</p>
                       </td>
                       <td className="px-6 py-4">
-                        <span className={`px-2 py-1 rounded text-[11px] font-medium uppercase tracking-wide inline-block ${isLow ? 'bg-rose-100 text-rose-700 border border-rose-200' : 'bg-green-100 text-green-700 border border-green-200'}`}>
-                          {isLow ? 'Critical' : 'Healthy'}
-                        </span>
+                        <div className="flex flex-col gap-1 items-start">
+                          <span className={`px-2 py-1 rounded text-[11px] font-medium uppercase tracking-wide inline-block ${isLow ? 'bg-rose-100 text-rose-700 border border-rose-200' : 'bg-green-100 text-green-700 border border-green-200'}`}>
+                            {isLow ? 'Critical' : 'Healthy'}
+                          </span>
+                          {(item as any).tallyStatus && <TallySyncBadge status={(item as any).tallyStatus} />}
+                        </div>
                       </td>
                       <td className="px-6 py-4 text-[13px] font-medium text-gray-500">₹{item.unitCost.toLocaleString()}</td>
                       <td className="px-6 py-4 text-[13px] font-medium text-gray-900">₹{(item.quantity * item.unitCost).toLocaleString()}</td>

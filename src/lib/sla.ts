@@ -18,6 +18,7 @@ export interface SLATier {
   deviceType: string;   // e.g. "Phone", "Laptop", "Tablet"
   warningHours: number; // e.g. 24
   criticalHours: number; // e.g. 48
+  taxRate?: number;     // e.g. 18
 }
 
 export type SLAStatusLevel = 'ok' | 'warning' | 'breached';
@@ -36,15 +37,15 @@ export const SLA_TIERS_KEY = 'fixhub_sla_tiers';
 
 // ── Default tiers ─────────────────────────────────────────────────────────────
 export const DEFAULT_SLA_TIERS: SLATier[] = [
-  { deviceType: 'Phone',    warningHours: 24,  criticalHours: 48  },
-  { deviceType: 'Laptop',   warningHours: 48,  criticalHours: 72  },
-  { deviceType: 'Tablet',   warningHours: 36,  criticalHours: 60  },
-  { deviceType: 'Desktop',  warningHours: 48,  criticalHours: 96  },
-  { deviceType: 'Other',    warningHours: 48,  criticalHours: 72  },
+  { deviceType: 'Phone',    warningHours: 24,  criticalHours: 48,  taxRate: 18 },
+  { deviceType: 'Laptop',   warningHours: 48,  criticalHours: 72,  taxRate: 18 },
+  { deviceType: 'Tablet',   warningHours: 36,  criticalHours: 60,  taxRate: 18 },
+  { deviceType: 'Desktop',  warningHours: 48,  criticalHours: 96,  taxRate: 18 },
+  { deviceType: 'Other',    warningHours: 48,  criticalHours: 72,  taxRate: 18 },
 ];
 
 // ── Fallback tier for unknown device types ────────────────────────────────────
-const FALLBACK_TIER: SLATier = { deviceType: 'Other', warningHours: 48, criticalHours: 72 };
+const FALLBACK_TIER: SLATier = { deviceType: 'Other', warningHours: 48, criticalHours: 72, taxRate: 18 };
 
 // ── Persistence helpers ───────────────────────────────────────────────────────
 export function loadSLATiers(): SLATier[] {

@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import {
   CustomerCreateSchema,
+  CustomerUpdateSchema,
   JobCreateSchema,
   JobUpdateSchema,
-  SaleItemSchema
+  JobPatchSchema,
+  SaleItemSchema,
+  SaleCreateSchema,
+  validateBody
 } from './validation';
 
 describe('Validation Schemas', () => {
@@ -137,6 +142,135 @@ describe('Validation Schemas', () => {
       if (parsed.success) {
         expect(parsed.data.quantity).toBe(3);
         expect(parsed.data.unitPrice).toBe(10.5);
+      }
+    });
+  });
+
+  describe('CustomerUpdateSchema', () => {
+    it('passes with all fields optional', () => {
+      const parsed = CustomerUpdateSchema.safeParse({});
+      expect(parsed.success).toBe(true);
+    });
+
+    it('validates and trims fields if provided', () => {
+      const update = {
+        name: '  Alex Morgan  ',
+        phone: ' +12345678901 ',
+        email: ' ALEX@EXAMPLE.COM ',
+      };
+      const parsed = CustomerUpdateSchema.safeParse(update);
+      expect(parsed.success).toBe(true);
+      if (parsed.success) {
+        expect(parsed.data.name).toBe('Alex Morgan');
+        expect(parsed.data.phone).toBe('+12345678901');
+        expect(parsed.data.email).toBe('alex@example.com');
+      }
+    });
+
+    it('rejects invalid email formats', () => {
+      const parsed = CustomerUpdateSchema.safeParse({ email: 'bad-email' });
+      expect(parsed.success).toBe(false);
+    });
+  });
+
+  describe('JobPatchSchema', () => {
+    it('accepts valid statuses In Progress and Completed', () => {
+      const p1 = JobPatchSchema.safeParse({ status: 'In Progress' });
+      expect(p1.success).toBe(true);
+
+      const p2 = JobPatchSchema.safeParse({ status: 'Completed' });
+      expect(p2.success).toBe(true);
+    });
+
+    it('rejects other statuses like New or Assigned', () => {
+      const p1 = JobPatchSchema.safeParse({ status: 'New' });
+      expect(p1.success).toBe(false);
+
+      const p2 = JobPatchSchema.safeParse({ status: 'Assigned' });
+      expect(p2.success).toBe(false);
+    });
+
+    it('accepts checklist items and repair notes', () => {
+      const payload = {
+        repairNotes: 'Replaced thermal paste',
+        checklist: [{ id: '1', text: 'Clean fans', done: true }],
+      };
+      const parsed = JobPatchSchema.safeParse(payload);
+      expect(parsed.success).toBe(true);
+    });
+  });
+
+  describe('SaleCreateSchema', () => {
+    it('accepts valid sale payload', () => {
+      const payload = {
+        companyName: 'Acme Corp',
+        contactName: 'John Doe',
+        phone: '1234567890',
+        items: [{ inventoryItemId: 'inv-123', quantity: 2, unitPrice: 100 }],
+      };
+      const parsed = SaleCreateSchema.safeParse(payload);
+      expect(parsed.success).toBe(true);
+    });
+
+    it('rejects empty items list', () => {
+      const payload = {
+        companyName: 'Acme Corp',
+        contactName: 'John Doe',
+        phone: '1234567890',
+        items: [],
+      };
+      const parsed = SaleCreateSchema.safeParse(payload);
+      expect(parsed.success).toBe(false);
+    });
+  });
+
+  describe('validateBody Helper', () => {
+    const schema = z.object({
+      name: z.string(),
+      age: z.number().optional(),
+    });
+
+    it('returns success and parsed data for valid request bodies', async () => {
+      const mockReq = {
+        json: async () => ({ name: 'Alice', age: 30 }),
+      } as unknown as Request;
+
+      const result = await validateBody(mockReq, schema);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).toEqual({ name: 'Alice', age: 30 });
+      }
+    });
+
+    it('returns errorResponse for validation failure', async () => {
+      const mockReq = {
+        json: async () => ({ age: 30 }), // missing 'name'
+      } as unknown as Request;
+
+      const result = await validateBody(mockReq, schema);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.errorResponse).toBeDefined();
+        expect(result.errorResponse.status).toBe(400);
+        
+        const body = await result.errorResponse.json();
+        expect(body.error).toBeDefined();
+      }
+    });
+
+    it('returns errorResponse for malformed JSON body', async () => {
+      const mockReq = {
+        json: async () => {
+          throw new Error('JSON parse error');
+        },
+      } as unknown as Request;
+
+      const result = await validateBody(mockReq, schema);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.errorResponse.status).toBe(400);
+        const body = await result.errorResponse.json();
+        expect(body.error).toBe('Malformed or missing JSON body.');
       }
     });
   });

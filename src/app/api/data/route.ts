@@ -187,7 +187,7 @@ export async function GET(request: Request) {
                 jobs: myJobs.map(mapJob),
                 partRequests: allPartRequests.map(mapPartRequest),
                 // Expose limited inventory data to engineers for part autocomplete
-                inventory: allInventory.map((i) => ({
+                inventory: allInventory.map((i: any) => ({
                     id: i.id,
                     name: i.name,
                     category: i.category,
@@ -246,6 +246,10 @@ export async function GET(request: Request) {
             const combinedInventory = Array.from(new Map([...mappedCritical, ...mappedNormal].map(i => [i.id, i])).values());
             const lowStockCount = Number(lowStockCountResult?.[0]?.count ?? 0);
 
+            const { getDeploymentRole } = await import('@/lib/branchContext');
+            const isHQVal = getDeploymentRole() === 'hq';
+            const branches = isHQVal ? await prisma.branch.findMany({ orderBy: { name: 'asc' } }) : [];
+
             return NextResponse.json({
                 users: engineers.map(mapUser),
                 customers: customers.map(mapCustomer),
@@ -255,6 +259,8 @@ export async function GET(request: Request) {
                 inventory: combinedInventory,
                 notifications: notifications.map(mapNotification),
                 sales: await fetchSalesWithItems(100),
+                isHQ: isHQVal,
+                branches,
                 stats: {
                     totalCompletedJobs,
                     totalPendingJobs,
@@ -265,6 +271,7 @@ export async function GET(request: Request) {
                     totalRevenue: 0, // Not shared with reception
                 }
             });
+
         }
 
         // ── Admin: full data ──────────────────────────────────────
@@ -313,6 +320,10 @@ export async function GET(request: Request) {
         const lowStockCount = Number(lowStockCountResult?.[0]?.count ?? 0);
         const totalRevenue = Number(totalRevenueJobs?.[0]?.sum ?? 0) + Number(totalRevenueSales?.[0]?.sum ?? 0);
 
+        const { getDeploymentRole } = await import('@/lib/branchContext');
+        const isHQVal = getDeploymentRole() === 'hq';
+        const branches = isHQVal ? await prisma.branch.findMany({ orderBy: { name: 'asc' } }) : [];
+
         return NextResponse.json({
             users: users.map(mapUser),
             customers: customers.map(mapCustomer),
@@ -322,6 +333,8 @@ export async function GET(request: Request) {
             inventory: combinedInventory,
             notifications: notifications.map(mapNotification),
             sales: await fetchSalesWithItems(100),
+            isHQ: isHQVal,
+            branches,
             stats: {
                 totalCompletedJobs,
                 totalPendingJobs,
@@ -337,4 +350,4 @@ export async function GET(request: Request) {
         console.error('[api/data]', error);
         return NextResponse.json({ error: 'Failed to fetch data.' }, { status: 500 });
     }
-}
+}

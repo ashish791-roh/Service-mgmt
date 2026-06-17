@@ -49,4 +49,34 @@ describe('Part inventory assessment', () => {
       shouldAwaitStock: false,
     });
   });
+
+  it('coerces string requestedQuantity into number correctly', () => {
+    const result = assessInventoryStatus({ quantity: 5, minQuantity: 2 }, '3' as unknown as number);
+    expect(result).toEqual({
+      inventoryStatus: 'available',
+      inventoryQuantity: 5,
+      inventoryMinStock: 2,
+      shouldAwaitStock: false,
+    });
+  });
+
+  it('handles negative or zero requestedQuantity correctly', () => {
+    // If requested is 0, it should be available (since quantity 5 >= 0 and 5 >= minQuantity 2)
+    const resultZero = assessInventoryStatus({ quantity: 5, minQuantity: 2 }, 0);
+    expect(resultZero.inventoryStatus).toBe('available');
+
+    // If requested is negative, it should also be available
+    const resultNeg = assessInventoryStatus({ quantity: 5, minQuantity: 2 }, -10);
+    expect(resultNeg.inventoryStatus).toBe('available');
+  });
+
+  it('handles floating point stock values', () => {
+    const resultFloat = assessInventoryStatus({ quantity: 1.5, minQuantity: 0.5 }, 1.0);
+    expect(resultFloat).toEqual({
+      inventoryStatus: 'available',
+      inventoryQuantity: 1.5,
+      inventoryMinStock: 0.5,
+      shouldAwaitStock: false,
+    });
+  });
 });

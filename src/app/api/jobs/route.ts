@@ -6,6 +6,8 @@ import { writeAuditLog } from '@/lib/auditLog';
 import { rateLimiter, getClientIP, RATE_LIMITS } from '@/lib/rateLimit';
 import { validateBody, JobCreateSchema } from '@/lib/validation';
 import type { Prisma } from '@prisma/client';
+import { captureChange } from '@/lib/branchSync';
+import { withLocalBranchId } from '@/lib/branchContext';
 
 // GET /api/jobs — admin, reception, engineer
 export async function GET(request: Request) {
@@ -61,14 +63,39 @@ export async function GET(request: Request) {
                 orderBy: { createdAt: 'desc' },
                 take: limit,
                 skip: (page - 1) * limit,
-                include: { activities: true, photos: true, customer: true, device: true },
+                include: { customer: true, device: true },
             }),
             prisma.job.count({ where }),
         ]);
 
+        const jobIds = jobs.map((j: any) => j.id);
+        const queueItems = prisma.tallyQueueItem
+            ? await prisma.tallyQueueItem.findMany({
+                where: {
+                    entityType: 'job',
+                    entityId: { in: jobIds },
+                },
+                select: {
+                    entityId: true,
+                    status: true,
+                },
+                orderBy: {
+                    createdAt: 'desc',
+                },
+            })
+            : [];
+
+        const statusMap = new Map<string, string>();
+        for (const item of queueItems) {
+            if (!statusMap.has(item.entityId)) {
+                statusMap.set(item.entityId, item.status);
+            }
+        }
+
         return NextResponse.json({
             jobs: jobs.map((job: any) => ({
                 ...job,
+                tallyStatus: statusMap.get(job.id) || null,
                 problemDescription: job.problemDesc,
                 assignedEngineerId: job.engineerId,
                 estimatedCost: job.estimatedCost ?? 0,
@@ -76,14 +103,14 @@ export async function GET(request: Request) {
                 createdAt: job.createdAt.toISOString(),
                 updatedAt: job.updatedAt.toISOString(),
                 completedAt: job.completedAt?.toISOString() ?? undefined,
-                activities: job.activities.map((a: any) => ({
+                activities: job.activities ? job.activities.map((a: any) => ({
                     ...a,
                     createdAt: a.createdAt.toISOString(),
-                })),
-                photos: job.photos.map((p: any) => ({
+                })) : [],
+                photos: job.photos ? job.photos.map((p: any) => ({
                     ...p,
                     createdAt: p.createdAt.toISOString(),
-                })),
+                })) : [],
             })),
             total,
             page,
@@ -133,7 +160,7 @@ export async function POST(request: Request) {
         const invoiceNumber = `INV-${year}-${String(jobCount + 1).padStart(4, '0')}`;
 
         const job = await prisma.job.create({
-            data: {
+            data: withLocalBranchId({
                 invoiceNumber,
                 customerId: body.customerId,
                 deviceId: body.deviceId,
@@ -144,15 +171,34 @@ export async function POST(request: Request) {
                 advanceAmount: body.advanceAmount,
                 linkedJobId: body.linkedJobId || null,
                 activities: {
-                    create: {
+                    create: withLocalBranchId({
                         userId: auth.user.id,
                         action: 'Created Job',
                         details: `Job created with status ${jobStatus} and Invoice Number ${invoiceNumber}`
-                    }
+                    })
                 }
-            },
+            }),
             include: { activities: true }
         });
+
+        // ── Outbox Sync ──────────────────────────────────────────────
+        captureChange({
+            entityType: 'Job',
+            entityId: job.id,
+            action: 'create',
+            payload: job,
+        }).catch(err => console.error('[SyncOutbox] Job create error:', err));
+
+        if (job.activities) {
+            for (const act of job.activities) {
+                captureChange({
+                    entityType: 'JobActivity',
+                    entityId: act.id,
+                    action: 'create',
+                    payload: act,
+                }).catch(err => console.error('[SyncOutbox] JobActivity create error:', err));
+            }
+        }
 
         // ── Audit log — job created ─────────────────────────────────
         writeAuditLog({
@@ -172,13 +218,21 @@ export async function POST(request: Request) {
 
         // ── Internal engineer notification (unchanged) ────────────
         if (job.engineerId) {
-            await prisma.notification.create({
-                data: {
+            const notif = await prisma.notification.create({
+                data: withLocalBranchId({
                     userId: job.engineerId,
                     message: `New job assigned: ${job.problemDesc.substring(0, 60)}`,
                     jobId: job.id,
-                },
+                }),
             });
+            if (notif) {
+                captureChange({
+                    entityType: 'Notification',
+                    entityId: notif.id,
+                    action: 'create',
+                    payload: notif,
+                }).catch(err => console.error('[SyncOutbox] Notification create error:', err));
+            }
         }
 
         // ── Customer notification on job creation ─────────────────

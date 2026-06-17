@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server';
+import { addToTallyQueue } from '@/lib/tallyQueue';
 import { prisma } from '@/lib/prisma';
 import { requireSession, LIMITS, checkLengths } from '@/lib/auth';
 import { writeAuditLog } from '@/lib/auditLog';
 import { rateLimiter, getClientIP, RATE_LIMITS } from '@/lib/rateLimit';
 import type { InventoryItem, Prisma } from '@prisma/client';
+import { captureChange } from '@/lib/branchSync';
+import { withLocalBranchId } from '@/lib/branchContext';
+
 
 // Helper: normalise DB row → frontend InventoryItem shape
 function mapItem(i: InventoryItem) {
@@ -74,12 +78,39 @@ export async function GET(request: Request) {
         const lowStockCount = Number(lowStockCountResult?.[0]?.count ?? 0);
         const totalValue = Number(totalValueResult?.[0]?.sum ?? 0);
 
+        const itemIds = items.map((i: any) => i.id);
+        const queueItems = prisma.tallyQueueItem
+            ? await prisma.tallyQueueItem.findMany({
+                where: {
+                    entityType: 'inventory',
+                    entityId: { in: itemIds },
+                },
+                select: {
+                    entityId: true,
+                    status: true,
+                },
+                orderBy: {
+                    createdAt: 'desc',
+                },
+            })
+            : [];
+
+        const statusMap = new Map<string, string>();
+        for (const item of queueItems) {
+            if (!statusMap.has(item.entityId)) {
+                statusMap.set(item.entityId, item.status);
+            }
+        }
+
         return NextResponse.json({
-            inventory: items.map(mapItem),
+            inventory: items.map((i: any) => ({
+                ...mapItem(i),
+                tallyStatus: statusMap.get(i.id) || null,
+            })),
             total,
             page,
             limit,
-            categories: ['All', ...categoriesResult.map(c => c.category)],
+            categories: ['All', ...categoriesResult.map((c: any) => c.category)],
             metrics: {
                 totalItems: await prisma.inventoryItem.count(),
                 lowStockCount,
@@ -130,7 +161,7 @@ export async function POST(request: Request) {
         const sku = body.sku || `SKU-${body.name.replace(/\s+/g, '-').toUpperCase()}-${Date.now()}`;
 
         const item = await prisma.inventoryItem.create({
-            data: {
+            data: withLocalBranchId({
                 name: body.name.trim(),
                 sku,
                 category: body.category.trim(),
@@ -138,8 +169,24 @@ export async function POST(request: Request) {
                 minQuantity: Number(body.minStock) || 5,
                 unitPrice: parseFloat(body.unitCost),
                 location: body.location?.trim() || null,
-            },
+            }),
         });
+
+        // ── Outbox Sync ──────────────────────────────────────────────
+        captureChange({
+            entityType: 'InventoryItem',
+            entityId: item.id,
+            action: 'create',
+            payload: item,
+        }).catch(err => console.error('[SyncOutbox] InventoryItem create error:', err));
+
+
+        await addToTallyQueue({
+            entityType: 'inventory',
+            entityId: item.id,
+            actionType: 'sync_stock',
+            priority: 0,
+        }).catch(err => console.error('[Tally Auto-Queue POST Item] Failed:', err));
 
         writeAuditLog({
             actor: { id: auth.user.id, name: auth.user.name, role: auth.user.role },
@@ -203,6 +250,22 @@ export async function PUT(request: Request) {
                 data: updateData,
             });
 
+            // ── Outbox Sync ──────────────────────────────────────────────
+            captureChange({
+                entityType: 'InventoryItem',
+                entityId: item.id,
+                action: 'update',
+                payload: item,
+            }).catch(err => console.error('[SyncOutbox] InventoryItem update error:', err));
+
+
+            await addToTallyQueue({
+                entityType: 'inventory',
+                entityId: item.id,
+                actionType: 'sync_stock',
+                priority: 0,
+            }).catch(err => console.error('[Tally Auto-Queue PUT Item update] Failed:', err));
+
             writeAuditLog({
                 actor: { id: auth.user.id, name: auth.user.name, role: auth.user.role },
                 action: 'update', entity: 'inventory', entityId: item.id,
@@ -229,6 +292,22 @@ export async function PUT(request: Request) {
             where: { id: body.id },
             data: { quantity: Math.round(qty) },
         });
+
+        // ── Outbox Sync ──────────────────────────────────────────────
+        captureChange({
+            entityType: 'InventoryItem',
+            entityId: item.id,
+            action: 'update',
+            payload: item,
+        }).catch(err => console.error('[SyncOutbox] InventoryItem update error:', err));
+
+
+        await addToTallyQueue({
+            entityType: 'inventory',
+            entityId: item.id,
+            actionType: 'sync_stock',
+            priority: 0,
+        }).catch(err => console.error('[Tally Auto-Queue PUT Item qty] Failed:', err));
 
         writeAuditLog({
             actor: { id: auth.user.id, name: auth.user.name, role: auth.user.role },
@@ -272,6 +351,15 @@ export async function DELETE(request: Request) {
         }
 
         const item = await prisma.inventoryItem.delete({ where: { id } });
+
+        // ── Outbox Sync ──────────────────────────────────────────────
+        captureChange({
+            entityType: 'InventoryItem',
+            entityId: id,
+            action: 'delete',
+            payload: {},
+        }).catch(err => console.error('[SyncOutbox] InventoryItem delete error:', err));
+
 
         writeAuditLog({
             actor: { id: auth.user.id, name: auth.user.name, role: auth.user.role },

@@ -194,7 +194,7 @@ export async function queryAuditLogs(
 
     return {
         total,
-        rows: rows.map(r => ({
+        rows: rows.map((r: any) => ({
             ...r,
             timestamp: r.timestamp.toISOString(),
         })),

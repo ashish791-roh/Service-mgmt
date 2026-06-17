@@ -27,10 +27,12 @@ vi.mock('@/lib/prisma', () => ({
     tallyLedger: {
       deleteMany: vi.fn(),
       createMany: vi.fn(),
+      findFirst: vi.fn(),
     },
     tallyStockItem: {
       deleteMany: vi.fn(),
       createMany: vi.fn(),
+      findFirst: vi.fn(),
     },
     job: {
       findUnique: vi.fn(),
@@ -38,6 +40,12 @@ vi.mock('@/lib/prisma', () => ({
     },
     user: {
       findFirst: vi.fn(),
+    },
+    sLAConfig: {
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
+    businessSettings: {
+      findUnique: vi.fn(),
     },
     $transaction: vi.fn().mockImplementation((arr) => Promise.all(arr)),
   },
@@ -47,6 +55,7 @@ vi.mock('@/lib/auditLog', () => ({
   writeAuditLog: vi.fn().mockResolvedValue({}),
 }));
 
+import { writeAuditLog } from '@/lib/auditLog';
 import {
   findCustomerName,
   findInvoiceNumber,
@@ -61,7 +70,13 @@ import {
   validateGstinChecksum,
   syncTallyMasters,
   processTallyRetryQueue,
-  pushJobToTally
+  pushJobToTally,
+  pushToTally,
+  suggestLedgerMapping,
+  suggestStockMapping,
+  getTallySettings,
+  saveTallySettings,
+  getDefaultTallySettings
 } from './tally';
 
 describe('Tally Integration Library', () => {
@@ -83,6 +98,12 @@ describe('Tally Integration Library', () => {
     it('should capture names from "customer" keyword correctly', () => {
       const text = 'CUSTOMER: John Doe';
       expect(findCustomerName(text)).toBe('John Doe');
+    });
+
+    it('should capture names from "buyer", "consignee", and "client" correctly', () => {
+      expect(findCustomerName('BUYER: Alice')).toBe('Alice');
+      expect(findCustomerName('consignee: Bob')).toBe('Bob');
+      expect(findCustomerName('client: Charlie')).toBe('Charlie');
     });
 
     it('should return null if no keyword is matched', () => {
@@ -109,6 +130,10 @@ describe('Tally Integration Library', () => {
 
     it('should find supplier name', () => {
       expect(findSupplierName('SUPPLIER: Super Parts Inc.')).toBe('Super Parts Inc.');
+      expect(findSupplierName('SELLER: Micro Parts')).toBe('Micro Parts');
+      expect(findSupplierName('billed from: Tech Solutions')).toBe('Tech Solutions');
+      expect(findSupplierName('vendor: Global Dist')).toBe('Global Dist');
+      expect(findSupplierName('service provider: Fast Fix')).toBe('Fast Fix');
     });
   });
 
@@ -514,10 +539,402 @@ describe('Tally Integration Library', () => {
     });
   });
 
+  describe('Tally Push (pushToTally)', () => {
+    const actor = { id: 'user-123', name: 'Test User', role: 'admin' };
+    const xml = '<ENVELOPE>mock-xml</ENVELOPE>';
+    const documentId = 'doc-abc-123';
+
+    it('should return failure if sync is disabled', async () => {
+      const settings = {
+        enabled: false,
+        host: 'localhost',
+        port: 9000,
+        companyName: 'Test Company',
+      };
+      const result = await pushToTally(xml, settings, actor, documentId);
+      expect(result).toEqual({ success: false, message: 'Tally sync is disabled.', response: null });
+    });
+
+    it('should write audit log and succeed in mock mode', async () => {
+      const settings = {
+        enabled: true,
+        host: 'localhost',
+        port: 9000,
+        companyName: 'Test Company',
+        mockMode: true,
+      };
+      vi.mocked(writeAuditLog).mockClear();
+
+      const result = await pushToTally(xml, settings, actor, documentId);
+
+      expect(result.success).toBe(true);
+      expect(result.message).toContain('Mock push to Tally completed successfully');
+      expect(result.response).toBe('MOCK_TALLY_OK');
+      expect(writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+        actor,
+        action: 'push',
+        entity: 'tallyDocument',
+        entityId: documentId,
+        newValue: 'Mock push to Tally completed',
+      }));
+    });
+
+    it('should push to real URL and handle success response', async () => {
+      const settings = {
+        enabled: true,
+        host: 'tally-server',
+        port: 9000,
+        companyName: 'Test Company',
+        mockMode: false,
+      };
+      vi.mocked(writeAuditLog).mockClear();
+
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: async () => 'Tally Response XML',
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const result = await pushToTally(xml, settings, actor, documentId);
+
+      expect(result.success).toBe(true);
+      expect(result.message).toBe('TallyPrime accepted the XML payload.');
+      expect(result.response).toBe('Tally Response XML');
+      expect(fetchMock).toHaveBeenCalledWith('http://tally-server:9000', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/xml' },
+        body: xml,
+        signal: expect.any(AbortSignal),
+      });
+      expect(writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+        actor,
+        action: 'push',
+        entity: 'tallyDocument',
+        entityId: documentId,
+        newValue: 'Tally Response XML',
+      }));
+    });
+
+    it('should handle non-ok server response status', async () => {
+      const settings = {
+        enabled: true,
+        host: 'tally-server',
+        port: 9000,
+        companyName: 'Test Company',
+        mockMode: false,
+      };
+      vi.mocked(writeAuditLog).mockClear();
+
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        text: async () => 'Internal Server Error',
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const result = await pushToTally(xml, settings, actor, documentId);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toBe('Push failed (Tally returned error nodes or status 500).');
+      expect(result.response).toBe('Internal Server Error');
+      expect(writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+        newValue: 'Internal Server Error',
+        meta: expect.objectContaining({ status: 500 }),
+      }));
+    });
+
+    it('should handle fetch exception gracefully', async () => {
+      const settings = {
+        enabled: true,
+        host: 'tally-server',
+        port: 9000,
+        companyName: 'Test Company',
+        mockMode: false,
+      };
+      vi.mocked(writeAuditLog).mockClear();
+
+      const fetchMock = vi.fn().mockRejectedValue(new Error('Connection timed out'));
+      vi.stubGlobal('fetch', fetchMock);
+
+      const result = await pushToTally(xml, settings, actor, documentId);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('Push failed: Connection timed out');
+      expect(result.response).toBeNull();
+      expect(writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+        newValue: 'Connection timed out',
+      }));
+    });
+  });
+
+  describe('Ledger and Stock Mapping Suggestions', () => {
+    it('suggestLedgerMapping should suggest mapped Tally ledger if matched', async () => {
+      const prismaMock = prisma as any;
+      prismaMock.tallyLedger.findFirst.mockResolvedValue({ name: 'Bob Builder Ledger' });
+
+      const suggestion = await suggestLedgerMapping('bob builder');
+      expect(suggestion).toEqual({
+        suggestedLedger: 'Bob Builder Ledger',
+        ledgerConfidence: 0.95,
+      });
+    });
+
+    it('suggestLedgerMapping should suggest Customer name if customer match found', async () => {
+      const prismaMock = prisma as any;
+      prismaMock.tallyLedger.findFirst.mockResolvedValue(null);
+      prismaMock.customer.findMany.mockResolvedValue([{ name: 'Bob Builder Customer' }]);
+
+      const suggestion = await suggestLedgerMapping('bob builder');
+      expect(suggestion).toEqual({
+        suggestedLedger: 'Bob Builder Customer',
+        ledgerConfidence: 0.92,
+      });
+    });
+
+    it('suggestLedgerMapping should fall back if no match found', async () => {
+      const prismaMock = prisma as any;
+      prismaMock.tallyLedger.findFirst.mockResolvedValue(null);
+      prismaMock.customer.findMany.mockResolvedValue([]);
+
+      const suggestion = await suggestLedgerMapping('Anonymous');
+      expect(suggestion).toEqual({
+        suggestedLedger: 'Anonymous Ledger',
+        ledgerConfidence: 0.48,
+      });
+    });
+
+    it('suggestStockMapping should suggest mapped Tally stock item if matched', async () => {
+      const prismaMock = prisma as any;
+      prismaMock.tallyStockItem.findFirst.mockResolvedValue({ itemName: 'Keyboard V2' });
+
+      const suggestion = await suggestStockMapping('keyboard');
+      expect(suggestion).toEqual({
+        suggestedStockItem: 'Keyboard V2',
+        stockConfidence: 0.95,
+      });
+    });
+
+    it('suggestStockMapping should suggest inventory item if match found', async () => {
+      const prismaMock = prisma as any;
+      prismaMock.tallyStockItem.findFirst.mockResolvedValue(null);
+      prismaMock.inventoryItem.findMany.mockResolvedValue([{ name: 'Standard Keyboard' }]);
+
+      const suggestion = await suggestStockMapping('keyboard');
+      expect(suggestion).toEqual({
+        suggestedStockItem: 'Standard Keyboard',
+        stockConfidence: 0.9,
+      });
+    });
+
+    it('suggestStockMapping should fall back if no match found', async () => {
+      const prismaMock = prisma as any;
+      prismaMock.tallyStockItem.findFirst.mockResolvedValue(null);
+      prismaMock.inventoryItem.findMany.mockResolvedValue([]);
+
+      const suggestion = await suggestStockMapping('Unknown Part');
+      expect(suggestion).toEqual({
+        suggestedStockItem: 'Unknown Part (new stock item)',
+        stockConfidence: 0.35,
+      });
+    });
+  });
+
+  describe('Tally Settings Get & Save', () => {
+    it('getTallySettings should create and return default settings if row does not exist', async () => {
+      const prismaMock = prisma as any;
+      prismaMock.tallySyncSetting.findUnique.mockResolvedValue(null);
+      prismaMock.tallySyncSetting.create.mockImplementation(({ data }: any) => Promise.resolve(data));
+
+      const settings = await getTallySettings();
+      expect(settings).toEqual(getDefaultTallySettings());
+      expect(prismaMock.tallySyncSetting.create).toHaveBeenCalled();
+    });
+
+    it('getTallySettings should return existing settings', async () => {
+      const prismaMock = prisma as any;
+      const existing = {
+        enabled: true,
+        host: 'tally-host',
+        port: 8080,
+        companyName: 'Company Inc',
+        syncStatus: 'synced',
+        lastTestedAt: new Date('2026-06-05T00:00:00.000Z'),
+        mockMode: true,
+        autoPushOnApproval: false,
+      };
+      prismaMock.tallySyncSetting.findUnique.mockResolvedValue(existing);
+
+      const settings = await getTallySettings();
+      expect(settings).toEqual({
+        ...existing,
+        lastTestedAt: '2026-06-05T00:00:00.000Z',
+      });
+    });
+
+    it('saveTallySettings should call upsert with formatted data', async () => {
+      const prismaMock = prisma as any;
+      prismaMock.tallySyncSetting.upsert.mockResolvedValue({});
+
+      const partialSettings = {
+        enabled: true,
+        host: 'new-host',
+      };
+      await saveTallySettings(partialSettings);
+
+      expect(prismaMock.tallySyncSetting.upsert).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: 'tally-sync-settings' },
+        create: expect.objectContaining({
+          id: 'tally-sync-settings',
+          enabled: true,
+          host: 'new-host',
+        }),
+        update: expect.objectContaining({
+          enabled: true,
+          host: 'new-host',
+        }),
+      }));
+    });
+  });
+
   describe('Temp Directory location', () => {
     it('should use os.tmpdir() instead of project folder', () => {
       const targetDir = path.join(os.tmpdir(), 'tally-temp');
       expect(targetDir).not.toContain('.next');
+    });
+  });
+
+  describe('Tally Integration Improvements Unit Tests', () => {
+    it('should generate deterministic GUIDs based on document ID', () => {
+      const mockResult: TallyExtractionResult = {
+        invoiceNumber: 'INV-1234',
+        invoiceDate: '2026-06-05',
+        gstNumber: '29ABCDE1234F1Z5',
+        customerName: 'Acme Corp',
+        supplierName: 'FixHub',
+        paymentMode: 'Cash',
+        totalAmount: 100,
+        confidence: 0.99,
+        items: []
+      };
+
+      const docId = 'fixed-test-document-id';
+      const xml1 = buildVoucherXml(mockResult, 'sales', docId);
+      const xml2 = buildVoucherXml(mockResult, 'sales', docId);
+
+      // Verify that the XMLs are completely identical (deterministic GUID)
+      expect(xml1).toBe(xml2);
+
+      // Check if GUID node is present and holds a standard UUID length/format
+      const match = xml1.match(/<GUID>([^<]+)<\/GUID>/);
+      expect(match).not.toBeNull();
+      const guid = match![1];
+      expect(guid).toHaveLength(36);
+      expect(guid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    });
+
+    it('should parse Tally XML response for error nodes', async () => {
+      const settings = {
+        enabled: true,
+        host: 'tally-server',
+        port: 9000,
+        companyName: 'Test Company',
+        mockMode: false,
+      };
+      const actor = { id: 'admin-1', name: 'Test Admin', role: 'admin' };
+
+      // Case 1: Tally response with LINEERROR
+      const responseXmlLineError = `
+        <ENVELOPE>
+          <HEADER><VERSION>1</VERSION></HEADER>
+          <BODY>
+            <LINEERROR>Ledger 'Custom Customer' does not exist!</LINEERROR>
+          </BODY>
+        </ENVELOPE>
+      `;
+      const fetchMock1 = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: async () => responseXmlLineError,
+      });
+      vi.stubGlobal('fetch', fetchMock1);
+
+      const result1 = await pushToTally('<xml></xml>', settings, actor, 'doc-1');
+      expect(result1.success).toBe(false);
+      expect(result1.message).toContain("Tally error: Ledger 'Custom Customer' does not exist!");
+
+      // Case 2: Tally response with ERRORS count
+      const responseXmlErrorsCount = `
+        <ENVELOPE>
+          <HEADER><VERSION>1</VERSION></HEADER>
+          <BODY>
+            <RESPONSE>
+              <ERRORS>2</ERRORS>
+            </RESPONSE>
+          </BODY>
+        </ENVELOPE>
+      `;
+      const fetchMock2 = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: async () => responseXmlErrorsCount,
+      });
+      vi.stubGlobal('fetch', fetchMock2);
+
+      const result2 = await pushToTally('<xml></xml>', settings, actor, 'doc-2');
+      expect(result2.success).toBe(false);
+      expect(result2.message).toContain("Push failed (Tally returned error nodes or status 200).");
+    });
+
+    it('should capture names from multiline address text during OCR parsing', () => {
+      const text = `
+        BUYER:
+        Acme Global Industries
+        123 Corporate Way, Tech Park
+        Bangalore, Karnataka - 560103
+      `;
+      expect(findCustomerName(text)).toBe('Acme Global Industries');
+
+      const textSupplier = `
+        SELLER:
+        Super Parts Distributor Ltd.
+        Industrial Area, Phase II
+        Delhi - 110020
+      `;
+      expect(findSupplierName(textSupplier)).toBe('Super Parts Distributor Ltd.');
+    });
+
+    it('should validate GST checksums correctly', () => {
+      expect(validateGstinChecksum('29AAAAA0000A1ZY')).toBe(true);
+      expect(validateGstinChecksum('27ABCDE1234F1Z5')).toBe(false); // Invalid checksum
+      expect(validateGstinChecksum('12345')).toBe(false); // Too short
+    });
+
+    it('should fetch business settings from database with fallback', async () => {
+      const { getBusinessConfig } = await import('./businessConfigServer');
+      const prismaMock = prisma as any;
+
+      // Case 1: Custom DB settings configured
+      prismaMock.businessSettings.findUnique.mockResolvedValueOnce({
+        shopName: 'Custom Shop Name',
+        tagline: 'Custom Tagline',
+        address: 'Custom Address',
+        phone: '1234567890',
+        email: 'custom@shop.com',
+        gstin: '29ABCDE1234F1Z5',
+        taxRate: 12,
+        taxLabel: 'GST',
+      });
+
+      const config1 = await getBusinessConfig();
+      expect(config1.shopName).toBe('Custom Shop Name');
+      expect(config1.taxRate).toBe(12);
+
+      // Case 2: DB returns null (should fallback to default info)
+      prismaMock.businessSettings.findUnique.mockResolvedValueOnce(null);
+      const config2 = await getBusinessConfig();
+      expect(config2.shopName).toBe('FixHub');
+      expect(config2.taxRate).toBe(18);
     });
   });
 });

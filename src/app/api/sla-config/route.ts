@@ -44,7 +44,8 @@ export async function PUT(req: NextRequest) {
       t.deviceType?.trim() &&
       typeof t.warningHours === 'number' &&
       typeof t.criticalHours === 'number' &&
-      t.criticalHours > t.warningHours
+      t.criticalHours > t.warningHours &&
+      (t.taxRate === undefined || typeof t.taxRate === 'number')
     );
 
     if (!valid) {
@@ -62,6 +63,13 @@ export async function PUT(req: NextRequest) {
       update: { tiers: tiersJson },
     });
 
+    // ── HQ Config Broadcast ──────────────────────────────────────
+    const { getDeploymentRole } = await import('@/lib/branchContext');
+    if (getDeploymentRole() === 'hq') {
+      const { createDirective } = await import('@/lib/hqSyncEngine');
+      await createDirective('sla_tiers', { tiers: updated.tiers });
+    }
+
     return NextResponse.json({
       ok: true,
       tiers: updated.tiers as unknown as SLATier[],
@@ -73,4 +81,5 @@ export async function PUT(req: NextRequest) {
       { status: 500 }
     );
   }
+
 }

@@ -1,4 +1,4 @@
-export type Role = 'admin' | 'reception' | 'engineer';
+export type Role = 'admin' | 'reception' | 'engineer' | 'super_admin';
 
 // ── SLA ───────────────────────────────────────────────────────────
 export type { SLATier, SLAStatus, SLAStatusLevel } from '../lib/sla';
@@ -15,6 +15,7 @@ export interface User {
   active: boolean;
   avatar?: string;
   joinedAt: string;
+  branchId?: string;
 }
 
 export interface Customer {
@@ -24,6 +25,7 @@ export interface Customer {
   address: string;
   email?: string;
   createdAt: string;
+  branchId?: string;
 }
 
 export interface Device {
@@ -33,6 +35,7 @@ export interface Device {
   brand: string;
   model: string;
   serialNumber?: string;
+  branchId?: string;
 }
 
 export interface ChecklistItem {
@@ -81,6 +84,7 @@ export interface Job {
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
+  branchId?: string;
 }
 
 /** Inventory availability at the time the part request was submitted */
@@ -103,6 +107,7 @@ export interface PartRequest {
   inventoryQuantity?: number;
   /** Min stock threshold at submission time */
   inventoryMinStock?: number;
+  branchId?: string;
 }
 
 export interface InventoryItem {
@@ -112,6 +117,7 @@ export interface InventoryItem {
   unitCost: number;
   category: string;
   minStock: number;
+  branchId?: string;
 }
 
 export interface SaleItem {
@@ -138,6 +144,7 @@ export interface Sale {
   createdAt: string;
   updatedAt: string;
   items: SaleItem[];
+  branchId?: string;
 }
 
 export interface Notification {
@@ -147,6 +154,7 @@ export interface Notification {
   read: boolean;
   createdAt: string;
   jobId?: string;
+  branchId?: string;
 }
 
 export interface DashboardStats {

@@ -150,13 +150,13 @@ export async function GET(request: Request) {
             take: 20,
         });
 
-        const deviceIds = [...new Set(jobs.map((j) => j.deviceId).filter(Boolean))] as string[];
+        const deviceIds = [...new Set(jobs.map((j: any) => j.deviceId).filter(Boolean))] as string[];
         const devices = await prisma.device.findMany({
             where: { id: { in: deviceIds } },
         });
-        const deviceMap = Object.fromEntries(devices.map((d) => [d.id, d]));
+        const deviceMap = Object.fromEntries(devices.map((d: any) => [d.id, d]));
 
-        const payload = jobs.map((job) => {
+        const payload = jobs.map((job: any) => {
             const device = job.deviceId ? deviceMap[job.deviceId] ?? null : null;
             const eta = computeEta(job.status, job.createdAt, job.completedAt, device?.type);
 

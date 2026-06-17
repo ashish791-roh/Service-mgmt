@@ -3,7 +3,7 @@ import { requireSession } from '@/lib/auth';
 import { getClientIP, rateLimiter, RATE_LIMITS } from '@/lib/rateLimit';
 import { prisma } from '@/lib/prisma';
 import { writeAuditLog } from '@/lib/auditLog';
-import { getTallySettings, buildVoucherXml, pushToTally, scheduleRetryForFailedPush } from '@/lib/tally';
+import { getTallySettings, buildVoucherXml, pushToTally, scheduleRetryForFailedPush, getExtractedData, TallyExtractionResult } from '@/lib/tally';
 
 export async function POST(request: Request) {
   const auth = await requireSession(request, ['admin']);
@@ -21,9 +21,9 @@ export async function POST(request: Request) {
     let doc = await prisma.tallyDocument.findUnique({ where: { id: String(documentId) } });
     if (!doc) return NextResponse.json({ error: 'Document not found.' }, { status: 404 });
 
-    const extracted = extractedData || doc.extractedData;
-    const invoiceNumber = (extracted as any)?.invoiceNumber;
-    const invoiceDate = (extracted as any)?.invoiceDate;
+    const extracted = extractedData ? (extractedData as unknown as TallyExtractionResult) : getExtractedData(doc);
+    const invoiceNumber = extracted?.invoiceNumber;
+    const invoiceDate = extracted?.invoiceDate;
 
     if (action === 'approve' && invoiceNumber && invoiceDate && !force) {
       const duplicate = await prisma.tallyDocument.findFirst({
@@ -87,8 +87,7 @@ export async function POST(request: Request) {
         if (settings.autoPushOnApproval) {
           const actor = { id: auth.user.id, name: auth.user.name, role: auth.user.role };
 
-          // Build XML from extracted data
-          const xml = buildVoucherXml(doc.extractedData as any, doc.voucherType as any);
+          const xml = buildVoucherXml(getExtractedData(doc), doc.voucherType as any);
 
           // Persist xmlPayload for traceability
           await prisma.tallyDocument.update({ where: { id: String(documentId) }, data: { xmlPayload: xml } });

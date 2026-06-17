@@ -35,15 +35,16 @@ export const SLATiersTab: React.FC<SLATiersTabProps> = ({
       {/* Tier table */}
       <div className="space-y-3 mt-2">
         {/* Header row */}
-        <div className="grid grid-cols-[1fr_120px_120px_40px] gap-3 px-1">
+        <div className="grid grid-cols-[1fr_100px_100px_100px_40px] gap-3 px-1">
           <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Device Type</span>
           <span className="text-[11px] font-semibold text-amber-500 uppercase tracking-wide text-center">Warning (h)</span>
           <span className="text-[11px] font-semibold text-red-500 uppercase tracking-wide text-center">Critical (h)</span>
+          <span className="text-[11px] font-semibold text-teal-600 uppercase tracking-wide text-center">GST (%)</span>
           <span />
         </div>
 
         {editTiers.map((tier, idx) => (
-          <div key={idx} className="grid grid-cols-[1fr_120px_120px_40px] gap-3 items-center">
+          <div key={idx} className="grid grid-cols-[1fr_100px_100px_100px_40px] gap-3 items-center">
             <input
               type="text"
               value={tier.deviceType}
@@ -69,6 +70,16 @@ export const SLATiersTab: React.FC<SLATiersTabProps> = ({
                 value={tier.criticalHours}
                 onChange={e => handleTierChange(idx, 'criticalHours', Math.max(tier.warningHours + 1, Number(e.target.value)))}
                 className="w-full bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-[14px] font-bold text-red-900 text-center focus:outline-none focus:ring-2 focus:ring-red-400/40"
+              />
+            </div>
+            <div className="relative">
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={tier.taxRate !== undefined ? tier.taxRate : 18}
+                onChange={e => handleTierChange(idx, 'taxRate', Math.max(0, Number(e.target.value)))}
+                className="w-full bg-teal-50 border border-teal-200 rounded-xl px-3 py-2 text-[14px] font-bold text-teal-900 text-center focus:outline-none focus:ring-2 focus:ring-teal-400/40"
               />
             </div>
             <button

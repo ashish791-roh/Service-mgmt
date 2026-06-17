@@ -5,7 +5,10 @@ import {
   DollarSign, AlertTriangle, ChevronDown, ChevronRight,
   User, Phone, FileText, CheckCircle, Trash2,
 } from 'lucide-react';
+import { TallySyncBadge } from '../components/TallySyncBadge';
 import type { Sale, Customer, User as UserType, InventoryItem, DashboardStats } from '../types';
+
+type SaleWithTally = Sale & { tallyStatus?: string | null };
 
 // ── UI Component Props ───────────────────────────────────────────
 
@@ -390,7 +393,7 @@ const NewSaleModal: React.FC<NewSaleModalProps> = ({ onClose, onCreated }) => {
 
 // ── Sale Row ──────────────────────────────────────────────────────
 
-const SaleRow: React.FC<{ sale: Sale; users: UserType[] }> = ({ sale, users }) => {
+const SaleRow: React.FC<{ sale: SaleWithTally; users: UserType[] }> = ({ sale, users }) => {
   const [expanded, setExpanded] = useState(false);
   const creator = users.find((u: UserType) => u.id === sale.createdById);
 
@@ -406,11 +409,12 @@ const SaleRow: React.FC<{ sale: Sale; users: UserType[] }> = ({ sale, users }) =
         </div>
 
         {/* Sale number */}
-        <div className="w-32 shrink-0">
+        <div className="w-32 shrink-0 flex flex-col gap-1 items-start">
           <span className="inline-flex items-center gap-1.5 bg-teal-50 text-teal-700 border border-teal-200 text-[11px] font-semibold px-2 py-1 rounded-md">
             <ShoppingCart size={11} />
             {sale.saleNumber}
           </span>
+          {sale.tallyStatus && <TallySyncBadge status={sale.tallyStatus} />}
         </div>
 
         {/* Buyer */}

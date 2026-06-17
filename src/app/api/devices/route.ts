@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireSession, LIMITS, checkLengths } from '@/lib/auth';
 import { rateLimiter, getClientIP, RATE_LIMITS } from '@/lib/rateLimit';
+import { captureChange } from '@/lib/branchSync';
+import { withLocalBranchId } from '@/lib/branchContext';
 
 // POST /api/devices — admin or reception
 export async function POST(request: Request) {
@@ -40,14 +42,22 @@ export async function POST(request: Request) {
         }
 
         const device = await prisma.device.create({
-            data: {
+            data: withLocalBranchId({
                 customerId: body.customerId,
                 type: body.type.trim(),
                 brand: body.brand.trim(),
                 model: body.model.trim(),
                 serialNo: body.serialNumber?.trim() || body.serialNo?.trim() || null,
-            },
+            }),
         });
+
+        // ── Outbox Sync ──────────────────────────────────────────────
+        captureChange({
+            entityType: 'Device',
+            entityId: device.id,
+            action: 'create',
+            payload: device,
+        }).catch(err => console.error('[SyncOutbox] Device create error:', err));
 
         return NextResponse.json({
             ...device,

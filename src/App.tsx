@@ -15,18 +15,20 @@ import { NotificationsPage } from './pages_components/NotificationsPage';
 import { AssignJobsPage } from './pages_components/AssignJobsPage';
 import { ReportsPage } from './pages_components/ReportsPage';
 import { SystemSettingsPage } from './pages_components/SystemSettingsPage';
+import { BranchesPage } from './pages_components/BranchesPage';
 import { 
   LayoutDashboard, Users, BarChart3, LineChart, 
   Wrench, Pin, Nut, Box, 
-  Wallet, ClipboardList, Bell, ChevronRight, Search, Menu, Settings, ShoppingCart, Shield, AlertCircle
+  Wallet, ClipboardList, Bell, ChevronRight, Search, Menu, Settings, ShoppingCart, Shield, AlertCircle, GitBranch
 } from 'lucide-react';
+
 
 const PAGE_LABELS: Record<string, string> = {
   dashboard: 'Dashboard', users: 'User Management', analytics: 'Analytics',
   reports: 'Reports', jobs: 'Jobs',
   assign: 'Assign Jobs', parts: 'Parts Requests', inventory: 'Inventory',
   billing: 'Billing', sales: 'Sales', 'my-jobs': 'My Jobs', notifications: 'Notifications',
-  settings: 'System Settings',
+  settings: 'System Settings', branches: 'Branch Management',
 };
 
 const PAGE_ICONS: Record<string, any> = {
@@ -35,7 +37,9 @@ const PAGE_ICONS: Record<string, any> = {
   inventory: Box, billing: Wallet, sales: ShoppingCart, 'my-jobs': ClipboardList, notifications: Bell,
   settings: Settings,
   'audit-log': Shield,
+  branches: GitBranch,
 };
+
 
 function AppContent() {
   const { currentUser, hydrated, isLoading, error, retryLoad } = useApp();
@@ -148,6 +152,8 @@ function AppContent() {
       case 'notifications': return <NotificationsPage />;
       case 'settings':      return isAdmin ? <SystemSettingsPage /> : <AccessDenied />;
       case 'audit-log':     return isAdmin ? <AuditLogPage />       : <AccessDenied />;
+      case 'branches':      return (isAdmin || currentUser?.role === 'super_admin') ? <BranchesPage /> : <AccessDenied />;
+
 
       default:              return (
         <div className="flex flex-col items-center justify-center h-64 text-gray-400">
@@ -192,12 +198,25 @@ function AppContent() {
         </header>
         {/* Page content */}
         <main className="flex-1 p-4 md:p-8 overflow-x-hidden">
-          {renderPage()}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activePage}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              transition={{ duration: 0.2, ease: 'easeInOut' }}
+            >
+              {renderPage()}
+            </motion.div>
+          </AnimatePresence>
         </main>
       </div>
     </div>
   );
 }
+
+// Wrap AppContent's imports and use motion
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function App() {
   return (

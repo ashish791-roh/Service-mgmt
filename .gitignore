@@ -23,6 +23,6 @@ dist-ssr
 *.sln
 *.sw?
 
-/src/generated/prisma
-. h i s t o r y /  
+.history/
+.env
 .next

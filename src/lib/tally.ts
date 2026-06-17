@@ -7,6 +7,8 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import { BUSINESS_INFO } from './businessConfig';
+import { getBusinessConfig } from './businessConfigServer';
+import { SLATier, DEFAULT_SLA_TIERS } from './sla';
 
 export type TallyDocumentType =
   | 'invoice'
@@ -38,6 +40,8 @@ export interface TallyExtractionResult {
   paymentMode: string;
   totalAmount: number;
   confidence: number;
+  customerGstin?: string;
+  supplierGstin?: string;
 }
 
 export interface TallySettings {
@@ -45,7 +49,7 @@ export interface TallySettings {
   host: string;
   port: number;
   companyName: string;
-  syncStatus: string;
+  syncStatus?: string;
   lastTestedAt?: string;
   mockMode?: boolean;
   autoPushOnApproval?: boolean;
@@ -89,14 +93,30 @@ const VOUCHER_TYPE_MAPPING: Record<string, string> = {
   journal: 'Journal',
 };
 
+import crypto from 'crypto';
+
 export function buildVoucherXml(
   extracted: TallyExtractionResult,
-  voucherType: 'sales' | 'purchase' | 'receipt' | 'payment' | 'journal'
+  voucherType: 'sales' | 'purchase' | 'receipt' | 'payment' | 'journal',
+  documentId: string = randomUUID()
 ) {
   const mappedVchType = VOUCHER_TYPE_MAPPING[voucherType] || voucherType;
   const invoiceDate = new Date(extracted.invoiceDate).toISOString().slice(0, 10);
-  const narration = `${voucherType === 'sales' ? 'Sales invoice' : voucherType === 'purchase' ? 'Purchase invoice' : 'Accounting entry'} for ${extracted.customerName || extracted.supplierName}`;
+  const narration = `${voucherType === 'sales' ? 'Sales invoice' : voucherType === 'purchase' ? 'Purchase invoice' : voucherType === 'receipt' ? 'Payment receipt reconciliation' : 'Accounting entry'} for ${extracted.customerName || extracted.supplierName}`;
   const totalAmount = extracted.totalAmount ?? extracted.items.reduce((sum, item) => sum + item.total, 0);
+
+  // Generate deterministic GUID
+  const hash = crypto.createHash('sha1').update(documentId).digest('hex');
+  const part1 = hash.substring(0, 8);
+  const part2 = hash.substring(8, 12);
+  const part3 = '5' + hash.substring(13, 16);
+  const variantDigit = (parseInt(hash.substring(16, 17), 16) & 0x3 | 0x8).toString(16);
+  const part4 = variantDigit + hash.substring(17, 20);
+  const part5 = hash.substring(20, 32);
+  const guid = `${part1}-${part2}-${part3}-${part4}-${part5}`;
+
+  const partyGstin = voucherType === 'sales' ? extracted.customerGstin : (voucherType === 'purchase' ? (extracted.supplierGstin || extracted.gstNumber) : undefined);
+  const gstRegistrationType = partyGstin ? 'Regular' : 'Consumer';
 
   const lineItems = extracted.items.map((item) => {
     return `
@@ -113,64 +133,86 @@ export function buildVoucherXml(
 
   // Party entry (Customer/Supplier)
   const partyName = extracted.customerName || extracted.supplierName;
-  const partyAmount = (voucherType === 'purchase' ? -totalAmount : totalAmount).toFixed(2);
-  ledgerEntries += `
+
+  if (voucherType === 'receipt') {
+    const isCash = extracted.paymentMode?.toLowerCase() === 'cash';
+    const bankOrCashLedger = isCash ? 'Cash' : 'Bank';
+
+    // Credit Customer: negative amount
+    const partyAmount = (-totalAmount).toFixed(2);
+    ledgerEntries += `
             <ALLLEDGERENTRIES.LIST>
               <LEDGERNAME>${escapeXml(partyName)}</LEDGERNAME>
               <AMOUNT>${partyAmount}</AMOUNT>
             </ALLLEDGERENTRIES.LIST>`;
 
-  // Emit detailed GST and base ledger entries for sales/purchase
-  if (voucherType === 'sales' || voucherType === 'purchase') {
-    const isSales = voucherType === 'sales';
-    const mainLedgerName = isSales ? 'Sales' : 'Purchase';
-
-    let totalCgst = 0;
-    let totalSgst = 0;
-    let totalIgst = 0;
-    for (const item of extracted.items) {
-      totalCgst += item.cgst || 0;
-      totalSgst += item.sgst || 0;
-      totalIgst += item.igst || 0;
-    }
-
-    const baseAmount = totalAmount - (totalCgst + totalSgst + totalIgst);
-    const mainAmount = (isSales ? -baseAmount : baseAmount).toFixed(2);
-
+    // Debit Bank/Cash: positive amount
+    const bankOrCashAmount = totalAmount.toFixed(2);
     ledgerEntries += `
             <ALLLEDGERENTRIES.LIST>
-              <LEDGERNAME>${escapeXml(mainLedgerName)}</LEDGERNAME>
-              <AMOUNT>${mainAmount}</AMOUNT>
+              <LEDGERNAME>${escapeXml(bankOrCashLedger)}</LEDGERNAME>
+              <AMOUNT>${bankOrCashAmount}</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>`;
+  } else {
+    const partyAmount = (voucherType === 'purchase' ? -totalAmount : totalAmount).toFixed(2);
+    ledgerEntries += `
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>${escapeXml(partyName)}</LEDGERNAME>
+              <AMOUNT>${partyAmount}</AMOUNT>
             </ALLLEDGERENTRIES.LIST>`;
 
-    if (totalCgst > 0) {
-      const cgstLedger = isSales ? 'Output CGST' : 'Input CGST';
-      const cgstAmount = (isSales ? -totalCgst : totalCgst).toFixed(2);
-      ledgerEntries += `
-            <ALLLEDGERENTRIES.LIST>
-              <LEDGERNAME>${escapeXml(cgstLedger)}</LEDGERNAME>
-              <AMOUNT>${cgstAmount}</AMOUNT>
-            </ALLLEDGERENTRIES.LIST>`;
-    }
+    // Emit detailed GST and base ledger entries for sales/purchase
+    if (voucherType === 'sales' || voucherType === 'purchase') {
+      const isSales = voucherType === 'sales';
+      const mainLedgerName = isSales ? 'Sales' : 'Purchase';
 
-    if (totalSgst > 0) {
-      const sgstLedger = isSales ? 'Output SGST' : 'Input SGST';
-      const sgstAmount = (isSales ? -totalSgst : totalSgst).toFixed(2);
-      ledgerEntries += `
-            <ALLLEDGERENTRIES.LIST>
-              <LEDGERNAME>${escapeXml(sgstLedger)}</LEDGERNAME>
-              <AMOUNT>${sgstAmount}</AMOUNT>
-            </ALLLEDGERENTRIES.LIST>`;
-    }
+      let totalCgst = 0;
+      let totalSgst = 0;
+      let totalIgst = 0;
+      for (const item of extracted.items) {
+        totalCgst += item.cgst || 0;
+        totalSgst += item.sgst || 0;
+        totalIgst += item.igst || 0;
+      }
 
-    if (totalIgst > 0) {
-      const igstLedger = isSales ? 'Output IGST' : 'Input IGST';
-      const igstAmount = (isSales ? -totalIgst : totalIgst).toFixed(2);
+      const baseAmount = totalAmount - (totalCgst + totalSgst + totalIgst);
+      const mainAmount = (isSales ? -baseAmount : baseAmount).toFixed(2);
+
       ledgerEntries += `
-            <ALLLEDGERENTRIES.LIST>
-              <LEDGERNAME>${escapeXml(igstLedger)}</LEDGERNAME>
-              <AMOUNT>${igstAmount}</AMOUNT>
-            </ALLLEDGERENTRIES.LIST>`;
+              <ALLLEDGERENTRIES.LIST>
+                <LEDGERNAME>${escapeXml(mainLedgerName)}</LEDGERNAME>
+                <AMOUNT>${mainAmount}</AMOUNT>
+              </ALLLEDGERENTRIES.LIST>`;
+
+      if (totalCgst > 0) {
+        const cgstLedger = isSales ? 'Output CGST' : 'Input CGST';
+        const cgstAmount = (isSales ? -totalCgst : totalCgst).toFixed(2);
+        ledgerEntries += `
+              <ALLLEDGERENTRIES.LIST>
+                <LEDGERNAME>${escapeXml(cgstLedger)}</LEDGERNAME>
+                <AMOUNT>${cgstAmount}</AMOUNT>
+              </ALLLEDGERENTRIES.LIST>`;
+      }
+
+      if (totalSgst > 0) {
+        const sgstLedger = isSales ? 'Output SGST' : 'Input SGST';
+        const sgstAmount = (isSales ? -totalSgst : totalSgst).toFixed(2);
+        ledgerEntries += `
+              <ALLLEDGERENTRIES.LIST>
+                <LEDGERNAME>${escapeXml(sgstLedger)}</LEDGERNAME>
+                <AMOUNT>${sgstAmount}</AMOUNT>
+              </ALLLEDGERENTRIES.LIST>`;
+      }
+
+      if (totalIgst > 0) {
+        const igstLedger = isSales ? 'Output IGST' : 'Input IGST';
+        const igstAmount = (isSales ? -totalIgst : totalIgst).toFixed(2);
+        ledgerEntries += `
+              <ALLLEDGERENTRIES.LIST>
+                <LEDGERNAME>${escapeXml(igstLedger)}</LEDGERNAME>
+                <AMOUNT>${igstAmount}</AMOUNT>
+              </ALLLEDGERENTRIES.LIST>`;
+      }
     }
   }
 
@@ -187,11 +229,15 @@ export function buildVoucherXml(
       <REQUESTDATA>
         <TALLYMESSAGE xmlns:UDF="TallyUDF">
           <VOUCHER VCHTYPE="${escapeXml(mappedVchType)}" ACTION="Create" OBJVIEW="Accounting Voucher">
+            <GUID>${escapeXml(guid)}</GUID>
             <DATE>${invoiceDate.replace(/-/g, '')}</DATE>
             <NARRATION>${escapeXml(narration)}</NARRATION>
             <VOUCHERTYPENAME>${escapeXml(mappedVchType)}</VOUCHERTYPENAME>
             <PARTYNAME>${escapeXml(partyName)}</PARTYNAME>
-            <GSTCLASS/>${lineItems}${ledgerEntries}
+            <GSTCLASS/>
+            <GSTREGISTRATIONTYPE>${escapeXml(gstRegistrationType)}</GSTREGISTRATIONTYPE>
+            ${partyGstin ? `<PARTYGSTIN>${escapeXml(partyGstin)}</PARTYGSTIN>` : ''}
+            ${lineItems}${ledgerEntries}
           </VOUCHER>
         </TALLYMESSAGE>
       </REQUESTDATA>
@@ -306,41 +352,58 @@ export function findGstNumber(text: string): string | null {
   return match?.[1] ?? null;
 }
 
-export function validateGstinChecksum(gstin: string): boolean {
-  if (!gstin || gstin.length !== 15) return false;
-  const cleanGstin = gstin.toUpperCase();
-  
-  const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  
-  let totalSum = 0;
-  for (let i = 0; i < 14; i++) {
-    const char = cleanGstin[i];
-    const val = chars.indexOf(char);
-    if (val === -1) return false;
-    
-    const factor = (i % 2 === 0) ? 1 : 2;
-    const product = val * factor;
-    
-    const quotient = Math.floor(product / 36);
-    const remainder = product % 36;
-    totalSum += quotient + remainder;
-  }
-  
-  const z = totalSum % 36;
-  const cVal = (36 - z) % 36;
-  const expectedChar = chars[cVal];
-  
-  return cleanGstin[14] === expectedChar;
-}
+export { validateGstinChecksum } from './gst';
 
 export function findSupplierName(text: string): string | null {
-  const match = text.match(/supplier\s*[:\-\s]*([A-Za-z0-9 &'(),.-]+)/i);
-  return match?.[1]?.trim() ?? null;
+  const patterns = [
+    /(?:supplier|seller|billed\s*from|service\s*provider|vendor|from)\s*[:\-\s]*([A-Za-z0-9 &'(),.-]+)/i,
+    /(?:supplier|seller|vendor)\s*details\s*[:\-\s]*([A-Za-z0-9 &'(),.-]+)/i
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]?.trim()) return match[1].trim();
+  }
+
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^(?:supplier|seller|billed\s*from|service\s*provider|vendor|from)[:\-\s]*$/i.test(line)) {
+      for (let j = i + 1; j < Math.min(lines.length, i + 4); j++) {
+        const nextLine = lines[j];
+        if (nextLine && !/gstin|date|invoice|phone|tel|email/i.test(nextLine)) {
+          return nextLine.trim();
+        }
+      }
+    }
+  }
+
+  return null;
 }
 
 export function findCustomerName(text: string): string | null {
-  const match = text.match(/(?:bill\s*to|ship\s*to|customer)\s*[:\-\s]*([A-Za-z0-9 &'(),.-]+)/i);
-  return match?.[1]?.trim() ?? null;
+  const patterns = [
+    /(?:bill\s*to|ship\s*to|customer|buyer|consignee|billed\s*to|client|to)\s*[:\-\s]*([A-Za-z0-9 &'(),.-]+)/i,
+    /(?:buyer|consignee|client)\s*details\s*[:\-\s]*([A-Za-z0-9 &'(),.-]+)/i
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]?.trim()) return match[1].trim();
+  }
+
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^(?:buyer|consignee|bill\s*to|ship\s*to|billed\s*to|client|to)[:\-\s]*$/i.test(line)) {
+      for (let j = i + 1; j < Math.min(lines.length, i + 4); j++) {
+        const nextLine = lines[j];
+        if (nextLine && !/gstin|date|invoice|phone|tel|email/i.test(nextLine)) {
+          return nextLine.trim();
+        }
+      }
+    }
+  }
+
+  return null;
 }
 
 export function extractGstRateFromName(name: string): number {
@@ -728,9 +791,9 @@ export async function pushToTally(
   settings: TallySettings,
   actor: AuditActor,
   documentId: string
-) {
+): Promise<{ success: boolean; message: string; response: string | null }> {
   if (!settings.enabled) {
-    return { success: false, message: 'Tally sync is disabled.' };
+    return { success: false, message: 'Tally sync is disabled.', response: null };
   }
 
   if (process.env.TALLY_MOCK === 'true' || settings.mockMode) {
@@ -752,11 +815,14 @@ export async function pushToTally(
   }
 
   const url = `http://${settings.host}:${settings.port}`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
   try {
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/xml' },
       body: xml,
+      signal: controller.signal,
     });
     const text = await response.text();
     await writeAuditLog({
@@ -769,9 +835,23 @@ export async function pushToTally(
       meta: { endpoint: url, status: response.status },
     });
 
+    const hasErrors = /<ERRORS>\s*([1-9]\d*)\s*<\/ERRORS>/i.test(text) ||
+                      /<LINEERROR[^>]*>([\s\S]*?)<\/LINEERROR>/i.test(text);
+
+    let errorMessage = '';
+    const lineErrorMatch = text.match(/<LINEERROR[^>]*>([\s\S]*?)<\/LINEERROR>/i);
+    if (lineErrorMatch) {
+      errorMessage = lineErrorMatch[1].trim();
+    }
+
+    const success = response.ok && !hasErrors;
+    const message = success
+      ? 'TallyPrime accepted the XML payload.'
+      : (errorMessage ? `Tally error: ${errorMessage}` : `Push failed (Tally returned error nodes or status ${response.status}).`);
+
     return {
-      success: response.ok,
-      message: response.ok ? 'TallyPrime accepted the XML payload.' : `TallyPrime returned ${response.status}.`,
+      success,
+      message,
       response: text,
     };
   } catch (error) {
@@ -785,7 +865,13 @@ export async function pushToTally(
       meta: { endpoint: url },
     });
     return { success: false, message: `Push failed: ${error instanceof Error ? error.message : 'unknown error'}`, response: null };
+  } finally {
+    clearTimeout(timeoutId);
   }
+}
+
+export function getExtractedData(doc: { extractedData: any }): TallyExtractionResult {
+  return doc.extractedData as unknown as TallyExtractionResult;
 }
 
 export async function saveTallyDocument(
@@ -815,6 +901,73 @@ export async function getTallyDashboardStats() {
   const failedEntries = await prisma.tallyDocument.count({ where: { status: 'failed' } });
   const successRate = totalDocuments > 0 ? Math.round(((autoApproved + pushed) / totalDocuments) * 100) : 0;
 
+  // Compile extended dashboard stats from TallyQueueItem
+  const completedQueue = prisma.tallyQueueItem
+    ? await prisma.tallyQueueItem.findMany({
+        where: { status: 'completed' },
+        select: { createdAt: true, updatedAt: true },
+      })
+    : [];
+
+  let averageSyncTime = 0; // in seconds
+  if (completedQueue.length > 0) {
+    const totalDuration = completedQueue.reduce((sum: number, item: any) => {
+      const duration = (item.updatedAt.getTime() - item.createdAt.getTime()) / 1000;
+      return sum + Math.max(0, duration);
+    }, 0);
+    averageSyncTime = Math.round(totalDuration / completedQueue.length);
+  }
+
+  // Each sync saves ~5 minutes (300 seconds) of manual entry
+  const completedCount = prisma.tallyQueueItem
+    ? await prisma.tallyQueueItem.count({ where: { status: 'completed' } })
+    : 0;
+  const timeSavedMinutes = (pushed + completedCount) * 5;
+
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayCount = prisma.tallyQueueItem
+    ? await prisma.tallyQueueItem.count({
+        where: {
+          status: 'completed',
+          updatedAt: { gte: todayStart },
+        },
+      })
+    : 0;
+
+  const recentQueue = prisma.tallyQueueItem
+    ? await prisma.tallyQueueItem.findMany({
+        orderBy: { updatedAt: 'desc' },
+        take: 10,
+      })
+    : [];
+
+  const recentDocs = await prisma.tallyDocument.findMany({
+    orderBy: { updatedAt: 'desc' },
+    take: 10,
+  });
+
+  const recentActivity = [
+    ...recentQueue.map((q: any) => ({
+      id: q.id,
+      type: 'queue',
+      entityType: q.entityType,
+      actionType: q.actionType,
+      status: q.status,
+      timestamp: q.updatedAt.toISOString(),
+      message: q.errorMessage || `Synced ${q.entityType} (${q.actionType})`,
+    })),
+    ...recentDocs.map((d: any) => ({
+      id: d.id,
+      type: 'document',
+      entityType: d.documentType,
+      actionType: d.voucherType,
+      status: d.status,
+      timestamp: d.updatedAt.toISOString(),
+      message: d.tallyResponse || `Processed ${d.fileName}`,
+    })),
+  ].sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, 10);
+
   return {
     totalDocuments,
     autoApproved,
@@ -822,6 +975,10 @@ export async function getTallyDashboardStats() {
     pendingReviews,
     failedEntries,
     successRate,
+    averageSyncTime,
+    timeSavedMinutes,
+    todayCount,
+    recentActivity,
   };
 }
 
@@ -859,7 +1016,7 @@ export async function processTallyRetryQueue() {
     let xml = doc.xmlPayload;
     if (!xml) {
       try {
-        xml = buildVoucherXml(doc.extractedData as any, doc.voucherType as any);
+        xml = buildVoucherXml(getExtractedData(doc), doc.voucherType as any, doc.id);
         await prisma.tallyDocument.update({
           where: { id: doc.id },
           data: { xmlPayload: xml },
@@ -894,7 +1051,7 @@ export async function processTallyRetryQueue() {
   }
 }
 
-export async function pushJobToTally(jobId: string) {
+export async function pushReceiptToTally(jobId: string) {
   const job = await prisma.job.findUnique({
     where: { id: jobId },
     include: {
@@ -907,82 +1064,40 @@ export async function pushJobToTally(jobId: string) {
   });
   if (!job) return;
 
-  const inventory = await prisma.inventoryItem.findMany();
-  const items: TallyExtractedItem[] = [];
-  let totalPartsCost = 0;
-
-  for (const pr of job.partRequests) {
-    const inv = inventory.find(i => i.name.toLowerCase() === pr.partName.toLowerCase());
-    const unitPrice = pr.unitCost ?? inv?.unitPrice ?? 0;
-    const itemTotal = unitPrice * pr.quantity;
-    totalPartsCost += itemTotal;
-
-    const gstPercent = 18;
-    const baseAmount = itemTotal / (1 + gstPercent / 100);
-    const rate = baseAmount / pr.quantity;
-    const cgst = parseFloat((baseAmount * 0.09).toFixed(2));
-    const sgst = parseFloat((baseAmount * 0.09).toFixed(2));
-    const taxAmount = parseFloat((cgst + sgst).toFixed(2));
-
-    items.push({
-      name: pr.partName,
-      quantity: pr.quantity,
-      rate: parseFloat(rate.toFixed(2)),
-      taxRate: gstPercent,
-      taxAmount,
-      cgst,
-      sgst,
-      igst: 0,
-      total: parseFloat((baseAmount + taxAmount).toFixed(2)),
-    });
-  }
-
+  const businessConfig = await getBusinessConfig();
   const revenue = job.actualCost ?? job.estimatedCost ?? 0;
-  const serviceCharge = Math.max(revenue - totalPartsCost, 0);
-
-  if (serviceCharge > 0) {
-    const gstPercent = 18;
-    const baseAmount = serviceCharge / (1 + gstPercent / 100);
-    const cgst = parseFloat((baseAmount * 0.09).toFixed(2));
-    const sgst = parseFloat((baseAmount * 0.09).toFixed(2));
-    const taxAmount = parseFloat((cgst + sgst).toFixed(2));
-
-    items.push({
-      name: 'Service Charges',
-      quantity: 1,
-      rate: parseFloat(baseAmount.toFixed(2)),
-      taxRate: gstPercent,
-      taxAmount,
-      cgst,
-      sgst,
-      igst: 0,
-      total: parseFloat((baseAmount + taxAmount).toFixed(2)),
-    });
-  }
-
-  const totalAmount = items.reduce((sum, item) => sum + item.total, 0);
+  if (revenue <= 0) return;
 
   const extractionResult: TallyExtractionResult = {
-    invoiceNumber: job.invoiceNumber ?? `INV-${job.id.slice(-6).toUpperCase()}`,
+    invoiceNumber: job.invoiceNumber ? `${job.invoiceNumber}-REC` : `REC-${job.id.slice(-6).toUpperCase()}`,
     invoiceDate: (job.completedAt || job.updatedAt || new Date()).toISOString().slice(0, 10),
-    gstNumber: 'UNKNOWN',
+    gstNumber: businessConfig.gstin,
     customerName: job.customer.name,
-    supplierName: 'FixHub Service Center',
-    items,
+    customerGstin: job.customer.gstin || undefined,
+    supplierName: businessConfig.shopName,
+    items: [],
     paymentMode: job.paymentMethod ?? 'Cash',
-    totalAmount,
+    totalAmount: revenue,
     confidence: 1.0,
   };
 
   const settings = await getTallySettings();
-  const xml = buildVoucherXml(extractionResult, 'sales');
+  const recordId = randomUUID();
+  const xml = buildVoucherXml(extractionResult, 'receipt', recordId);
+
+  // Check if a receipt tally document already exists to prevent duplication
+  const existingDoc = await prisma.tallyDocument.findFirst({
+    where: { fileName: `job-${job.id}-receipt.pdf` }
+  });
+  if (existingDoc) return;
 
   const record = await prisma.tallyDocument.create({
     data: {
-      fileName: `job-${job.id}-invoice.pdf`,
-      documentType: 'invoice',
+      id: recordId,
+      fileName: `job-${job.id}-receipt.pdf`,
+      documentType: 'receipt',
       extractedData: extractionResult as any,
-      voucherType: 'sales',
+      voucherType: 'receipt',
       confidence: 1.0,
       status: 'pending',
       xmlPayload: xml,
@@ -1008,18 +1123,170 @@ export async function pushJobToTally(jobId: string) {
         await scheduleRetryForFailedPush(record.id, 0);
       }
     } catch (pushErr) {
-      console.error('[Tally Auto-Push] Failed to push job invoice:', pushErr);
+      console.error('[Tally Auto-Push Receipt] Failed:', pushErr);
       await scheduleRetryForFailedPush(record.id, 0);
     }
   }
 }
 
+export async function pushJobToTally(jobId: string) {
+  const job = await prisma.job.findUnique({
+    where: { id: jobId },
+    include: {
+      customer: true,
+      device: true,
+      partRequests: {
+        where: { status: 'Approved' },
+      },
+    },
+  });
+  if (!job) return;
+
+  const businessConfig = await getBusinessConfig();
+  const slaConfig = await prisma.sLAConfig.findUnique({ where: { id: 'sla-config' } });
+  const tiers = (slaConfig?.tiers as unknown as SLATier[]) || DEFAULT_SLA_TIERS;
+  const devType = job.device?.type || '';
+  const matchedTier = tiers.find(t => t.deviceType && t.deviceType.toLowerCase() === devType.toLowerCase()) || 
+                      tiers.find(t => t.deviceType && t.deviceType.toLowerCase() === 'other');
+  const customGstRate = matchedTier?.taxRate !== undefined ? matchedTier.taxRate : businessConfig.taxRate;
+
+  const inventory = await prisma.inventoryItem.findMany();
+  const items: TallyExtractedItem[] = [];
+  let totalPartsCost = 0;
+
+  for (const pr of job.partRequests) {
+    const inv = inventory.find((i: any) => i.name.toLowerCase() === pr.partName.toLowerCase());
+    const unitPrice = pr.unitCost ?? inv?.unitPrice ?? 0;
+    const itemTotal = unitPrice * pr.quantity;
+    totalPartsCost += itemTotal;
+
+    const gstPercent = customGstRate;
+    const baseAmount = itemTotal / (1 + gstPercent / 100);
+    const rate = baseAmount / pr.quantity;
+    const halfRate = gstPercent / 2 / 100;
+    const cgst = parseFloat((baseAmount * halfRate).toFixed(2));
+    const sgst = parseFloat((baseAmount * halfRate).toFixed(2));
+    const taxAmount = parseFloat((cgst + sgst).toFixed(2));
+
+    items.push({
+      name: pr.partName,
+      quantity: pr.quantity,
+      rate: parseFloat(rate.toFixed(2)),
+      taxRate: gstPercent,
+      taxAmount,
+      cgst,
+      sgst,
+      igst: 0,
+      total: parseFloat((baseAmount + taxAmount).toFixed(2)),
+    });
+  }
+
+  const revenue = job.actualCost ?? job.estimatedCost ?? 0;
+  totalPartsCost = items.reduce((sum, item) => sum + item.total, 0); // compute based on calculated totals
+  const serviceCharge = Math.max(revenue - totalPartsCost, 0);
+
+  if (serviceCharge > 0) {
+    const gstPercent = customGstRate;
+    const baseAmount = serviceCharge / (1 + gstPercent / 100);
+    const halfRate = gstPercent / 2 / 100;
+    const cgst = parseFloat((baseAmount * halfRate).toFixed(2));
+    const sgst = parseFloat((baseAmount * halfRate).toFixed(2));
+    const taxAmount = parseFloat((cgst + sgst).toFixed(2));
+
+    items.push({
+      name: 'Service Charges',
+      quantity: 1,
+      rate: parseFloat(baseAmount.toFixed(2)),
+      taxRate: gstPercent,
+      taxAmount,
+      cgst,
+      sgst,
+      igst: 0,
+      total: parseFloat((baseAmount + taxAmount).toFixed(2)),
+    });
+  }
+
+  const totalAmount = items.reduce((sum, item) => sum + item.total, 0);
+
+  const extractionResult: TallyExtractionResult = {
+    invoiceNumber: job.invoiceNumber ?? `INV-${job.id.slice(-6).toUpperCase()}`,
+    invoiceDate: (job.completedAt || job.updatedAt || new Date()).toISOString().slice(0, 10),
+    gstNumber: businessConfig.gstin,
+    customerName: job.customer.name,
+    customerGstin: job.customer.gstin || undefined,
+    supplierName: businessConfig.shopName,
+    items,
+    paymentMode: job.paymentMethod ?? 'Cash',
+    totalAmount,
+    confidence: 1.0,
+  };
+
+  const settings = await getTallySettings();
+  const recordId = randomUUID();
+  const xml = buildVoucherXml(extractionResult, 'sales', recordId);
+
+  // Check if a sales tally document already exists to prevent duplication
+  let record = await prisma.tallyDocument.findFirst({
+    where: { fileName: `job-${job.id}-invoice.pdf` }
+  });
+
+  if (!record) {
+    record = await prisma.tallyDocument.create({
+      data: {
+        id: recordId,
+        fileName: `job-${job.id}-invoice.pdf`,
+        documentType: 'invoice',
+        extractedData: extractionResult as any,
+        voucherType: 'sales',
+        confidence: 1.0,
+        status: 'pending',
+        xmlPayload: xml,
+        ownerId: job.engineerId || (await prisma.user.findFirst({ where: { role: 'admin' } }))?.id || '',
+      },
+    });
+  }
+
+  if (settings.enabled) {
+    const actor = { id: 'system', name: 'System Auto-Push', role: 'admin' };
+    try {
+      const pushResult = await pushToTally(xml, settings, actor, record.id);
+      if (pushResult.success) {
+        await prisma.tallyDocument.update({
+          where: { id: record.id },
+          data: {
+            status: 'pushed',
+            tallyResponse: pushResult.response ?? 'SUCCESS',
+            retryCount: 0,
+            nextRetryAt: null,
+          },
+        });
+
+        // Trigger Receipt voucher push
+        if (job.status === 'Delivered') {
+          await pushReceiptToTally(job.id);
+        }
+      } else {
+        await scheduleRetryForFailedPush(record.id, 0);
+      }
+    } catch (pushErr) {
+      console.error('[Tally Auto-Push] Failed to push job invoice:', pushErr);
+      await scheduleRetryForFailedPush(record.id, 0);
+    }
+  } else {
+    // If sync disabled but Delivered, still create the receipt document
+    if (job.status === 'Delivered') {
+      await pushReceiptToTally(job.id);
+    }
+  }
+}
+
+// Start recurring Tally retry queue process in the background
 // Start recurring Tally retry queue process in the background
 const globalForTallyQueue = globalThis as unknown as {
   retryIntervalStarted?: boolean;
 };
 
-if (process.env.NODE_ENV === 'development' && !globalForTallyQueue.retryIntervalStarted) {
+if (!globalForTallyQueue.retryIntervalStarted) {
   globalForTallyQueue.retryIntervalStarted = true;
   setInterval(() => {
     processTallyRetryQueue().catch((err) => {
@@ -1027,4 +1294,644 @@ if (process.env.NODE_ENV === 'development' && !globalForTallyQueue.retryInterval
     });
   }, 60000);
 }
+
+// ── NEW ADDITIVE ENTERPRISE TALLY MASTER XML BUILDERS ─────────────────────────
+
+export function buildCustomerLedgerXml(name: string, gstin?: string): string {
+  const customerName = name.trim();
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<ENVELOPE>
+  <HEADER>
+    <TALLYREQUEST>Import Data</TALLYREQUEST>
+  </HEADER>
+  <BODY>
+    <IMPORTDATA>
+      <REQUESTDESC>
+        <REPORTNAME>All Masters</REPORTNAME>
+      </REQUESTDESC>
+      <REQUESTDATA>
+        <TALLYMESSAGE xmlns:UDF="TallyUDF">
+          <LEDGER NAME="${escapeXml(customerName)}" ACTION="Create">
+            <NAME>${escapeXml(customerName)}</NAME>
+            <PARENT>Sundry Debtors</PARENT>
+            <OPENINGBALANCE>0</OPENINGBALANCE>
+            <GSTREGISTRATIONTYPE>${gstin ? 'Regular' : 'Consumer'}</GSTREGISTRATIONTYPE>
+            ${gstin ? `<PARTYGSTIN>${escapeXml(gstin)}</PARTYGSTIN>` : ''}
+          </LEDGER>
+        </TALLYMESSAGE>
+      </REQUESTDATA>
+    </IMPORTDATA>
+  </BODY>
+</ENVELOPE>`;
+}
+
+export function buildSupplierLedgerXml(name: string, gstin?: string): string {
+  const supplierName = name.trim();
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<ENVELOPE>
+  <HEADER>
+    <TALLYREQUEST>Import Data</TALLYREQUEST>
+  </HEADER>
+  <BODY>
+    <IMPORTDATA>
+      <REQUESTDESC>
+        <REPORTNAME>All Masters</REPORTNAME>
+      </REQUESTDESC>
+      <REQUESTDATA>
+        <TALLYMESSAGE xmlns:UDF="TallyUDF">
+          <LEDGER NAME="${escapeXml(supplierName)}" ACTION="Create">
+            <NAME>${escapeXml(supplierName)}</NAME>
+            <PARENT>Sundry Creditors</PARENT>
+            <OPENINGBALANCE>0</OPENINGBALANCE>
+            <GSTREGISTRATIONTYPE>${gstin ? 'Regular' : 'Consumer'}</GSTREGISTRATIONTYPE>
+            ${gstin ? `<PARTYGSTIN>${escapeXml(gstin)}</PARTYGSTIN>` : ''}
+          </LEDGER>
+        </TALLYMESSAGE>
+      </REQUESTDATA>
+    </IMPORTDATA>
+  </BODY>
+</ENVELOPE>`;
+}
+
+export function buildStockItemXml(name: string, quantity: number, unitPrice: number): string {
+  const itemName = name.trim();
+  const value = quantity * unitPrice;
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<ENVELOPE>
+  <HEADER>
+    <TALLYREQUEST>Import Data</TALLYREQUEST>
+  </HEADER>
+  <BODY>
+    <IMPORTDATA>
+      <REQUESTDESC>
+        <REPORTNAME>All Masters</REPORTNAME>
+      </REQUESTDESC>
+      <REQUESTDATA>
+        <TALLYMESSAGE xmlns:UDF="TallyUDF">
+          <STOCKITEM NAME="${escapeXml(itemName)}" ACTION="Create">
+            <NAME>${escapeXml(itemName)}</NAME>
+            <BASEUNITS>Nos</BASEUNITS>
+            <OPENINGBALANCE>${quantity}</OPENINGBALANCE>
+            <OPENINGVALUE>${value.toFixed(2)}</OPENINGVALUE>
+            <OPENINGRATE>${unitPrice.toFixed(2)}</OPENINGRATE>
+          </STOCKITEM>
+        </TALLYMESSAGE>
+      </REQUESTDATA>
+    </IMPORTDATA>
+  </BODY>
+</ENVELOPE>`;
+}
+
+export function buildExpenseVoucherXml(expense: { description: string; amount: number; category: string; paymentMethod: string; date: Date }): string {
+  const expenseDate = new Date(expense.date).toISOString().slice(0, 10);
+  const narration = `Expense payment: ${expense.description}`;
+  const guid = randomUUID();
+  const isCash = expense.paymentMethod.toLowerCase() === 'cash';
+  const bankOrCashLedger = isCash ? 'Cash' : 'Bank';
+  
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<ENVELOPE>
+  <HEADER>
+    <TALLYREQUEST>Import Data</TALLYREQUEST>
+  </HEADER>
+  <BODY>
+    <IMPORTDATA>
+      <REQUESTDESC>
+        <REPORTNAME>Vouchers</REPORTNAME>
+      </REQUESTDESC>
+      <REQUESTDATA>
+        <TALLYMESSAGE xmlns:UDF="TallyUDF">
+          <VOUCHER VCHTYPE="Payment" ACTION="Create" OBJVIEW="Accounting Voucher">
+            <GUID>${escapeXml(guid)}</GUID>
+            <DATE>${expenseDate.replace(/-/g, '')}</DATE>
+            <NARRATION>${escapeXml(narration)}</NARRATION>
+            <VOUCHERTYPENAME>Payment</VOUCHERTYPENAME>
+            <PARTYNAME>${escapeXml(bankOrCashLedger)}</PARTYNAME>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>${escapeXml(expense.category)}</LEDGERNAME>
+              <AMOUNT>${expense.amount.toFixed(2)}</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>${escapeXml(bankOrCashLedger)}</LEDGERNAME>
+              <AMOUNT>${(-expense.amount).toFixed(2)}</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+          </VOUCHER>
+        </TALLYMESSAGE>
+      </REQUESTDATA>
+    </IMPORTDATA>
+  </BODY>
+</ENVELOPE>`;
+}
+
+// ── DOCUMENT GENERATORS FOR INTEGRATION MODULES ──────────────────────────────────
+
+export async function generateJobInvoiceDocument(jobId: string) {
+  const job = await prisma.job.findUnique({
+    where: { id: jobId },
+    include: {
+      customer: true,
+      device: true,
+      partRequests: {
+        where: { status: 'Approved' },
+      },
+    },
+  });
+  if (!job) throw new Error('Job not found');
+
+  const businessConfig = await getBusinessConfig();
+  const slaConfig = await prisma.sLAConfig.findUnique({ where: { id: 'sla-config' } });
+  const tiers = (slaConfig?.tiers as unknown as SLATier[]) || DEFAULT_SLA_TIERS;
+  const devType = job.device?.type || '';
+  const matchedTier = tiers.find(t => t.deviceType && t.deviceType.toLowerCase() === devType.toLowerCase()) || 
+                      tiers.find(t => t.deviceType && t.deviceType.toLowerCase() === 'other');
+  const customGstRate = matchedTier?.taxRate !== undefined ? matchedTier.taxRate : businessConfig.taxRate;
+
+  const inventory = await prisma.inventoryItem.findMany();
+  const items: TallyExtractedItem[] = [];
+  let totalPartsCost = 0;
+
+  for (const pr of job.partRequests) {
+    const inv = inventory.find((i: any) => i.name.toLowerCase() === pr.partName.toLowerCase());
+    const unitPrice = pr.unitCost ?? inv?.unitPrice ?? 0;
+    const itemTotal = unitPrice * pr.quantity;
+    totalPartsCost += itemTotal;
+
+    const gstPercent = customGstRate;
+    const baseAmount = itemTotal / (1 + gstPercent / 100);
+    const rate = baseAmount / pr.quantity;
+    const halfRate = gstPercent / 2 / 100;
+    const cgst = parseFloat((baseAmount * halfRate).toFixed(2));
+    const sgst = parseFloat((baseAmount * halfRate).toFixed(2));
+    const taxAmount = parseFloat((cgst + sgst).toFixed(2));
+
+    items.push({
+      name: pr.partName,
+      quantity: pr.quantity,
+      rate: parseFloat(rate.toFixed(2)),
+      taxRate: gstPercent,
+      taxAmount,
+      cgst,
+      sgst,
+      igst: 0,
+      total: parseFloat((baseAmount + taxAmount).toFixed(2)),
+    });
+  }
+
+  const revenue = job.actualCost ?? job.estimatedCost ?? 0;
+  totalPartsCost = items.reduce((sum, item) => sum + item.total, 0);
+  const serviceCharge = Math.max(revenue - totalPartsCost, 0);
+
+  if (serviceCharge > 0) {
+    const gstPercent = customGstRate;
+    const baseAmount = serviceCharge / (1 + gstPercent / 100);
+    const halfRate = gstPercent / 2 / 100;
+    const cgst = parseFloat((baseAmount * halfRate).toFixed(2));
+    const sgst = parseFloat((baseAmount * halfRate).toFixed(2));
+    const taxAmount = parseFloat((cgst + sgst).toFixed(2));
+
+    items.push({
+      name: 'Service Charges',
+      quantity: 1,
+      rate: parseFloat(baseAmount.toFixed(2)),
+      taxRate: gstPercent,
+      taxAmount,
+      cgst,
+      sgst,
+      igst: 0,
+      total: parseFloat((baseAmount + taxAmount).toFixed(2)),
+    });
+  }
+
+  const totalAmount = items.reduce((sum, item) => sum + item.total, 0);
+
+  const extractionResult: TallyExtractionResult = {
+    invoiceNumber: job.invoiceNumber ?? `INV-${job.id.slice(-6).toUpperCase()}`,
+    invoiceDate: (job.completedAt || job.updatedAt || new Date()).toISOString().slice(0, 10),
+    gstNumber: businessConfig.gstin,
+    customerName: job.customer.name,
+    customerGstin: job.customer.gstin || undefined,
+    supplierName: businessConfig.shopName,
+    items,
+    paymentMode: job.paymentMethod ?? 'Cash',
+    totalAmount,
+    confidence: 1.0,
+  };
+
+  const recordId = randomUUID();
+  const xml = buildVoucherXml(extractionResult, 'sales', recordId);
+
+  let record = await prisma.tallyDocument.findFirst({
+    where: { fileName: `job-${job.id}-invoice.pdf` }
+  });
+
+  if (!record) {
+    record = await prisma.tallyDocument.create({
+      data: {
+        id: recordId,
+        fileName: `job-${job.id}-invoice.pdf`,
+        documentType: 'invoice',
+        extractedData: extractionResult as any,
+        voucherType: 'sales',
+        confidence: 1.0,
+        status: 'pending',
+        xmlPayload: xml,
+        ownerId: job.engineerId || (await prisma.user.findFirst({ where: { role: 'admin' } }))?.id || '',
+      },
+    });
+  } else {
+    record = await prisma.tallyDocument.update({
+      where: { id: record.id },
+      data: { xmlPayload: xml },
+    });
+  }
+
+  return record;
+}
+
+export async function generateSaleInvoiceDocument(saleId: string) {
+  const sale = await prisma.sale.findUnique({
+    where: { id: saleId },
+    include: { items: true }
+  });
+  if (!sale) throw new Error('Sale not found');
+
+  const businessConfig = await getBusinessConfig();
+  let customerGstin: string | undefined;
+  let customerName = sale.companyName || sale.contactName || 'Counter Sale Customer';
+
+  if (sale.customerId) {
+    const customer = await prisma.customer.findUnique({ where: { id: sale.customerId } });
+    if (customer) {
+      customerName = customer.name;
+      customerGstin = customer.gstin || undefined;
+    }
+  }
+
+  const gstPercent = businessConfig.taxRate;
+  const items: TallyExtractedItem[] = sale.items.map((item: any) => {
+    const itemTotal = item.subtotal;
+    const baseAmount = itemTotal / (1 + gstPercent / 100);
+    const rate = baseAmount / item.quantity;
+    const halfRate = gstPercent / 2 / 100;
+    const cgst = parseFloat((baseAmount * halfRate).toFixed(2));
+    const sgst = parseFloat((baseAmount * halfRate).toFixed(2));
+    const taxAmount = parseFloat((cgst + sgst).toFixed(2));
+
+    return {
+      name: item.itemName,
+      quantity: item.quantity,
+      rate: parseFloat(rate.toFixed(2)),
+      taxRate: gstPercent,
+      taxAmount,
+      cgst,
+      sgst,
+      igst: 0,
+      total: parseFloat((baseAmount + taxAmount).toFixed(2)),
+    };
+  });
+
+  const totalAmount = items.reduce((sum, item) => sum + item.total, 0);
+
+  const extractionResult: TallyExtractionResult = {
+    invoiceNumber: sale.saleNumber,
+    invoiceDate: sale.createdAt.toISOString().slice(0, 10),
+    gstNumber: businessConfig.gstin,
+    customerName,
+    customerGstin,
+    supplierName: businessConfig.shopName,
+    items,
+    paymentMode: sale.paidAt ? 'Cash' : 'Credit',
+    totalAmount,
+    confidence: 1.0,
+  };
+
+  const recordId = randomUUID();
+  const xml = buildVoucherXml(extractionResult, 'sales', recordId);
+
+  let record = await prisma.tallyDocument.findFirst({
+    where: { fileName: `sale-${sale.id}-invoice.pdf` }
+  });
+
+  if (!record) {
+    record = await prisma.tallyDocument.create({
+      data: {
+        id: recordId,
+        fileName: `sale-${sale.id}-invoice.pdf`,
+        documentType: 'invoice',
+        extractedData: extractionResult as any,
+        voucherType: 'sales',
+        confidence: 1.0,
+        status: 'pending',
+        xmlPayload: xml,
+        ownerId: sale.createdById || (await prisma.user.findFirst({ where: { role: 'admin' } }))?.id || '',
+      },
+    });
+  } else {
+    record = await prisma.tallyDocument.update({
+      where: { id: record.id },
+      data: { xmlPayload: xml },
+    });
+  }
+
+  return record;
+}
+
+export async function generatePaymentReceiptDocument(paymentId: string) {
+  const payment = await prisma.payment.findUnique({
+    where: { id: paymentId },
+    include: { job: { include: { customer: true } } }
+  });
+  if (!payment) throw new Error('Payment not found');
+
+  const businessConfig = await getBusinessConfig();
+  const job = payment.job;
+  
+  const extractionResult: TallyExtractionResult = {
+    invoiceNumber: job.invoiceNumber ? `${job.invoiceNumber}-REC` : `REC-${job.id.slice(-6).toUpperCase()}`,
+    invoiceDate: payment.createdAt.toISOString().slice(0, 10),
+    gstNumber: businessConfig.gstin,
+    customerName: job.customer.name,
+    customerGstin: job.customer.gstin || undefined,
+    supplierName: businessConfig.shopName,
+    items: [],
+    paymentMode: job.paymentMethod || 'Cash',
+    totalAmount: payment.totalBill,
+    confidence: 1.0,
+  };
+
+  const recordId = randomUUID();
+  const xml = buildVoucherXml(extractionResult, 'receipt', recordId);
+
+  let record = await prisma.tallyDocument.findFirst({
+    where: { fileName: `payment-${payment.id}-receipt.pdf` }
+  });
+
+  if (!record) {
+    record = await prisma.tallyDocument.create({
+      data: {
+        id: recordId,
+        fileName: `payment-${payment.id}-receipt.pdf`,
+        documentType: 'receipt',
+        extractedData: extractionResult as any,
+        voucherType: 'receipt',
+        confidence: 1.0,
+        status: 'pending',
+        xmlPayload: xml,
+        ownerId: job.engineerId || (await prisma.user.findFirst({ where: { role: 'admin' } }))?.id || '',
+      },
+    });
+  } else {
+    record = await prisma.tallyDocument.update({
+      where: { id: record.id },
+      data: { xmlPayload: xml },
+    });
+  }
+
+  return record;
+}
+
+export async function generatePurchaseDocument(purchaseId: string) {
+  const purchase = await prisma.purchase.findUnique({
+    where: { id: purchaseId },
+    include: { items: true }
+  });
+  if (!purchase) throw new Error('Purchase not found');
+
+  const businessConfig = await getBusinessConfig();
+  let supplierGstin: string | undefined;
+  if (purchase.supplierId) {
+    const supplier = await prisma.supplier.findUnique({ where: { id: purchase.supplierId } });
+    if (supplier) supplierGstin = supplier.gstin || undefined;
+  }
+
+  const gstPercent = businessConfig.taxRate;
+  const items: TallyExtractedItem[] = purchase.items.map((item: any) => {
+    const itemTotal = item.subtotal;
+    const baseAmount = itemTotal / (1 + gstPercent / 100);
+    const rate = baseAmount / item.quantity;
+    const halfRate = gstPercent / 2 / 100;
+    const cgst = parseFloat((baseAmount * halfRate).toFixed(2));
+    const sgst = parseFloat((baseAmount * halfRate).toFixed(2));
+    const taxAmount = parseFloat((cgst + sgst).toFixed(2));
+
+    return {
+      name: item.itemName,
+      quantity: item.quantity,
+      rate: parseFloat(rate.toFixed(2)),
+      taxRate: gstPercent,
+      taxAmount,
+      cgst,
+      sgst,
+      igst: 0,
+      total: parseFloat((baseAmount + taxAmount).toFixed(2)),
+    };
+  });
+
+  const totalAmount = items.reduce((sum, item) => sum + item.total, 0);
+
+  const extractionResult: TallyExtractionResult = {
+    invoiceNumber: purchase.purchaseNumber,
+    invoiceDate: purchase.createdAt.toISOString().slice(0, 10),
+    gstNumber: businessConfig.gstin,
+    customerName: businessConfig.shopName,
+    supplierName: purchase.supplierName,
+    supplierGstin,
+    items,
+    paymentMode: 'Credit',
+    totalAmount,
+    confidence: 1.0,
+  };
+
+  const recordId = randomUUID();
+  const xml = buildVoucherXml(extractionResult, 'purchase', recordId);
+
+  let record = await prisma.tallyDocument.findFirst({
+    where: { fileName: `purchase-${purchase.id}-invoice.pdf` }
+  });
+
+  if (!record) {
+    record = await prisma.tallyDocument.create({
+      data: {
+        id: recordId,
+        fileName: `purchase-${purchase.id}-invoice.pdf`,
+        documentType: 'supplier-bill',
+        extractedData: extractionResult as any,
+        voucherType: 'purchase',
+        confidence: 1.0,
+        status: 'pending',
+        xmlPayload: xml,
+        ownerId: (await prisma.user.findFirst({ where: { role: 'admin' } }))?.id || '',
+      },
+    });
+  } else {
+    record = await prisma.tallyDocument.update({
+      where: { id: record.id },
+      data: { xmlPayload: xml },
+    });
+  }
+
+  return record;
+}
+
+export async function generateWarrantyClaimDocument(jobId: string) {
+  const job = await prisma.job.findUnique({
+    where: { id: jobId },
+    include: {
+      customer: true,
+      device: true,
+      partRequests: { where: { status: 'Approved' } }
+    }
+  });
+  if (!job) throw new Error('Job not found');
+
+  const businessConfig = await getBusinessConfig();
+  const inventory = await prisma.inventoryItem.findMany();
+  
+  let totalCost = 0;
+  for (const pr of job.partRequests) {
+    const inv = inventory.find((i: any) => i.name.toLowerCase() === pr.partName.toLowerCase());
+    const unitPrice = pr.unitCost ?? inv?.unitPrice ?? 0;
+    totalCost += unitPrice * pr.quantity;
+  }
+
+  const recordId = randomUUID();
+  const expenseDate = (job.completedAt || new Date()).toISOString().slice(0, 10);
+  const narration = `Warranty claim settlement for Job #${job.invoiceNumber || job.id}`;
+  
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<ENVELOPE>
+  <HEADER>
+    <TALLYREQUEST>Import Data</TALLYREQUEST>
+  </HEADER>
+  <BODY>
+    <IMPORTDATA>
+      <REQUESTDESC>
+        <REPORTNAME>Vouchers</REPORTNAME>
+      </REQUESTDESC>
+      <REQUESTDATA>
+        <TALLYMESSAGE xmlns:UDF="TallyUDF">
+          <VOUCHER VCHTYPE="Journal" ACTION="Create" OBJVIEW="Accounting Voucher">
+            <GUID>${escapeXml(recordId)}</GUID>
+            <DATE>${expenseDate.replace(/-/g, '')}</DATE>
+            <NARRATION>${escapeXml(narration)}</NARRATION>
+            <VOUCHERTYPENAME>Journal</VOUCHERTYPENAME>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>Warranty Expense</LEDGERNAME>
+              <AMOUNT>${totalCost.toFixed(2)}</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>Sales</LEDGERNAME>
+              <AMOUNT>${(-totalCost).toFixed(2)}</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+          </VOUCHER>
+        </TALLYMESSAGE>
+      </REQUESTDATA>
+    </IMPORTDATA>
+  </BODY>
+</ENVELOPE>`;
+
+  let record = await prisma.tallyDocument.findFirst({
+    where: { fileName: `job-${job.id}-warranty-claim.pdf` }
+  });
+
+  if (!record) {
+    record = await prisma.tallyDocument.create({
+      data: {
+        id: recordId,
+        fileName: `job-${job.id}-warranty-claim.pdf`,
+        documentType: 'receipt',
+        extractedData: {
+          invoiceNumber: job.invoiceNumber || `WRN-${job.id.slice(-6).toUpperCase()}`,
+          invoiceDate: expenseDate,
+          gstNumber: businessConfig.gstin,
+          customerName: job.customer.name,
+          supplierName: businessConfig.shopName,
+          items: [],
+          paymentMode: 'Journal',
+          totalAmount: totalCost,
+          confidence: 1.0,
+        } as any,
+        voucherType: 'journal',
+        confidence: 1.0,
+        status: 'pending',
+        xmlPayload: xml,
+        ownerId: job.engineerId || (await prisma.user.findFirst({ where: { role: 'admin' } }))?.id || '',
+      },
+    });
+  } else {
+    record = await prisma.tallyDocument.update({
+      where: { id: record.id },
+      data: { xmlPayload: xml },
+    });
+  }
+
+  return record;
+}
+
+// ── COMPLIANCE, DUPLICATES, AND COMPANION METRICS ─────────────────────────────────
+
+export async function suggestSupplierMapping(name: string) {
+  const normalized = name.trim().toLowerCase();
+  const tallyLedger = await prisma.tallyLedger.findFirst({
+    where: { name: { contains: normalized, mode: 'insensitive' }, type: 'ledger' }
+  });
+  if (tallyLedger) {
+    return {
+      suggestedLedger: tallyLedger.name,
+      ledgerConfidence: 0.95,
+    };
+  }
+  const suppliers = await prisma.supplier.findMany({
+    where: { name: { contains: normalized, mode: 'insensitive' } },
+    take: 5
+  });
+  const oneMatch = suppliers[0];
+  return {
+    suggestedLedger: oneMatch?.name ?? `${name} Supplier Ledger`,
+    ledgerConfidence: oneMatch ? 0.92 : 0.48,
+  };
+}
+
+export async function detectDuplicateInvoice(invoiceNumber: string, invoiceDate: string, docId?: string) {
+  const duplicate = await prisma.tallyDocument.findFirst({
+    where: {
+      status: 'pushed',
+      id: docId ? { not: docId } : undefined,
+      AND: [
+        { extractedData: { path: ['invoiceNumber'], equals: invoiceNumber } },
+        { extractedData: { path: ['invoiceDate'], equals: invoiceDate } },
+      ],
+    },
+  });
+  return !!duplicate;
+}
+
+export function checkGstMismatch(customerGstin: string | undefined, items: TallyExtractedItem[]): { hasMismatch: boolean; message?: string } {
+  if (!customerGstin || customerGstin === 'UNKNOWN') return { hasMismatch: false };
+  const businessState = BUSINESS_INFO.gstin.slice(0, 2);
+  const customerState = customerGstin.slice(0, 2);
+  const isIntrastate = businessState === customerState;
+
+  let hasCgstSgst = false;
+  let hasIgst = false;
+  for (const item of items) {
+    if ((item.cgst && item.cgst > 0) || (item.sgst && item.sgst > 0)) hasCgstSgst = true;
+    if (item.igst && item.igst > 0) hasIgst = true;
+  }
+
+  if (isIntrastate && hasIgst) {
+    return {
+      hasMismatch: true,
+      message: 'Intrastate transaction: Customer GSTIN state matches business, but IGST was charged instead of CGST/SGST.',
+    };
+  }
+  if (!isIntrastate && hasCgstSgst) {
+    return {
+      hasMismatch: true,
+      message: 'Interstate transaction: Customer GSTIN state does not match business, but CGST/SGST was charged instead of IGST.',
+    };
+  }
+  return { hasMismatch: false };
+}
+
 

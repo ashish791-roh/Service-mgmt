@@ -17,18 +17,18 @@
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
-    "pdf-parse": "^1.1.1",
-    "tesseract.js": "^2.1.5",
     "bcryptjs": "^3.0.3",
     "date-fns": "^4.1.0",
     "dotenv": "^17.4.2",
     "framer-motion": "^12.38.0",
     "lucide-react": "^1.14.0",
     "next": "^15.1.0",
+    "pdf-parse": "^1.1.1",
     "pg": "^8.20.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "recharts": "^3.8.1",
+    "tesseract.js": "^2.1.5",
     "zod": "^4.4.3"
   },
   "devDependencies": {

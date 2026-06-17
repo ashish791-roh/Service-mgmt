@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
+import { motion, AnimatePresence } from 'framer-motion';
 import { PageHeader, Card, Button } from './components/ReceptionUIComponents';
 import { QRModal } from './components/QRModal';
 import { CustomerDetailModal } from './components/CustomerDetailModal';
@@ -19,6 +20,8 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 
+import { TallySyncBadge } from '../../components/TallySyncBadge';
+
 export const CustomersPage: React.FC = () => {
   const {
     updateCustomer,
@@ -29,14 +32,17 @@ export const CustomersPage: React.FC = () => {
 
   const { toast, show } = useToast();
 
-  type CustomerWithDetails = Customer & { devices?: Device[]; jobs?: Job[] };
+  type CustomerWithDetails = Customer & { devices?: Device[]; jobs?: Job[]; tallyStatus?: string | null };
 
   const [customers, setCustomers] = useState<CustomerWithDetails[]>([]);
   const [totalCustomers, setTotalCustomers] = useState(0);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const limit = 12;
+  
+  // ... rest unchanged ...
 
   // Registration wizard state
   const [showModal, setShowModal] = useState(false);
@@ -52,6 +58,14 @@ export const CustomersPage: React.FC = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
 
+  // ── Debounce Search Logic ──
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
   // ── Fetch Customers ──
   const fetchCustomers = async () => {
     setIsLoading(true);
@@ -59,8 +73,8 @@ export const CustomersPage: React.FC = () => {
       const params = new URLSearchParams();
       params.set('page', String(page));
       params.set('limit', String(limit));
-      if (search.trim()) {
-        params.set('search', search.trim());
+      if (debouncedSearch.trim()) {
+        params.set('search', debouncedSearch.trim());
       }
       const res = await fetch(`/api/customers?${params.toString()}`);
       if (res.ok) {
@@ -78,11 +92,11 @@ export const CustomersPage: React.FC = () => {
   useEffect(() => {
     fetchCustomers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, search, customerRefreshTrigger]);
+  }, [page, debouncedSearch, customerRefreshTrigger]);
 
   useEffect(() => {
     setPage(1);
-  }, [search]);
+  }, [debouncedSearch]);
 
   const openEditCustomer = (c: Customer) => {
     setEditingCustomer(c);
@@ -270,131 +284,144 @@ export const CustomersPage: React.FC = () => {
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {customers.map((c) => {
-            const cJobs = c.jobs || [];
-            const activeJobs = cJobs.filter((j) => !['Completed', 'Delivered'].includes(j.status));
-            const completedJobs = cJobs.filter((j) => ['Completed', 'Delivered'].includes(j.status));
-            const totalSpend = completedJobs.reduce((s: number, j) => s + (j.actualCost ?? j.estimatedCost), 0);
-            const lastJobDate =
-              cJobs.length > 0
-                ? new Date(
-                    [...cJobs].sort(
-                      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-                    )[0].createdAt
-                  )
-                : new Date(c.createdAt);
-            const registeredDays = Math.floor((Date.now() - new Date(c.createdAt).getTime()) / 86400000);
-            const completionRate = cJobs.length > 0 ? Math.round((completedJobs.length / cJobs.length) * 100) : 0;
+        <motion.div layout className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          <AnimatePresence mode="popLayout">
+            {customers.map((c) => {
+              const cJobs = c.jobs || [];
+              const activeJobs = cJobs.filter((j) => !['Completed', 'Delivered'].includes(j.status));
+              const completedJobs = cJobs.filter((j) => ['Completed', 'Delivered'].includes(j.status));
+              const totalSpend = completedJobs.reduce((s: number, j) => s + (j.actualCost ?? j.estimatedCost), 0);
+              const lastJobDate =
+                cJobs.length > 0
+                  ? new Date(
+                      [...cJobs].sort(
+                        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+                      )[0].createdAt
+                    )
+                  : new Date(c.createdAt);
+              const registeredDays = Math.floor((Date.now() - new Date(c.createdAt).getTime()) / 86400000);
+              const completionRate = cJobs.length > 0 ? Math.round((completedJobs.length / cJobs.length) * 100) : 0;
 
-            return (
-              <Card
-                key={c.id}
-                className="p-5 flex flex-col h-full hover:border-teal-400 hover:shadow-md transition-all duration-200 cursor-pointer active:scale-[0.99] group"
-              >
-                <div onClick={() => setSelectedCustomer(c)}>
-                  {/* Header */}
-                  <div className="flex items-start gap-4 mb-4">
-                    <div className="w-12 h-12 rounded-lg bg-teal-50 flex items-center justify-center text-[18px] font-medium text-teal-600 border border-teal-100 shrink-0">
-                      {c.name.charAt(0)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-[13px] font-semibold text-gray-900 mb-0.5">{c.name}</h3>
-                      <p className="text-[11px] font-normal text-gray-500 flex items-center gap-1">
-                        <Phone size={10} /> {c.phone}
-                      </p>
-                      {c.address && (
-                        <p className="text-[10px] font-normal text-gray-400 truncate flex items-center gap-1 mt-0.5">
-                          <MapPin size={10} /> {c.address}
-                        </p>
-                      )}
-                    </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setShowDeleteConfirm(c.id);
-                      }}
-                      className="p-1.5 rounded-lg text-gray-300 hover:text-rose-500 hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100 shrink-0"
-                      title="Delete customer"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
+              return (
+                <motion.div
+                  key={c.id}
+                  layout
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ duration: 0.18 }}
+                >
+                  <Card
+                    className="p-5 flex flex-col h-full hover:border-teal-400 hover:shadow-md transition-all duration-200 cursor-pointer active:scale-[0.99] group"
+                  >
+                    <div onClick={() => setSelectedCustomer(c)}>
+                      {/* Header */}
+                      <div className="flex items-start gap-4 mb-4">
+                        <div className="w-12 h-12 rounded-lg bg-teal-50 flex items-center justify-center text-[18px] font-medium text-teal-600 border border-teal-100 shrink-0">
+                          {c.name.charAt(0)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="text-[13px] font-semibold text-gray-900 mb-0.5 flex items-center gap-1.5 flex-wrap">
+                            <span>{c.name}</span>
+                            {c.tallyStatus && <TallySyncBadge status={c.tallyStatus} />}
+                          </h3>
+                          <p className="text-[11px] font-normal text-gray-500 flex items-center gap-1">
+                            <Phone size={10} /> {c.phone}
+                          </p>
+                          {c.address && (
+                            <p className="text-[10px] font-normal text-gray-400 truncate flex items-center gap-1 mt-0.5">
+                              <MapPin size={10} /> {c.address}
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowDeleteConfirm(c.id);
+                          }}
+                          className="p-1.5 rounded-lg text-gray-300 hover:text-rose-500 hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100 shrink-0"
+                          title="Delete customer"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
 
-                  {/* Summary metrics */}
-                  <div className="grid grid-cols-2 gap-3 mb-4 pb-4 border-b border-gray-100">
-                    <div className="bg-teal-50 rounded-lg p-3">
-                      <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1">Total Jobs</p>
-                      <p className="text-[18px] font-semibold text-teal-600">{cJobs.length}</p>
-                      <p className="text-[9px] text-gray-400 mt-1">{completedJobs.length} completed</p>
-                    </div>
-                    <div className={`rounded-lg p-3 ${totalSpend > 0 ? 'bg-green-50' : 'bg-gray-50'}`}>
-                      <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1">Total Spend</p>
-                      <p className={`text-[18px] font-semibold ${totalSpend > 0 ? 'text-green-600' : 'text-gray-400'}`}>
-                        {totalSpend > 0 ? `₹${(totalSpend / 1000).toFixed(1)}k` : '—'}
-                      </p>
-                      <p className="text-[9px] text-gray-400 mt-1">{completionRate}% done</p>
-                    </div>
-                  </div>
+                      {/* Summary metrics */}
+                      <div className="grid grid-cols-2 gap-3 mb-4 pb-4 border-b border-gray-100">
+                        <div className="bg-teal-50 rounded-lg p-3">
+                          <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1">Total Jobs</p>
+                          <p className="text-[18px] font-semibold text-teal-600">{cJobs.length}</p>
+                          <p className="text-[9px] text-gray-400 mt-1">{completedJobs.length} completed</p>
+                        </div>
+                        <div className={`rounded-lg p-3 ${totalSpend > 0 ? 'bg-green-50' : 'bg-gray-50'}`}>
+                          <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1">Total Spend</p>
+                          <p className={`text-[18px] font-semibold ${totalSpend > 0 ? 'text-green-600' : 'text-gray-400'}`}>
+                            {totalSpend > 0 ? `₹${(totalSpend / 1000).toFixed(1)}k` : '—'}
+                          </p>
+                          <p className="text-[9px] text-gray-400 mt-1">{completionRate}% done</p>
+                        </div>
+                      </div>
 
-                  {/* Status row */}
-                  <div className="flex items-center justify-between mb-4 pb-4 border-b border-gray-100">
-                    <div className="flex flex-col gap-1">
-                      <span
-                        className={`px-2 py-1 rounded text-[10px] font-semibold w-fit ${
-                          activeJobs.length > 0
-                            ? 'bg-amber-100 text-amber-700'
-                            : completedJobs.length > 0
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-gray-100 text-gray-600'
-                        }`}
-                      >
-                        {activeJobs.length > 0
-                          ? `${activeJobs.length} Active`
-                          : completedJobs.length > 0
-                          ? 'All Completed'
-                          : 'No Jobs'}
-                      </span>
-                      <p className="text-[10px] text-gray-400">Registered {registeredDays}d ago</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide mb-1">Last Seen</p>
-                      <p className="text-[11px] font-semibold text-gray-700">
-                        {lastJobDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Job status badges */}
-                  {cJobs.length > 0 && (
-                    <div className="flex items-center justify-between">
-                      <div className="flex gap-1.5 flex-wrap">
-                        {cJobs.slice(0, 3).map((j) => (
+                      {/* Status row */}
+                      <div className="flex items-center justify-between mb-4 pb-4 border-b border-gray-100">
+                        <div className="flex flex-col gap-1">
                           <span
-                            key={j.id}
-                            className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide border-l-2 ${
-                              j.status === 'Completed' || j.status === 'Delivered'
-                                ? 'bg-green-50 text-green-700 border-green-500'
-                                : 'bg-amber-50 text-amber-700 border-amber-500'
+                            className={`px-2 py-1 rounded text-[10px] font-semibold w-fit ${
+                              activeJobs.length > 0
+                                ? 'bg-amber-100 text-amber-700'
+                                : completedJobs.length > 0
+                                ? 'bg-green-100 text-green-700'
+                                : 'bg-gray-100 text-gray-600'
                             }`}
                           >
-                            {j.status}
+                            {activeJobs.length > 0
+                              ? `${activeJobs.length} Active`
+                              : completedJobs.length > 0
+                              ? 'All Completed'
+                              : 'No Jobs'}
                           </span>
-                        ))}
-                        {cJobs.length > 3 && (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-gray-100 text-gray-600">
-                            +{cJobs.length - 3}
-                          </span>
-                        )}
+                          <p className="text-[10px] text-gray-400">Registered {registeredDays}d ago</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide mb-1">Last Seen</p>
+                          <p className="text-[11px] font-semibold text-gray-700">
+                            {lastJobDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                          </p>
+                        </div>
                       </div>
-                      <ChevronRight size={14} className="text-gray-300 group-hover:text-teal-400 transition-colors shrink-0" />
+
+                      {/* Job status badges */}
+                      {cJobs.length > 0 && (
+                        <div className="flex items-center justify-between">
+                          <div className="flex gap-1.5 flex-wrap">
+                            {cJobs.slice(0, 3).map((j) => (
+                              <span
+                                key={j.id}
+                                className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide border-l-2 ${
+                                  j.status === 'Completed' || j.status === 'Delivered'
+                                    ? 'bg-green-50 text-green-700 border-green-500'
+                                    : 'bg-amber-50 text-amber-700 border-amber-500'
+                                }`}
+                              >
+                                {j.status}
+                              </span>
+                            ))}
+                            {cJobs.length > 3 && (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-gray-100 text-gray-600">
+                                +{cJobs.length - 3}
+                              </span>
+                            )}
+                          </div>
+                          <ChevronRight size={14} className="text-gray-300 group-hover:text-teal-400 transition-colors shrink-0" />
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              </Card>
-            );
-          })}
-        </div>
+                  </Card>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+        </motion.div>
 
         {customers.length === 0 && !isLoading && (
           <div className="p-12 text-center bg-white border border-gray-200 rounded-xl">

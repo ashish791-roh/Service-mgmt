@@ -68,7 +68,7 @@ export const SystemSettingsPage: React.FC = () => {
     setSlaEdited(true);
   };
   const handleAddTier = () => {
-    setEditTiers(prev => [...prev, { deviceType: 'New Type', warningHours: 48, criticalHours: 72 }]);
+    setEditTiers(prev => [...prev, { deviceType: 'New Type', warningHours: 48, criticalHours: 72, taxRate: 18 }]);
     setSlaEdited(true);
   };
   const handleRemoveTier = (idx: number) => {
@@ -138,6 +138,36 @@ export const SystemSettingsPage: React.FC = () => {
   const [saved, setSaved] = useState(false);
   const [originalSettings, setOriginalSettings] = useState<SystemSettings>(loadSettings);
 
+  useEffect(() => {
+    async function loadBusinessSettings() {
+      try {
+        const res = await fetch('/api/business-settings');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.settings) {
+            setSettings(prev => {
+              const updated = {
+                ...prev,
+                shopName: data.settings.shopName || prev.shopName,
+                shopPhone: data.settings.phone || prev.shopPhone,
+                shopEmail: data.settings.email || prev.shopEmail,
+                shopAddress: data.settings.address || prev.shopAddress,
+                gstin: data.settings.gstin || prev.gstin,
+                taxRate: data.settings.taxRate !== undefined ? data.settings.taxRate : prev.taxRate,
+                taxLabel: data.settings.taxLabel || prev.taxLabel,
+              };
+              setOriginalSettings(updated);
+              return updated;
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to load business settings from DB', e);
+      }
+    }
+    loadBusinessSettings();
+  }, []);
+
   const isDirty = useMemo(() => {
     return JSON.stringify(settings) !== JSON.stringify(originalSettings);
   }, [settings, originalSettings]);
@@ -164,8 +194,36 @@ export const SystemSettingsPage: React.FC = () => {
   const set = <K extends keyof SystemSettings>(key: K, value: SystemSettings[K]) =>
     setSettings(prev => ({ ...prev, [key]: value }));
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    // Save locally
     saveSettings(settings);
+
+    // Save to database
+    try {
+      const res = await fetch('/api/business-settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          shopName: settings.shopName,
+          tagline: 'Device Repair & Service Centre',
+          address: settings.shopAddress,
+          phone: settings.shopPhone,
+          email: settings.shopEmail,
+          gstin: settings.gstin,
+          taxRate: settings.taxRate,
+          taxLabel: settings.taxLabel,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json();
+        showToast(body.error || 'Failed to save business settings to database.', 'error');
+        return;
+      }
+    } catch (e) {
+      showToast('Network error saving business settings to database.', 'error');
+      return;
+    }
+
     setOriginalSettings(settings);
     setSaved(true);
     showToast('Settings successfully updated', 'success');

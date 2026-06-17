@@ -47,6 +47,31 @@ export const BusinessProfileTab: React.FC<BusinessProfileTabProps> = ({ settings
         />
       </FieldRow>
       <Divider />
+      <FieldRow label="Registered GSTIN" hint="Your business 15-digit GSTIN used for Tally matching and invoicing.">
+        <Input
+          value={settings.gstin || ''}
+          onChange={(v: string) => set('gstin', v)}
+          placeholder="e.g. 29ABCDE1234F1Z5"
+        />
+      </FieldRow>
+      <Divider />
+      <FieldRow label="Default Tax Rate (%)" hint="Default GST rate in percentage applied to service charges.">
+        <Input
+          value={settings.taxRate !== undefined ? settings.taxRate : 18}
+          onChange={(v: string) => set('taxRate', parseFloat(v) || 0)}
+          type="number"
+          placeholder="18"
+        />
+      </FieldRow>
+      <Divider />
+      <FieldRow label="Tax Label" hint="The label printed on invoices next to the tax rate (e.g. GST).">
+        <Input
+          value={settings.taxLabel || ''}
+          onChange={(v: string) => set('taxLabel', v)}
+          placeholder="GST"
+        />
+      </FieldRow>
+      <Divider />
       <FieldRow label="Billing Currency" hint="Set the base currency for all estimates and sales.">
         <Select
           icon={CreditCard}

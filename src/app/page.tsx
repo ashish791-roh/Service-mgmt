@@ -17,6 +17,7 @@ import { ReportsPage } from '../pages_components/ReportsPage';
 import { SystemSettingsPage } from '../pages_components/SystemSettingsPage';
 import { SalesPage } from '../pages_components/SalesPage';
 import { TallyIntegrationPage } from '../pages_components/TallyIntegrationPage';
+import { BranchesPage } from '../pages_components/BranchesPage';
 import { Search, ChevronRight } from 'lucide-react';
 
 const PAGE_LABELS: Record<string, string> = {
@@ -25,23 +26,23 @@ const PAGE_LABELS: Record<string, string> = {
   assign: 'Assign Jobs', parts: 'Parts Requests', inventory: 'Inventory',
   sales: 'Sales', billing: 'Billing', tally: 'Tally Integration', 'my-jobs': 'My Jobs',
   notifications: 'Notifications', settings: 'System Settings',
-  'audit-log': 'Audit Log',
+  'audit-log': 'Audit Log', branches: 'Branch Management',
 };
 
 const PAGE_ICONS: Record<string, string> = {
   dashboard: '⊞', users: '👥', analytics: '📊', reports: '📈',
   jobs: '🔧', assign: '📌', parts: '🔩',
   inventory: '📦', sales: '🛒', billing: '💰', tally: '📇', 'my-jobs': '📋',
-  notifications: '🔔', settings: '⚙️', 'audit-log': '🛡️',
+  notifications: '🔔', settings: '⚙️', 'audit-log': '🛡️', branches: '🌿',
 };
 
 function PageContent({ activePage, setActivePage }: { activePage: string; setActivePage: (p: string) => void }) {
   const { currentUser } = useApp();
   if (!currentUser) return null;
 
-  const isAdmin = currentUser.role === 'admin';
-  const isAdminOrReception = currentUser.role === 'admin' || currentUser.role === 'reception';
-  const isEngineer = currentUser.role === 'engineer';
+  const isAdmin = currentUser.role === 'admin' || currentUser.role === 'super_admin';
+  const isAdminOrReception = currentUser.role === 'admin' || currentUser.role === 'reception' || currentUser.role === 'super_admin';
+  const isEngineer = currentUser.role === 'engineer' || currentUser.role === 'super_admin';
 
   const AccessDenied = () => (
     <div className="flex flex-col items-center justify-center h-64 text-slate-400">
@@ -70,6 +71,7 @@ function PageContent({ activePage, setActivePage }: { activePage: string; setAct
     case 'settings':    return isAdmin ? <SystemSettingsPage /> : <AccessDenied />;
     case 'tally':       return isAdmin ? <TallyIntegrationPage /> : <AccessDenied />;
     case 'audit-log':   return isAdmin ? <AuditLogPage />       : <AccessDenied />;
+    case 'branches':    return (isAdmin || currentUser?.role === 'super_admin') ? <BranchesPage /> : <AccessDenied />;
     default: return (
       <div className="flex flex-col items-center justify-center h-64 text-slate-400">
         <Search size={40} className="mb-3 opacity-40" />

@@ -25,4 +25,36 @@ describe('Billing helper', () => {
       totalBill: 0,
     });
   });
+
+  it('treats empty string inputs as zero', () => {
+    expect(calculatePaymentTotals('', '   ')).toEqual({
+      serviceCharge: 0,
+      partsCost: 0,
+      totalBill: 0,
+    });
+  });
+
+  it('handles negative values correctly', () => {
+    expect(calculatePaymentTotals(-10, '-25.50')).toEqual({
+      serviceCharge: -10,
+      partsCost: -25.5,
+      totalBill: -35.5,
+    });
+  });
+
+  it('handles precision decimals correctly', () => {
+    expect(calculatePaymentTotals(0.1, 0.2)).toEqual({
+      serviceCharge: 0.1,
+      partsCost: 0.2,
+      totalBill: 0.30000000000000004, // standard JS float addition behavior
+    });
+  });
+
+  it('handles undefined/missing arguments by falling back to zero', () => {
+    expect(calculatePaymentTotals(undefined as unknown as number, undefined as unknown as number)).toEqual({
+      serviceCharge: 0,
+      partsCost: 0,
+      totalBill: 0,
+    });
+  });
 });

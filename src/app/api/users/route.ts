@@ -4,6 +4,9 @@ import bcrypt from 'bcryptjs';
 import { requireSession, LIMITS, checkLengths } from '@/lib/auth';
 import { writeAuditLog } from '@/lib/auditLog';
 import { rateLimiter, RATE_LIMITS } from '@/lib/rateLimit';
+import { captureChange } from '@/lib/branchSync';
+import { withLocalBranchId } from '@/lib/branchContext';
+
 
 // POST /api/users — admin only
 export async function POST(request: Request) {
@@ -60,14 +63,23 @@ export async function POST(request: Request) {
         }
 
         const user = await prisma.user.create({
-            data: {
+            data: withLocalBranchId({
                 name: body.name.trim(),
                 email: body.email.trim().toLowerCase(),
                 password: hashedPassword,
                 role: body.role,
                 isActive: body.isActive ?? true,
-            },
+            }),
         });
+
+        // ── Outbox Sync ──────────────────────────────────────────────
+        captureChange({
+            entityType: 'User',
+            entityId: user.id,
+            action: 'create',
+            payload: user,
+        }).catch(err => console.error('[SyncOutbox] User create error:', err));
+
 
         // ── Audit log — user created ────────────────────────────
         writeAuditLog({

@@ -58,11 +58,11 @@ export interface SessionUser {
   id:       string;
   email:    string;
   name:     string;
-  role:     'admin' | 'reception' | 'engineer';
+  role:     'admin' | 'reception' | 'engineer' | 'super_admin';
   isActive: boolean;
 }
 
-type AllowedRoles = ('admin' | 'reception' | 'engineer')[];
+type AllowedRoles = ('admin' | 'reception' | 'engineer' | 'super_admin')[];
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
@@ -317,7 +317,7 @@ export async function requireSession(
     return { error: NextResponse.json({ error: 'Account is disabled.' }, { status: 403 }) };
   }
 
-  if (roles && !roles.includes(user.role)) {
+  if (roles && !roles.includes(user.role) && user.role !== 'super_admin') {
     return {
       error: NextResponse.json(
         { error: 'You do not have permission to perform this action.' },

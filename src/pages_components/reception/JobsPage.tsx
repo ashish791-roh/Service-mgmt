@@ -6,8 +6,9 @@ import { QRModal } from './components/QRModal';
 import { PageHeader, Card, Button } from './components/ReceptionUIComponents';
 import { Users, Search, Plus, X, Phone, MapPin, Monitor, Wrench, Calendar, QrCode, Trash2, Pencil, AlertTriangle } from 'lucide-react';
 import type { Customer, Device, Job } from '../../types';
+import { TallySyncBadge } from '../../components/TallySyncBadge';
 
-type JobWithDetails = Job & { customer?: Customer; device?: Device };
+type JobWithDetails = Job & { customer?: Customer; device?: Device; tallyStatus?: string | null };
 
 export const JobsPage: React.FC = () => {
   const { users, currentUser, slaTiers, deleteJob, addCustomer, addDevice, addJob, updateCustomer, deleteCustomer, jobRefreshTrigger, customerRefreshTrigger } = useApp();
@@ -18,6 +19,7 @@ export const JobsPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [engineerFilter, setEngineerFilter] = useState<string>('All');
   const [customerNameSearch, setCustomerNameSearch] = useState('');
+  const [debouncedCustomerNameSearch, setDebouncedCustomerNameSearch] = useState('');
 
   // ── Paginated Jobs State ──
   const [jobs, setJobs] = useState<JobWithDetails[]>([]);
@@ -32,6 +34,7 @@ export const JobsPage: React.FC = () => {
   const [totalCustomers, setTotalCustomers] = useState(0);
   const [customersPage, setCustomersPage] = useState(1);
   const [customerSearch, setCustomerSearch] = useState('');
+  const [debouncedCustomerSearch, setDebouncedCustomerSearch] = useState('');
   const customersLimit = 10;
   const [isLoadingCustomers, setIsLoadingCustomers] = useState(false);
 
@@ -60,6 +63,21 @@ export const JobsPage: React.FC = () => {
   const engineers = users.filter(u => u.role === 'engineer' && u.active);
   const statuses = ['All', 'New', 'Assigned', 'In Progress', 'Completed', 'Delivered'];
 
+  // ── Debounce Search Logic ──
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedCustomerNameSearch(customerNameSearch);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [customerNameSearch]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedCustomerSearch(customerSearch);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [customerSearch]);
+
   // ── Fetch Jobs On-Demand ──
   const fetchJobs = async () => {
     setIsLoadingJobs(true);
@@ -69,7 +87,7 @@ export const JobsPage: React.FC = () => {
       params.set('limit', String(jobsLimit));
       if (statusFilter !== 'All') params.set('status', statusFilter);
       if (engineerFilter !== 'All') params.set('engineerId', engineerFilter);
-      if (customerNameSearch.trim()) params.set('search', customerNameSearch.trim());
+      if (debouncedCustomerNameSearch.trim()) params.set('search', debouncedCustomerNameSearch.trim());
 
       const res = await fetch(`/api/jobs?${params.toString()}`);
       if (res.ok) {
@@ -91,7 +109,7 @@ export const JobsPage: React.FC = () => {
       const params = new URLSearchParams();
       params.set('page', String(customersPage));
       params.set('limit', String(customersLimit));
-      if (customerSearch.trim()) params.set('search', customerSearch.trim());
+      if (debouncedCustomerSearch.trim()) params.set('search', debouncedCustomerSearch.trim());
 
       const res = await fetch(`/api/customers?${params.toString()}`);
       if (res.ok) {
@@ -109,23 +127,23 @@ export const JobsPage: React.FC = () => {
   useEffect(() => {
     fetchJobs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobsPage, statusFilter, engineerFilter, customerNameSearch, jobRefreshTrigger]);
+  }, [jobsPage, statusFilter, engineerFilter, debouncedCustomerNameSearch, jobRefreshTrigger]);
 
   useEffect(() => {
     if (showCustomersPanel) {
       fetchCustomers();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showCustomersPanel, customersPage, customerSearch, customerRefreshTrigger]);
+  }, [showCustomersPanel, customersPage, debouncedCustomerSearch, customerRefreshTrigger]);
 
   // Reset to first page when filters change
   useEffect(() => {
     setJobsPage(1);
-  }, [statusFilter, engineerFilter, customerNameSearch]);
+  }, [statusFilter, engineerFilter, debouncedCustomerNameSearch]);
 
   useEffect(() => {
     setCustomersPage(1);
-  }, [customerSearch]);
+  }, [debouncedCustomerSearch]);
 
   // ── Registration handlers ──
   const handleRegNext = async () => {
@@ -411,7 +429,12 @@ export const JobsPage: React.FC = () => {
                         <span className="text-[11px] font-medium text-rose-500 bg-rose-50 border border-rose-100 px-2.5 py-1 rounded-md uppercase tracking-wide">Unassigned</span>
                       )}
                     </td>
-                    <td className="px-6 py-4"><StatusBadge status={job.status} /></td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col gap-1 items-start">
+                        <StatusBadge status={job.status} />
+                        {job.tallyStatus && <TallySyncBadge status={job.tallyStatus} />}
+                      </div>
+                    </td>
                     <td className="px-6 py-4">
                       <SLABadge createdAt={job.createdAt} status={job.status} deviceType={device?.type} tiers={slaTiers} />
                       {!['Completed', 'Delivered'].includes(job.status) && (

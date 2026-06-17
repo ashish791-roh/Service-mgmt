@@ -19,9 +19,14 @@ interface GlobalStateContextType {
   error: string | null;
   retryLoad: () => Promise<void>;
   stats: DashboardStats | null;
+  isHQ: boolean;
+  branches: any[];
+  selectedBranchId: string;
+  setSelectedBranchId: (id: string) => void;
 }
 
 const GlobalStateContext = createContext<GlobalStateContextType | null>(null);
+
 
 const AppLoader: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, setState] = useState<{ isLoading: boolean; error: string | null }>({
@@ -30,6 +35,10 @@ const AppLoader: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   });
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [dataLoaded, setDataLoaded] = useState(false);
+  const [isHQ, setIsHQ] = useState(false);
+  const [branches, setBranches] = useState<any[]>([]);
+  const [selectedBranchId, setSelectedBranchId] = useState<string>('all');
+
 
   const auth = useAuth();
   const users = useUsers();
@@ -59,6 +68,9 @@ const AppLoader: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         if (data.notifications) notification.setNotifications(data.notifications);
         if (data.sales) sales.setSales(data.sales);
         if (data.stats) setStats(data.stats);
+        if (data.isHQ !== undefined) setIsHQ(data.isHQ);
+        if (data.branches) setBranches(data.branches);
+
 
         try {
           const fetchedSla = await fetchSLATiersFromAPI();
@@ -119,7 +131,16 @@ const AppLoader: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   }, [auth.currentUser]);
 
   return (
-    <GlobalStateContext.Provider value={{ isLoading: state.isLoading, error: state.error, retryLoad: loadData, stats }}>
+    <GlobalStateContext.Provider value={{
+      isLoading: state.isLoading,
+      error: state.error,
+      retryLoad: loadData,
+      stats,
+      isHQ,
+      branches,
+      selectedBranchId,
+      setSelectedBranchId,
+    }}>
       {children}
     </GlobalStateContext.Provider>
   );

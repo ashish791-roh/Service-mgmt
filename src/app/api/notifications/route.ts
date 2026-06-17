@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireSession } from '@/lib/auth';
 import { rateLimiter, getClientIP, RATE_LIMITS } from '@/lib/rateLimit';
+import { captureChange } from '@/lib/branchSync';
+import { withLocalBranchId } from '@/lib/branchContext';
+
 
 // POST /api/notifications — admin only: broadcast an announcement to all users
 export async function POST(request: Request) {
@@ -40,14 +43,28 @@ export async function POST(request: Request) {
             return NextResponse.json({ created: 0 });
         }
 
-        // Bulk-create one notification per user
-        await prisma.notification.createMany({
-            data: users.map(u => ({
-                userId: u.id,
-                message: `📢 Announcement: ${message}`,
-                read: false,
-            })),
-        });
+        // Create one notification per user
+        const createdNotifications = await Promise.all(
+            users.map((u: any) =>
+                prisma.notification.create({
+                    data: withLocalBranchId({
+                        userId: u.id,
+                        message: `📢 Announcement: ${message}`,
+                        read: false,
+                    }),
+                })
+            )
+        );
+
+        for (const notif of createdNotifications) {
+            captureChange({
+                entityType: 'Notification',
+                entityId: notif.id,
+                action: 'create',
+                payload: notif,
+            }).catch(err => console.error('[SyncOutbox] Announcement notification create error:', err));
+        }
+
 
         return NextResponse.json({ created: users.length });
     } catch (error) {
@@ -103,6 +120,15 @@ export async function PUT(request: Request) {
             where: { id: body.id },
             data: { read: true },
         });
+
+        // ── Outbox Sync ──────────────────────────────────────────────
+        captureChange({
+            entityType: 'Notification',
+            entityId: notification.id,
+            action: 'update',
+            payload: notification,
+        }).catch(err => console.error('[SyncOutbox] Notification update error:', err));
+
 
         return NextResponse.json({
             ...notification,

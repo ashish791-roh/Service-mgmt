@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Users, BarChart3, LineChart,
   UserSquare2, Wrench, Pin, Nut, Box,
   Wallet, ClipboardList, Bell, LogOut, Wrench as ToolIcon,
-  Settings, ShoppingCart, ChevronRight, X, Menu,
+  Settings, ShoppingCart, ChevronRight, X, Menu, GitBranch,
 } from 'lucide-react';
 
 interface NavItem { id: string; label: string; shortLabel: string; icon: React.ComponentType<{ size?: number; className?: string; strokeWidth?: number }>; roles: Role[]; }
@@ -22,14 +22,16 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'inventory',     label: 'Inventory',       shortLabel: 'Stock',   icon: Box,              roles: ['admin', 'reception'] },
   { id: 'sales',         label: 'Sales',           shortLabel: 'Sales',   icon: ShoppingCart,     roles: ['admin', 'reception'] },
   { id: 'billing',       label: 'Billing',         shortLabel: 'Billing', icon: Wallet,           roles: ['admin', 'reception'] },
+  { id: 'branches',      label: 'Branch Management', shortLabel: 'Branches',icon: GitBranch,        roles: ['admin', 'super_admin'] },
   { id: 'my-jobs',       label: 'My Jobs',         shortLabel: 'My Jobs', icon: ClipboardList,    roles: ['engineer'] },
-  { id: 'notifications', label: 'Notifications',   shortLabel: 'Alerts',  icon: Bell,             roles: ['admin', 'reception', 'engineer'] },
+  { id: 'notifications', label: 'Notifications',   shortLabel: 'Alerts',  icon: Bell,             roles: ['admin', 'reception', 'engineer', 'super_admin'] },
   { id: 'settings',      label: 'System Settings', shortLabel: 'Settings',icon: Settings,         roles: ['admin'] },
 ];
 
 // Which pages appear in the bottom tab bar (primary navigation, max 4 + "More")
 const TAB_BAR_IDS: Record<Role, string[]> = {
   admin:     ['dashboard', 'jobs', 'analytics', 'notifications'],
+  super_admin: ['dashboard', 'jobs', 'analytics', 'notifications'],
   reception: ['dashboard', 'jobs', 'customers', 'notifications'],
   engineer:  ['dashboard', 'my-jobs', 'notifications'],
 };
@@ -45,18 +47,18 @@ const PAGE_LABELS: Record<string, string> = {
   reports: 'Reports', customers: 'Customers', jobs: 'Jobs',
   assign: 'Assign Jobs', parts: 'Parts Requests', inventory: 'Inventory',
   sales: 'Sales', billing: 'Billing', 'my-jobs': 'My Jobs',
-  notifications: 'Notifications', settings: 'Settings',
+  notifications: 'Notifications', settings: 'Settings', branches: 'Branch Management',
 };
 
 const SECTIONS = [
   { label: 'Overview',    ids: ['dashboard', 'analytics', 'reports'] },
   { label: 'Operations',  ids: ['customers', 'jobs', 'assign', 'my-jobs', 'parts'] },
   { label: 'Management',  ids: ['users', 'inventory', 'sales', 'billing'] },
-  { label: 'System',      ids: ['notifications', 'settings'] },
+  { label: 'System',      ids: ['notifications', 'branches', 'settings'] },
 ];
 
 export const MobileLayout: React.FC<MobileLayoutProps> = ({ activePage, onNavigate, children }) => {
-  const { currentUser, logout, getUnreadCount } = useApp();
+  const { currentUser, logout, getUnreadCount, isHQ, branches, selectedBranchId, setSelectedBranchId } = useApp();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerVisible, setDrawerVisible] = useState(false);
   const drawerRef = useRef<HTMLDivElement>(null);
@@ -67,7 +69,11 @@ export const MobileLayout: React.FC<MobileLayoutProps> = ({ activePage, onNaviga
 
   const role = currentUser.role as Role;
   const unread = getUnreadCount(currentUser.id);
-  const filtered = NAV_ITEMS.filter(item => item.roles.includes(role));
+  const filtered = NAV_ITEMS.filter(item => {
+    if (item.id === 'branches' && !isHQ) return false;
+    if (currentUser.role === 'super_admin') return true;
+    return item.roles.includes(role);
+  });
   const tabIds = TAB_BAR_IDS[role] ?? ['dashboard', 'notifications'];
   const tabItems = tabIds.map(id => filtered.find(f => f.id === id)).filter(Boolean) as NavItem[];
 
@@ -76,10 +82,11 @@ export const MobileLayout: React.FC<MobileLayoutProps> = ({ activePage, onNaviga
 
   const roleConfig: Record<string, { bg: string; label: string }> = {
     admin:     { bg: 'bg-amber-500', label: 'Administrator' },
+    super_admin: { bg: 'bg-indigo-600', label: 'HQ Super Admin' },
     reception: { bg: 'bg-teal-500',  label: 'Reception' },
     engineer:  { bg: 'bg-cyan-500',  label: 'Engineer' },
   };
-  const roleInfo = roleConfig[role];
+  const roleInfo = roleConfig[role] || { bg: 'bg-gray-500', label: role };
 
   const openDrawer = () => {
     setDrawerOpen(true);
@@ -256,6 +263,25 @@ export const MobileLayout: React.FC<MobileLayoutProps> = ({ activePage, onNaviga
                 </button>
               </div>
             </div>
+
+            {/* Branch Selector for HQ */}
+            {isHQ && (
+              <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/50">
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-1.5">Physical Branch</p>
+                <select
+                  value={selectedBranchId}
+                  onChange={(e) => setSelectedBranchId(e.target.value)}
+                  className="w-full bg-white border border-gray-200 text-gray-800 text-[13px] font-medium rounded-xl focus:ring-teal-500 focus:border-teal-500 p-2.5 focus:outline-none transition-colors shadow-sm"
+                >
+                  <option value="all">All Branches (HQ Consolidated)</option>
+                  {branches.map((b: any) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* More nav sections */}
             <div className="px-4 py-3">

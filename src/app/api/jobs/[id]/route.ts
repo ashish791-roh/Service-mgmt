@@ -10,7 +10,10 @@ import { fireWebhooks } from '@/lib/webhooks';
 import { writeAuditLog, auditDiff } from '@/lib/auditLog';
 import { validateBody, JobUpdateSchema, JobPatchSchema } from '@/lib/validation';
 import type { Prisma, Job } from '@prisma/client';
-import { pushJobToTally } from '@/lib/tally';
+import { addToTallyQueue } from '@/lib/tallyQueue';
+import { captureChange } from '@/lib/branchSync';
+import { withLocalBranchId } from '@/lib/branchContext';
+
 
 // ── Server-side warranty duration helper ──────────────────────────────────────
 // Mirrors the client-side warrantyConfig.ts defaults.
@@ -193,7 +196,7 @@ export async function PUT(
             activitiesToCreate.push({ userId: auth.user.id, action: 'CSAT Rated', details: `Customer rated ${body.rating} stars` });
         }
         if (activitiesToCreate.length > 0) {
-            data.activities = { create: activitiesToCreate };
+            data.activities = { create: activitiesToCreate.map(act => withLocalBranchId(act)) };
         }
 
         const job = await prisma.job.update({
@@ -201,6 +204,29 @@ export async function PUT(
             data,
             include: { activities: true }
         });
+
+        // ── Outbox Sync ──────────────────────────────────────────────
+        captureChange({
+            entityType: 'Job',
+            entityId: job.id,
+            action: 'update',
+            payload: job,
+        }).catch(err => console.error('[SyncOutbox] Job update error:', err));
+
+        if (job.activities) {
+            for (const act of job.activities) {
+                // If it is newly created in this request, capture it
+                const isNew = activitiesToCreate.some(a => a.action === act.action && a.details === act.details);
+                if (isNew) {
+                    captureChange({
+                        entityType: 'JobActivity',
+                        entityId: act.id,
+                        action: 'create',
+                        payload: act,
+                    }).catch(err => console.error('[SyncOutbox] JobActivity create error:', err));
+                }
+            }
+        }
 
         // ── Audit log — field-level diff (PUT) ────────────────────────────
         {
@@ -236,24 +262,37 @@ export async function PUT(
 
         // ── Internal engineer notification (unchanged) ────────────
         if (body.assignedEngineerId) {
-            await prisma.notification.create({
-                data: {
+            const notif = await prisma.notification.create({
+                data: withLocalBranchId({
                     userId: body.assignedEngineerId,
                     message: `Job assigned to you: ${job.problemDesc.substring(0, 60)}`,
                     jobId: job.id,
-                },
+                }),
             });
+            captureChange({
+                entityType: 'Notification',
+                entityId: notif.id,
+                action: 'create',
+                payload: notif,
+            }).catch(err => console.error('[SyncOutbox] Notification create error:', err));
         }
 
         if (body.status && body.status !== existingJob.status && existingJob.engineerId) {
-            await prisma.notification.create({
-              data: {
+            const notif = await prisma.notification.create({
+              data: withLocalBranchId({
                 userId: existingJob.engineerId,
                 message: `Job status updated to ${body.status}: ${job.problemDesc.substring(0, 50)}`,
                 jobId: job.id,
-              },
+              }),
             });
+            captureChange({
+                entityType: 'Notification',
+                entityId: notif.id,
+                action: 'create',
+                payload: notif,
+            }).catch(err => console.error('[SyncOutbox] Notification create error:', err));
           }
+
 
         // ── Customer SMS/email notification ───────────────────────
         const newStatus = body.status as string | undefined;
@@ -306,8 +345,35 @@ export async function PUT(
             }).catch(err => console.error('[webhook PUT] fire error:', err));
         }
 
+        if (statusChanged && newStatus === 'Completed') {
+            if (job.linkedJobId) {
+                addToTallyQueue({
+                    entityType: 'warranty_claim',
+                    entityId: job.id,
+                    actionType: 'sync_warranty',
+                    priority: 1,
+                }).catch((err: any) => console.error('[Tally Auto-Queue Completed Warranty PUT] Error:', err));
+            } else {
+                addToTallyQueue({
+                    entityType: 'job',
+                    entityId: job.id,
+                    actionType: 'sync_invoice',
+                    priority: 1,
+                }).catch((err: any) => console.error('[Tally Auto-Queue Completed Job PUT] Error:', err));
+            }
+        }
+
         if (statusChanged && newStatus === 'Delivered') {
-            pushJobToTally(job.id).catch(err => console.error('[Tally Auto-Push PUT] Error:', err));
+            prisma.payment.findUnique({ where: { jobId: job.id } }).then((payment: any) => {
+                if (payment) {
+                    addToTallyQueue({
+                        entityType: 'payment',
+                        entityId: payment.id,
+                        actionType: 'sync_receipt',
+                        priority: 0,
+                    }).catch((err: any) => console.error('[Tally Auto-Queue Delivered Receipt PUT] Error:', err));
+                }
+            }).catch((err: any) => console.error('[Tally Auto-Queue Delivered findPayment PUT] Error:', err));
         }
 
         return NextResponse.json({
@@ -422,7 +488,7 @@ export async function PATCH(
             activitiesToCreate.push({ userId: auth.user.id, action: 'Checklist Updated', details: 'The repair checklist was modified' });
         }
         if (activitiesToCreate.length > 0) {
-            data.activities = { create: activitiesToCreate };
+            data.activities = { create: activitiesToCreate.map(act => withLocalBranchId(act)) };
         }
 
         const job = await prisma.job.update({
@@ -430,6 +496,29 @@ export async function PATCH(
             data,
             include: { activities: true }
         });
+
+        // ── Outbox Sync ──────────────────────────────────────────────
+        captureChange({
+            entityType: 'Job',
+            entityId: job.id,
+            action: 'update',
+            payload: job,
+        }).catch(err => console.error('[SyncOutbox] Job update error:', err));
+
+        if (job.activities) {
+            for (const act of job.activities) {
+                const isNew = activitiesToCreate.some(a => a.action === act.action && a.details === act.details);
+                if (isNew) {
+                    captureChange({
+                        entityType: 'JobActivity',
+                        entityId: act.id,
+                        action: 'create',
+                        payload: act,
+                    }).catch(err => console.error('[SyncOutbox] JobActivity create error:', err));
+                }
+            }
+        }
+
 
         // ── Audit log — field-level diff (PATCH) ────────────────────────
         {
@@ -498,8 +587,35 @@ export async function PATCH(
             }).catch(err => console.error('[webhook PATCH] fire error:', err));
         }
 
+        if (statusChanged && newStatus === 'Completed') {
+            if (job.linkedJobId) {
+                addToTallyQueue({
+                    entityType: 'warranty_claim',
+                    entityId: job.id,
+                    actionType: 'sync_warranty',
+                    priority: 1,
+                }).catch((err: any) => console.error('[Tally Auto-Queue Completed Warranty PATCH] Error:', err));
+            } else {
+                addToTallyQueue({
+                    entityType: 'job',
+                    entityId: job.id,
+                    actionType: 'sync_invoice',
+                    priority: 1,
+                }).catch((err: any) => console.error('[Tally Auto-Queue Completed Job PATCH] Error:', err));
+            }
+        }
+
         if (statusChanged && newStatus === 'Delivered') {
-            pushJobToTally(job.id).catch(err => console.error('[Tally Auto-Push PATCH] Error:', err));
+            prisma.payment.findUnique({ where: { jobId: job.id } }).then((payment: any) => {
+                if (payment) {
+                    addToTallyQueue({
+                        entityType: 'payment',
+                        entityId: payment.id,
+                        actionType: 'sync_receipt',
+                        priority: 0,
+                    }).catch((err: any) => console.error('[Tally Auto-Queue Delivered Receipt PATCH] Error:', err));
+                }
+            }).catch((err: any) => console.error('[Tally Auto-Queue Delivered findPayment PATCH] Error:', err));
         }
 
         return NextResponse.json({
@@ -561,6 +677,15 @@ export async function DELETE(
             prisma.notification.deleteMany({ where: { jobId } }),
             prisma.job.delete({ where: { id: jobId } }),
         ]);
+
+        // ── Outbox Sync ──────────────────────────────────────────────
+        captureChange({
+            entityType: 'Job',
+            entityId: jobId,
+            action: 'delete',
+            payload: {},
+        }).catch(err => console.error('[SyncOutbox] Job delete error:', err));
+
 
         // ── Audit log — job deleted ────────────────────────────────
         writeAuditLog({

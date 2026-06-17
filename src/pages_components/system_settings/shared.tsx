@@ -10,6 +10,9 @@ export interface SystemSettings {
   shopPhone: string;
   shopEmail: string;
   shopAddress: string;
+  gstin: string;
+  taxRate: number;
+  taxLabel: string;
   currency: string;
   urgencyYellowDays: number;
   urgencyRedDays: number;
@@ -28,6 +31,9 @@ export const DEFAULT_SETTINGS: SystemSettings = {
   shopPhone: '',
   shopEmail: '',
   shopAddress: '',
+  gstin: '29ABCDE1234F1Z5',
+  taxRate: 18,
+  taxLabel: 'GST',
   currency: 'INR',
   urgencyYellowDays: 5,
   urgencyRedDays: 10,

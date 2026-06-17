@@ -4,6 +4,9 @@ import { requireSession } from '@/lib/auth';
 import { fireWebhooks } from '@/lib/webhooks';
 import { writeAuditLog } from '@/lib/auditLog';
 import { rateLimiter, RATE_LIMITS } from '@/lib/rateLimit';
+import { addToTallyQueue } from '@/lib/tallyQueue';
+import { captureChange } from '@/lib/branchSync';
+import { withLocalBranchId } from '@/lib/branchContext';
 
 // POST /api/payments — admin or reception only
 export async function POST(request: Request) {
@@ -39,19 +42,43 @@ export async function POST(request: Request) {
         }
 
         const payment = await prisma.payment.create({
-            data: {
+            data: withLocalBranchId({
                 jobId: body.jobId,
                 serviceCharge,
                 partsCost,
                 totalBill: serviceCharge + partsCost,
                 status: body.status || 'Unpaid',
-            },
+            }),
         });
 
-        await prisma.job.update({
+        const updatedJob = await prisma.job.update({
             where: { id: body.jobId },
             data: { actualCost: serviceCharge + partsCost },
         });
+
+        // ── Outbox Sync ──────────────────────────────────────────────
+        captureChange({
+            entityType: 'Payment',
+            entityId: payment.id,
+            action: 'create',
+            payload: payment,
+        }).catch(err => console.error('[SyncOutbox] Payment create error:', err));
+
+        captureChange({
+            entityType: 'Job',
+            entityId: updatedJob.id,
+            action: 'update',
+            payload: updatedJob,
+        }).catch(err => console.error('[SyncOutbox] Job update on payment error:', err));
+
+        // Queue Tally Receipt Sync
+        if (payment.status === 'Paid') {
+            await addToTallyQueue({
+                entityType: 'payment',
+                entityId: payment.id,
+                actionType: 'sync_receipt',
+            }).catch(err => console.error('[Tally Auto-Payment] Error:', err));
+        }
 
         // ── Webhook: payment.created ──────────────────────────────
         fireWebhooks('payment.created', {

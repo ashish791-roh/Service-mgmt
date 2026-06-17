@@ -100,10 +100,32 @@ function filterSalesByPeriod(sales: Sale[], period: TimePeriod): Sale[] {
 }
 
 export const AnalyticsPage: React.FC = () => {
-  const { jobs, users, customers, partRequests, devices, sales, inventory } = useApp();
+  const {
+    jobs: rawJobs,
+    users: rawUsers,
+    customers: rawCustomers,
+    partRequests: rawPartRequests,
+    devices: rawDevices,
+    sales: rawSales,
+    inventory: rawInventory,
+    isHQ,
+    branches,
+    selectedBranchId,
+    setSelectedBranchId
+  } = useApp();
+
+  const jobs = useMemo(() => selectedBranchId === 'all' ? rawJobs : rawJobs.filter(x => x.branchId === selectedBranchId), [rawJobs, selectedBranchId]);
+  const users = useMemo(() => selectedBranchId === 'all' ? rawUsers : rawUsers.filter(x => x.branchId === selectedBranchId), [rawUsers, selectedBranchId]);
+  const customers = useMemo(() => selectedBranchId === 'all' ? rawCustomers : rawCustomers.filter(x => x.branchId === selectedBranchId), [rawCustomers, selectedBranchId]);
+  const partRequests = useMemo(() => selectedBranchId === 'all' ? rawPartRequests : rawPartRequests.filter(x => x.branchId === selectedBranchId), [rawPartRequests, selectedBranchId]);
+  const devices = useMemo(() => selectedBranchId === 'all' ? rawDevices : rawDevices.filter(x => x.branchId === selectedBranchId), [rawDevices, selectedBranchId]);
+  const sales = useMemo(() => selectedBranchId === 'all' ? rawSales : rawSales.filter(x => x.branchId === selectedBranchId), [rawSales, selectedBranchId]);
+  const inventory = useMemo(() => selectedBranchId === 'all' ? rawInventory : rawInventory.filter(x => x.branchId === selectedBranchId), [rawInventory, selectedBranchId]);
+
   const [activeModal, setActiveModal] = useState<AnalyticsModalType>(null);
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('overall');
   const engineers = users.filter(u => u.role === 'engineer');
+
 
   // ── Filtered data ────────────────────────────────────────────────────────
   const filteredJobs = useMemo(() => filterJobsByPeriod(jobs, timePeriod), [jobs, timePeriod]);
@@ -158,6 +180,26 @@ export const AnalyticsPage: React.FC = () => {
   return (
     <div className="max-w-[1400px] mx-auto pb-6 space-y-6">
       <PageHeader title="Platform Analytics" subtitle="Click any card to drill into the data" />
+
+      {/* ── Branch Selector for HQ ── */}
+      {isHQ && (
+        <div className="flex items-center gap-3 bg-white p-4 rounded-xl border border-gray-200">
+          <span className="text-[13px] font-medium text-gray-700">Physical Branch:</span>
+          <select
+            value={selectedBranchId}
+            onChange={(e) => setSelectedBranchId(e.target.value)}
+            className="bg-gray-50 border border-gray-300 text-gray-900 text-[13px] rounded-lg focus:ring-teal-500 focus:border-teal-500 p-2.5"
+          >
+            <option value="all">All Branches (HQ Consolidated)</option>
+            {branches.map((b: any) => (
+              <option key={b.id} value={b.id}>
+                {b.name} ({b.id.toUpperCase()})
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
 
       {/* ── Time Period Filter ─────────────────────────────────── */}
       <div className="bg-white rounded-xl border border-gray-200 px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-3">

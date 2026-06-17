@@ -6,6 +6,9 @@ import { rateLimiter, getClientIP, RATE_LIMITS } from '@/lib/rateLimit';
 import { validateBody, CustomerCreateSchema, CustomerUpdateSchema } from '@/lib/validation';
 import type { Prisma } from '@prisma/client';
 import type { CustomerWithRelations } from '@/types/prisma';
+import { addToTallyQueue } from '@/lib/tallyQueue';
+import { captureChange } from '@/lib/branchSync';
+import { withLocalBranchId } from '@/lib/branchContext';
 
 // ── Rate-limit helper shared by all handlers ────────────────────────────────
 async function checkRateLimit(request: Request, userId: string) {
@@ -58,9 +61,34 @@ export async function GET(request: Request) {
             prisma.customer.count({ where }),
         ]);
 
+        const customerIds = customers.map((c: any) => c.id);
+        const queueItems = prisma.tallyQueueItem
+            ? await prisma.tallyQueueItem.findMany({
+                where: {
+                    entityType: 'customer',
+                    entityId: { in: customerIds },
+                },
+                select: {
+                    entityId: true,
+                    status: true,
+                },
+                orderBy: {
+                    createdAt: 'desc',
+                },
+            })
+            : [];
+
+        const statusMap = new Map<string, string>();
+        for (const item of queueItems) {
+            if (!statusMap.has(item.entityId)) {
+                statusMap.set(item.entityId, item.status);
+            }
+        }
+
         return NextResponse.json({
             customers: customers.map((c: CustomerWithRelations) => ({
                 ...c,
+                tallyStatus: statusMap.get(c.id) || null,
                 createdAt: c.createdAt.toISOString(),
                 updatedAt: c.updatedAt.toISOString(),
                 jobs: (c.jobs || []).map((j) => ({
@@ -121,6 +149,14 @@ export async function PUT(request: Request) {
             where: { id },
             data: updateData,
         });
+
+        // ── Outbox Sync ──────────────────────────────────────────────
+        captureChange({
+            entityType: 'Customer',
+            entityId: updated.id,
+            action: 'update',
+            payload: updated,
+        }).catch(err => console.error('[SyncOutbox] Customer update error:', err));
 
         // ── Audit log — customer updated ────────────────────────────
         {
@@ -183,7 +219,7 @@ export async function DELETE(request: Request) {
         // Admin can delete at any time regardless of job status.
         if (auth.user.role !== 'admin') {
             const activeJobs = customerJobs.filter(
-                j => !['Completed', 'Delivered'].includes(j.status as string)
+                (j: any) => !['Completed', 'Delivered'].includes(j.status as string)
             );
             if (activeJobs.length > 0) {
                 return NextResponse.json(
@@ -195,6 +231,14 @@ export async function DELETE(request: Request) {
 
         // Delete customer (cascade deletes all related records via onDelete: Cascade)
         await prisma.customer.delete({ where: { id } });
+
+        // ── Outbox Sync ──────────────────────────────────────────────
+        captureChange({
+            entityType: 'Customer',
+            entityId: id,
+            action: 'delete',
+            payload: {},
+        }).catch(err => console.error('[SyncOutbox] Customer delete error:', err));
 
         // ── Audit log — customer deleted (non-blocking) ───────────────────────────
         writeAuditLog({
@@ -246,13 +290,28 @@ export async function POST(request: Request) {
         }
 
         const customer = await prisma.customer.create({
-            data: {
+            data: withLocalBranchId({
                 name: body.name,
                 phone: body.phone,
                 address: body.address || null,
                 email: body.email || null,
-            },
+            }),
         });
+
+        // ── Outbox Sync ──────────────────────────────────────────────
+        captureChange({
+            entityType: 'Customer',
+            entityId: customer.id,
+            action: 'create',
+            payload: customer,
+        }).catch(err => console.error('[SyncOutbox] Customer create error:', err));
+
+        // Queue Tally Ledger Sync
+        await addToTallyQueue({
+            entityType: 'customer',
+            entityId: customer.id,
+            actionType: 'sync_ledger',
+        }).catch(err => console.error('[Tally Auto-Ledger] Error:', err));
 
         // ── Audit log — customer created ────────────────────────────
         writeAuditLog({

@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server';
+import { addToTallyQueue } from '@/lib/tallyQueue';
 import { prisma } from '@/lib/prisma';
 import { requireSession } from '@/lib/auth';
 import { rateLimiter, getClientIP, RATE_LIMITS } from '@/lib/rateLimit';
 import { validateBody, SaleCreateSchema } from '@/lib/validation';
 import type { Prisma, SaleItem } from '@prisma/client';
+import { captureChange } from '@/lib/branchSync';
+import { withLocalBranchId } from '@/lib/branchContext';
+
 
 type SaleWithItems = Prisma.SaleGetPayload<{ include: { items: true } }>;
 
@@ -76,7 +80,7 @@ export async function GET(request: Request) {
         const todayStart = new Date();
         todayStart.setHours(0,0,0,0);
 
-        const [sales, total, totalRevenueResult, todaySalesResult] = await Promise.all([
+        const [sales, total, totalRevenueResult, todayMetricsResult] = await Promise.all([
             prisma.sale.findMany({
                 where,
                 orderBy: { createdAt: 'desc' },
@@ -88,22 +92,50 @@ export async function GET(request: Request) {
             prisma.sale.aggregate({
                 _sum: { totalAmount: true },
             }),
-            prisma.sale.findMany({
+            prisma.sale.aggregate({
                 where: {
                     createdAt: {
                         gte: todayStart,
                     }
                 },
-                select: { totalAmount: true },
+                _sum: { totalAmount: true },
+                _count: { id: true },
             }),
         ]);
 
         const totalRevenue = totalRevenueResult._sum.totalAmount ?? 0;
-        const todaySalesCount = todaySalesResult.length;
-        const todayRevenue = todaySalesResult.reduce((sum: number, s: { totalAmount: number }) => sum + (s.totalAmount ?? 0), 0);
+        const todaySalesCount = todayMetricsResult._count.id ?? 0;
+        const todayRevenue = todayMetricsResult._sum.totalAmount ?? 0;
+
+        const saleIds = sales.map((s: any) => s.id);
+        const queueItems = prisma.tallyQueueItem
+            ? await prisma.tallyQueueItem.findMany({
+                where: {
+                    entityType: 'sale',
+                    entityId: { in: saleIds },
+                },
+                select: {
+                    entityId: true,
+                    status: true,
+                },
+                orderBy: {
+                    createdAt: 'desc',
+                },
+            })
+            : [];
+
+        const statusMap = new Map<string, string>();
+        for (const item of queueItems) {
+            if (!statusMap.has(item.entityId)) {
+                statusMap.set(item.entityId, item.status);
+            }
+        }
 
         return NextResponse.json({
-            sales: sales.map(mapSale),
+            sales: sales.map((s: any) => ({
+                ...mapSale(s),
+                tallyStatus: statusMap.get(s.id) || null,
+            })),
             total,
             page,
             limit,
@@ -142,7 +174,7 @@ export async function POST(request: Request) {
         if (!validation.success) return validation.errorResponse;
         const body = validation.data;
 
-        const itemIds = body.items.map(i => i.inventoryItemId);
+        const itemIds = body.items.map((i: any) => i.inventoryItemId);
         const inventoryRows = await prisma.inventoryItem.findMany({
             where: { id: { in: itemIds } },
         });
@@ -150,7 +182,7 @@ export async function POST(request: Request) {
         // Check stock
         const stockErrors: string[] = [];
         for (const lineItem of body.items) {
-            const inv = inventoryRows.find(r => r.id === lineItem.inventoryItemId);
+            const inv = inventoryRows.find((r: any) => r.id === lineItem.inventoryItemId);
             if (!inv) {
                 stockErrors.push(`Inventory item ${lineItem.inventoryItemId} not found.`);
                 continue;
@@ -167,8 +199,8 @@ export async function POST(request: Request) {
 
         const saleNumber = await nextSaleNumber();
         let totalAmount = 0;
-        const lineData = body.items.map(li => {
-            const inv = inventoryRows.find(r => r.id === li.inventoryItemId)!;
+        const lineData = body.items.map((li: any) => {
+            const inv = inventoryRows.find((r: any) => r.id === li.inventoryItemId)!;
             const qty = li.quantity;
             let unitPrice: number;
             if (auth.user.role === 'admin' && li.unitPrice !== undefined && li.unitPrice !== null) {
@@ -188,9 +220,9 @@ export async function POST(request: Request) {
         });
 
         // Create Sale with items inside a single Prisma Transaction
-        const createdSale = await prisma.$transaction(async (tx) => {
+        const { sale: createdSale, updatedInventoryItems } = await prisma.$transaction(async (tx: any) => {
             const sale = await tx.sale.create({
-                data: {
+                data: withLocalBranchId({
                     saleNumber,
                     customerId: body.customerId ?? null,
                     companyName: body.companyName,
@@ -200,7 +232,7 @@ export async function POST(request: Request) {
                     totalAmount,
                     createdById: auth.user.id,
                     items: {
-                        create: lineData.map(item => ({
+                        create: lineData.map((item: any) => withLocalBranchId({
                             inventoryItemId: item.inventoryItemId,
                             itemName: item.itemName,
                             quantity: item.quantity,
@@ -208,20 +240,59 @@ export async function POST(request: Request) {
                             subtotal: item.subtotal,
                         })),
                     },
-                },
+                }),
                 include: { items: true },
             });
 
             // Deduct stock
+            const inventoryUpdates = [];
             for (const item of lineData) {
-                await tx.inventoryItem.update({
+                const updated = await tx.inventoryItem.update({
                     where: { id: item.inventoryItemId },
                     data: { quantity: { decrement: item.quantity } },
                 });
+                inventoryUpdates.push(updated);
             }
 
-            return sale;
+            return { sale, updatedInventoryItems: inventoryUpdates };
         });
+
+        // ── Outbox Sync ──────────────────────────────────────────────
+        captureChange({
+            entityType: 'Sale',
+            entityId: createdSale.id,
+            action: 'create',
+            payload: createdSale,
+        }).catch(err => console.error('[SyncOutbox] Sale create error:', err));
+
+        if (createdSale.items) {
+            for (const item of createdSale.items) {
+                captureChange({
+                    entityType: 'SaleItem',
+                    entityId: item.id,
+                    action: 'create',
+                    payload: item,
+                }).catch(err => console.error('[SyncOutbox] SaleItem create error:', err));
+            }
+        }
+
+        for (const invItem of updatedInventoryItems) {
+            captureChange({
+                entityType: 'InventoryItem',
+                entityId: invItem.id,
+                action: 'update',
+                payload: invItem,
+            }).catch(err => console.error('[SyncOutbox] InventoryItem update error:', err));
+        }
+
+
+        // Queue Tally Sync Voucher
+        await addToTallyQueue({
+            entityType: 'sale',
+            entityId: createdSale.id,
+            actionType: 'sync_invoice',
+            priority: 0,
+        }).catch(err => console.error('[Tally Auto-Queue Counter Sale] Failed:', err));
 
         // Low stock alerts
         const adminUsers = await prisma.user.findMany({ where: { role: 'admin' } });
@@ -229,7 +300,7 @@ export async function POST(request: Request) {
         const notifyUsers = [...adminUsers, ...receptionUsers];
 
         for (const item of createdSale.items) {
-            const inv = inventoryRows.find(r => r.id === item.inventoryItemId)!;
+            const inv = inventoryRows.find((r: any) => r.id === item.inventoryItemId)!;
             const newQty = inv.quantity - item.quantity;
 
             if (newQty <= inv.minQuantity) {
@@ -296,6 +367,15 @@ export async function PATCH(request: Request) {
             data: { paidAt: new Date() },
             include: { items: true },
         });
+
+        // ── Outbox Sync ──────────────────────────────────────────────
+        captureChange({
+            entityType: 'Sale',
+            entityId: updated.id,
+            action: 'update',
+            payload: updated,
+        }).catch(err => console.error('[SyncOutbox] Sale update error:', err));
+
 
         return NextResponse.json(mapSale(updated));
     } catch (error) {
