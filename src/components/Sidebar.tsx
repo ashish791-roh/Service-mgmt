@@ -56,8 +56,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activePage, onNavigate, isOpen
 
   const unread = getUnreadCount(currentUser.id);
   const filtered = NAV_ITEMS.filter(item => {
-    if (item.id === 'branches' && !isHQ) return false;
     if (currentUser.role === 'super_admin') return true;
+    if (item.id === 'branches' && !isHQ) return false;
     return item.roles.includes(currentUser.role as Role);
   });
 

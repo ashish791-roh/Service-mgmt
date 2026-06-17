@@ -13,7 +13,7 @@ interface Branch {
 }
 
 export const BranchesPage: React.FC = () => {
-  const { isHQ } = useApp();
+  const { isHQ, currentUser } = useApp();
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [registering, setRegistering] = useState(false);
@@ -40,10 +40,10 @@ export const BranchesPage: React.FC = () => {
   };
 
   useEffect(() => {
-    if (isHQ) {
+    if (isHQ || currentUser?.role === 'super_admin') {
       fetchBranches();
     }
-  }, [isHQ]);
+  }, [isHQ, currentUser]);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -124,7 +124,7 @@ export const BranchesPage: React.FC = () => {
     return lastSeen < oneHourAgo;
   };
 
-  if (!isHQ) {
+  if (!isHQ && currentUser?.role !== 'super_admin') {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-gray-400">
         <GitBranch size={48} className="mb-4 opacity-50" />

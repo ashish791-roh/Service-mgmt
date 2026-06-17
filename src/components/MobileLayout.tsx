@@ -70,8 +70,8 @@ export const MobileLayout: React.FC<MobileLayoutProps> = ({ activePage, onNaviga
   const role = currentUser.role as Role;
   const unread = getUnreadCount(currentUser.id);
   const filtered = NAV_ITEMS.filter(item => {
-    if (item.id === 'branches' && !isHQ) return false;
     if (currentUser.role === 'super_admin') return true;
+    if (item.id === 'branches' && !isHQ) return false;
     return item.roles.includes(role);
   });
   const tabIds = TAB_BAR_IDS[role] ?? ['dashboard', 'notifications'];
