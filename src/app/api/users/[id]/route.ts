@@ -29,6 +29,11 @@ export async function PUT(
             return NextResponse.json({ error: 'Forbidden: Cannot modify a super_admin user.' }, { status: 403 });
         }
 
+        // Branch isolation: standard admin can only modify users from their own branch
+        if (auth.user.role !== 'super_admin' && targetUser.branchId !== auth.user.branchId) {
+            return NextResponse.json({ error: 'Forbidden: User belongs to a different branch.' }, { status: 403 });
+        }
+
         if (body.role) {
             const validRoles = auth.user.role === 'super_admin'
                 ? ['admin', 'reception', 'engineer', 'super_admin']
@@ -155,6 +160,11 @@ export async function DELETE(
         // Only super_admin can delete a super_admin
         if (targetUser.role === 'super_admin' && auth.user.role !== 'super_admin') {
             return NextResponse.json({ error: 'Forbidden: Cannot delete a super_admin user.' }, { status: 403 });
+        }
+
+        // Branch isolation: standard admin can only delete users from their own branch
+        if (auth.user.role !== 'super_admin' && targetUser.branchId !== auth.user.branchId) {
+            return NextResponse.json({ error: 'Forbidden: User belongs to a different branch.' }, { status: 403 });
         }
 
         // Kill all sessions for the user being deleted before removing the record

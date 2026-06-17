@@ -143,9 +143,19 @@ export async function GET(request: Request) {
         );
     }
 
-    const { user } = auth;
+    const { user: sessionUser } = auth;
 
     try {
+        const dbUser = await prisma.user.findUnique({ where: { id: sessionUser.id } });
+        if (!dbUser || !dbUser.isActive) {
+            return NextResponse.json({ error: 'User not found or disabled.' }, { status: 403 });
+        }
+
+        const user = {
+            id: dbUser.id,
+            role: dbUser.role,
+            branchId: dbUser.branchId || 'default',
+        };
         // ── Engineer: only their own data ────────────────────────
         if (user.role === 'engineer') {
             const [myJobs, allPartRequests, myNotifications, allDevices, allCustomers, allInventory] =

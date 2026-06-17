@@ -314,9 +314,19 @@ export async function requireSession(
 
   const { csrfToken: storedCsrf, ...user } = sessionData;
 
+  const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
+  if (dbUser) {
+    user.role = dbUser.role as any;
+    user.branchId = dbUser.branchId || 'default';
+    user.isActive = dbUser.isActive;
+  }
+
   if (!user.isActive) {
     return { error: NextResponse.json({ error: 'Account is disabled.' }, { status: 403 }) };
   }
+
+  const { setRequestBranchId } = await import('@/lib/branchContext');
+  setRequestBranchId(user.branchId);
 
   if (roles && !roles.includes(user.role) && user.role !== 'super_admin') {
     return {

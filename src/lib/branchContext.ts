@@ -1,4 +1,12 @@
+import { AsyncLocalStorage } from 'async_hooks';
+
 export type DeploymentRole = 'branch' | 'hq';
+
+const storage = new AsyncLocalStorage<string>();
+
+export function setRequestBranchId(branchId: string) {
+  storage.enterWith(branchId);
+}
 
 /**
  * Returns the current deployment role ('branch' | 'hq').
@@ -21,6 +29,8 @@ export function isHQ(): boolean {
  * Defaults to 'default'.
  */
 export function getBranchId(): string {
+  const store = storage.getStore();
+  if (store) return store;
   return process.env.BRANCH_ID || 'default';
 }
 
