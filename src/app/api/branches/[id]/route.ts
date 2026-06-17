@@ -9,12 +9,13 @@ export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  if (getDeploymentRole() !== 'hq') {
-    return new NextResponse('Not Found', { status: 404 });
-  }
-
   const auth = await requireSession(request, ['super_admin']);
-  if ('error' in auth) return auth.error;
+  if ('error' in auth) {
+    if (getDeploymentRole() !== 'hq') {
+      return new NextResponse('Not Found', { status: 404 });
+    }
+    return auth.error;
+  }
 
   try {
     const { id } = await params;

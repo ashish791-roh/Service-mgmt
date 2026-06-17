@@ -7,12 +7,13 @@ import bcrypt from 'bcryptjs';
 
 // GET /api/branches — super_admin only on HQ
 export async function GET(request: Request) {
-  if (getDeploymentRole() !== 'hq') {
-    return new NextResponse('Not Found', { status: 404 });
-  }
-
   const auth = await requireSession(request, ['super_admin']);
-  if ('error' in auth) return auth.error;
+  if ('error' in auth) {
+    if (getDeploymentRole() !== 'hq') {
+      return new NextResponse('Not Found', { status: 404 });
+    }
+    return auth.error;
+  }
 
   try {
     const branches = await prisma.branch.findMany({
@@ -27,12 +28,13 @@ export async function GET(request: Request) {
 
 // POST /api/branches — register a new branch
 export async function POST(request: Request) {
-  if (getDeploymentRole() !== 'hq') {
-    return new NextResponse('Not Found', { status: 404 });
-  }
-
   const auth = await requireSession(request, ['super_admin']);
-  if ('error' in auth) return auth.error;
+  if ('error' in auth) {
+    if (getDeploymentRole() !== 'hq') {
+      return new NextResponse('Not Found', { status: 404 });
+    }
+    return auth.error;
+  }
 
   try {
     const { id, name } = await request.json();
