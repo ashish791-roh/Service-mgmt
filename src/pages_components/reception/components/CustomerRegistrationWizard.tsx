@@ -5,6 +5,19 @@ import { useApp } from '../../../context/AppContext';
 import { useToast } from '../../../components/ui';
 import { Button } from './ReceptionUIComponents';
 import { X } from 'lucide-react';
+import { motion } from 'framer-motion';
+
+const modalVariants = {
+  hidden:  { opacity: 0, scale: 0.94, y: 16 },
+  visible: { opacity: 1, scale: 1,    y: 0,  transition: { type: 'spring', stiffness: 480, damping: 36 } },
+  exit:    { opacity: 0, scale: 0.96, y: 8,  transition: { duration: 0.15 } },
+} as const;
+
+const backdropVariants = {
+  hidden:  { opacity: 0 },
+  visible: { opacity: 1, transition: { duration: 0.2 } },
+  exit:    { opacity: 0, transition: { duration: 0.15 } },
+} as const;
 import type { Job } from '../../../types';
 
 interface CustomerRegistrationWizardProps {
@@ -88,8 +101,22 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-xl w-full max-w-lg p-8 shadow-lg overflow-hidden relative">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <motion.div
+        className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm"
+        variants={backdropVariants}
+        initial="hidden"
+        animate="visible"
+        exit="exit"
+        onClick={onClose}
+      />
+      <motion.div
+        className="bg-white rounded-xl w-full max-w-lg p-8 shadow-lg overflow-hidden relative z-10"
+        variants={modalVariants}
+        initial="hidden"
+        animate="visible"
+        exit="exit"
+      >
         <div className="flex justify-between items-center mb-6">
           <div>
             <h2 className="text-[18px] font-medium text-gray-900">Registration</h2>
@@ -318,7 +345,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
             className="flex-1"
           />
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 };

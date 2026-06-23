@@ -10,70 +10,68 @@ import {
   clearCookieOptions,
   clearCsrfCookieOptions,
   COOKIE_NAME,
-  LIMITS,
-  checkLengths,
 } from '@/lib/auth';
 import { rateLimiter, getClientIP, RATE_LIMITS } from '@/lib/rateLimit';
-
-// ── Account lockout constants ─────────────────────────────────────────────────
-// After MAX_FAILED_ATTEMPTS consecutive failures the account is soft-locked
-// for LOCKOUT_WINDOW_MS even if the password is later correct. This is stored
-// purely in the rate-limiter store (no schema change required).
-const MAX_FAILED_ATTEMPTS = 10;
-const LOCKOUT_CONFIG = { maxRequests: MAX_FAILED_ATTEMPTS, windowMs: 30 * 60 * 1_000 }; // 30 min
-
-// ── POST /api/auth/login ──────────────────────────────────────────────────────
+import { createAuditLog } from '@/lib/auditLog';
 
 export async function POST(request: Request) {
+  const startTime = performance.now();
+  const clientIP = getClientIP(request);
+  const userAgent = request.headers.get('user-agent') ?? '';
+
   try {
     const body = await request.json().catch(() => null);
+    
+    // 5. INPUT VALIDATION
     if (!body || typeof body !== 'object') {
       return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
     }
 
     const { email, password } = body;
 
-    if (!email || !password) {
+    if (!email || !password || typeof email !== 'string' || typeof password !== 'string') {
       return NextResponse.json(
-        { error: 'Email and password are required.' },
+        { error: 'Email and password are required strings.' },
         { status: 400 }
       );
     }
 
-    // ── Input length caps (early, before DB hit) ──────────────────────────────
-    const lengthError = checkLengths([
-      [email,    'email',    LIMITS.email],
-      [password, 'password', LIMITS.password],
-    ]);
-    if (lengthError) {
-      return NextResponse.json({ error: lengthError }, { status: 400 });
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return NextResponse.json({ error: 'Invalid email format.' }, { status: 400 });
     }
 
-    const clientIP       = getClientIP(request);
-    const emailLowercase = (email as string).trim().toLowerCase();
+    if (password.length < 8 || password.length > 128) {
+      return NextResponse.json({ error: 'Password must be between 8 and 128 characters.' }, { status: 400 });
+    }
 
-    // ── Rate limit — per IP ───────────────────────────────────────────────────
+    const emailLowercase = email.trim().toLowerCase();
+
+    // Rate limit — per IP
     const ipLimit = await rateLimiter.check(`login:ip:${clientIP}`, RATE_LIMITS.LOGIN);
     if (ipLimit.isLimited) {
+      const elapsed = performance.now() - startTime;
+      await new Promise(resolve => setTimeout(resolve, Math.max(0, 300 - elapsed)));
       return NextResponse.json(
         { error: `Too many login attempts from this IP. Try again in ${ipLimit.retryAfter} seconds.` },
         { status: 429, headers: { 'Retry-After': ipLimit.retryAfter.toString() } }
       );
     }
 
-    // ── Rate limit — per email (account lockout) ──────────────────────────────
-    const emailLimitKey  = `login:email:${emailLowercase}`;
-    const emailLimit     = await rateLimiter.check(emailLimitKey, LOCKOUT_CONFIG);
-    if (emailLimit.isLimited) {
-      return NextResponse.json(
-        { error: `Account temporarily locked due to too many failed attempts. Try again in ${emailLimit.retryAfter} seconds.` },
-        { status: 429, headers: { 'Retry-After': emailLimit.retryAfter.toString() } }
-      );
-    }
-
+    // Lockout check at the start
     const user = await prisma.user.findUnique({
       where: { email: emailLowercase },
     });
+
+    if (user && user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
+      const remainingSeconds = Math.ceil((new Date(user.lockedUntil).getTime() - Date.now()) / 1000);
+      const elapsed = performance.now() - startTime;
+      await new Promise(resolve => setTimeout(resolve, Math.max(0, 300 - elapsed)));
+      return NextResponse.json(
+        { error: `Account temporarily locked due to too many failed attempts. Try again in ${remainingSeconds} seconds.` },
+        { status: 429 }
+      );
+    }
 
     // Always run bcrypt to prevent timing-based email enumeration
     const passwordMatch = user
@@ -81,17 +79,36 @@ export async function POST(request: Request) {
       : await bcrypt.compare(password, '$2a$10$invalidhashpadding000000000000000000000000000000000000');
 
     if (!user || !user.isActive || !passwordMatch) {
-      // Do NOT reset on failure — let the lockout counter accumulate
+      // Brute force failed login counter
+      if (user) {
+        const attempts = user.failedAttempts + 1;
+        const updateData: any = { failedAttempts: attempts };
+        if (attempts >= 5) {
+          updateData.lockedUntil = new Date(Date.now() + 15 * 60 * 1000);
+        }
+        await prisma.user.update({
+          where: { id: user.id },
+          data: updateData,
+        });
+      }
+
+      await createAuditLog('LOGIN_FAILURE', user?.id ?? 'unknown', { ip: clientIP, userAgent, timestamp: new Date().toISOString() });
+
+      const elapsed = performance.now() - startTime;
+      await new Promise(resolve => setTimeout(resolve, Math.max(0, 300 - elapsed)));
       return NextResponse.json(
         { error: 'Invalid email or password.' },
         { status: 401 }
       );
     }
 
-    // ── Login success — reset per-email lockout counter ───────────────────────
-    await rateLimiter.reset(emailLimitKey);
+    // Reset attempts on successful login
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { failedAttempts: 0, lockedUntil: null },
+    });
 
-    // ── Create server-side session + CSRF token ───────────────────────────────
+    // Create session (UA and IP binding)
     const sessionUser = {
       id:       user.id,
       email:    user.email,
@@ -100,10 +117,11 @@ export async function POST(request: Request) {
       isActive: user.isActive,
       branchId: user.branchId,
     };
-    const { token, csrfToken } = await createSession(sessionUser);
+    const { token, csrfToken } = await createSession(sessionUser, userAgent, clientIP);
+
+    await createAuditLog('LOGIN_SUCCESS', user.id, { ip: clientIP, userAgent, timestamp: new Date().toISOString() });
 
     const { password: _, ...safeUser } = user;
-
     const response = NextResponse.json({
       user: {
         ...safeUser,
@@ -112,19 +130,19 @@ export async function POST(request: Request) {
       },
     });
 
-    // Session cookie — HttpOnly, JS cannot read
     response.cookies.set(sessionCookieOptions(token));
-    // CSRF cookie — readable by JS so the client can echo it in the header
     response.cookies.set(csrfCookieOptions(csrfToken));
 
+    const elapsed = performance.now() - startTime;
+    await new Promise(resolve => setTimeout(resolve, Math.max(0, 300 - elapsed)));
     return response;
   } catch (error) {
     console.error('[auth/login]', error);
+    const elapsed = performance.now() - startTime;
+    await new Promise(resolve => setTimeout(resolve, Math.max(0, 300 - elapsed)));
     return NextResponse.json({ error: 'An unexpected error occurred.' }, { status: 500 });
   }
 }
-
-// ── DELETE /api/auth/login  (logout) ─────────────────────────────────────────
 
 export async function DELETE() {
   try {

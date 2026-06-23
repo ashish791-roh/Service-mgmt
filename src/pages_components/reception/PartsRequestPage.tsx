@@ -3,6 +3,8 @@ import { useApp } from '../../context/AppContext';
 import { AlertCircle, AlertTriangle } from 'lucide-react';
 import { PartStatusBadge, Toast, useToast } from '../../components/ui';
 import type { PartRequest } from '../../types';
+import { AnimatePresence } from 'framer-motion';
+import { MotionListItem } from '../../components/MotionListItem';
 
 const PageHeader = ({ title, subtitle, action }: { title: string, subtitle: string, action?: React.ReactNode }) => (
   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 bg-white p-6 rounded-xl border border-gray-200">
@@ -157,12 +159,14 @@ export const PartsRequestPage: React.FC = () => {
             <p className="text-[13px] font-medium text-gray-500">No requests in this category</p>
           </div>
         )}
-        {filtered.map((req) => {
-          const engineer = users.find(u => u.id === req.engineerId);
-          const job = jobs.find(j => j.id === req.jobId);
-          const isAwaitingStock = req.status === 'AwaitingStock';
-          return (
-            <Card key={req.id} className={`flex flex-col sm:flex-row h-full ${isAwaitingStock ? 'border-purple-200' : ''}`}>
+        <AnimatePresence initial={false}>
+          {filtered.map((req, i) => {
+            const engineer = users.find(u => u.id === req.engineerId);
+            const job = jobs.find(j => j.id === req.jobId);
+            const isAwaitingStock = req.status === 'AwaitingStock';
+            return (
+              <MotionListItem key={req.id} index={i}>
+                <Card className={`flex flex-col sm:flex-row h-full ${isAwaitingStock ? 'border-purple-200' : ''}`}>
               <div className="p-5 flex-1">
                 <div className="flex items-center gap-3 mb-3">
                   <PartStatusBadge status={req.status} />
@@ -217,9 +221,11 @@ export const PartsRequestPage: React.FC = () => {
                   </div>
                 </div>
               )}
-            </Card>
-          );
-        })}
+                </Card>
+              </MotionListItem>
+            );
+          })}
+        </AnimatePresence>
       </div>
       {toast && <Toast {...toast} />}
     </div>

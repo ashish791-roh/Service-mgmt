@@ -1,17 +1,125 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { StatusBadge, UrgencyDot, JobAgeBadge, getJobAgeLevel, SLABadge, Toast, useToast } from '../../components/ui';
 import { JobDrawer } from '../../components/JobDrawer';
 import { QRModal } from './components/QRModal';
+import { CustomerDetailModal } from './components/CustomerDetailModal';
 import { PageHeader, Card, Button } from './components/ReceptionUIComponents';
-import { Users, Search, Plus, X, Phone, MapPin, Monitor, Wrench, Calendar, QrCode, Trash2, Pencil, AlertTriangle } from 'lucide-react';
+import { Users, Search, Plus, X, QrCode, Trash2, AlertTriangle } from 'lucide-react';
 import type { Customer, Device, Job } from '../../types';
 import { TallySyncBadge } from '../../components/TallySyncBadge';
 
+import { usePrefetch } from '../../hooks/usePrefetch';
+import { motion, AnimatePresence } from 'framer-motion';
+import { MotionListItem } from '../../components/MotionListItem';
+import { MotionButton } from '../../components/MotionButton';
+
+const modalVariants = {
+  hidden:  { opacity: 0, scale: 0.94, y: 16 },
+  visible: { opacity: 1, scale: 1,    y: 0,  transition: { type: 'spring', stiffness: 480, damping: 36 } },
+  exit:    { opacity: 0, scale: 0.96, y: 8,  transition: { duration: 0.15 } },
+} as const;
+
+const backdropVariants = {
+  hidden:  { opacity: 0 },
+  visible: { opacity: 1, transition: { duration: 0.2 } },
+  exit:    { opacity: 0, transition: { duration: 0.15 } },
+} as const;
+
 type JobWithDetails = Job & { customer?: Customer; device?: Device; tallyStatus?: string | null };
 
+const JobRow: React.FC<{
+  job: JobWithDetails;
+  onOpen: (id: string) => void;
+  users: any[];
+  slaTiers: any;
+  showFinancials: boolean;
+  currentUser: any;
+  setQrJob: (job: JobWithDetails) => void;
+  setDeleteJobId: (id: string) => void;
+}> = ({ job, onOpen, users, slaTiers, showFinancials, currentUser, setQrJob, setDeleteJobId }) => {
+  const { onMouseEnter, onMouseLeave } = usePrefetch(`/api/jobs/${job.id}`);
+  const customer = job.customer;
+  const device = job.device;
+  const engineer = users.find(u => u.id === job.assignedEngineerId);
+  const ageLevel = getJobAgeLevel(job.createdAt, job.status, device?.type);
+  const rowBg = ageLevel === 'red' ? 'bg-red-50/40' : ageLevel === 'yellow' ? 'bg-amber-50/40' : '';
+
+  return (
+    <motion.tr
+      layout="position"
+      initial={{ opacity: 0, y: 16, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.95, y: -8, transition: { duration: 0.15 } }}
+      transition={{ type: 'spring', stiffness: 500, damping: 35, mass: 0.8 }}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      onClick={() => onOpen(job.id)}
+      className={`hover:bg-gray-50 transition-colors cursor-pointer ${rowBg}`}
+    >
+      <td className="pl-6 py-4"><UrgencyDot createdAt={job.createdAt} status={job.status} /></td>
+      <td className="px-6 py-4 text-[11px] font-medium text-gray-400">#{job.id.slice(-8).toUpperCase()}</td>
+      <td className="px-6 py-4">
+        <p className="text-[13px] font-medium text-gray-900 mb-0.5">{customer?.name ?? 'Unknown'}</p>
+        <p className="text-[11px] font-normal text-gray-500">{device?.brand} {device?.model}</p>
+      </td>
+      <td className="px-6 py-4 text-[13px] font-normal text-gray-600 max-w-[250px] truncate">{job.problemDescription}</td>
+      <td className="px-6 py-4">
+        {engineer ? (
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded bg-teal-50 text-teal-600 flex items-center justify-center text-[11px] font-medium border border-teal-100">{engineer.name.charAt(0)}</div>
+            <span className="text-[13px] font-medium text-gray-900">{engineer.name}</span>
+          </div>
+        ) : (
+          <span className="text-[11px] font-medium text-rose-500 bg-rose-50 border border-rose-100 px-2.5 py-1 rounded-md uppercase tracking-wide">Unassigned</span>
+        )}
+      </td>
+      <td className="px-6 py-4">
+        <div className="flex flex-col gap-1 items-start">
+          <StatusBadge status={job.status} />
+          {job.tallyStatus && <TallySyncBadge status={job.tallyStatus} />}
+        </div>
+      </td>
+      <td className="px-6 py-4">
+        <SLABadge createdAt={job.createdAt} status={job.status} deviceType={device?.type} tiers={slaTiers} />
+        {!['Completed', 'Delivered'].includes(job.status) && (
+          <JobAgeBadge createdAt={job.createdAt} status={job.status} />
+        )}
+      </td>
+      {showFinancials && (
+        <td className="px-6 py-4">
+          <p className="text-[13px] font-medium text-gray-900">₹{(job.estimatedCost ?? 0).toLocaleString()}</p>
+          {(job.advanceAmount ?? 0) > 0 && (
+            <p className="text-[10px] text-green-600 font-medium mt-0.5">Adv: ₹{(job.advanceAmount ?? 0).toLocaleString()}</p>
+          )}
+        </td>
+      )}
+      <td className="px-3 py-4">
+        <div className="flex items-center gap-1">
+          <button
+            onClick={e => { e.stopPropagation(); setQrJob(job); }}
+            className="p-2 rounded-lg text-gray-400 hover:text-teal-600 hover:bg-teal-50 transition-colors"
+            title="Show QR Code"
+          >
+            <QrCode size={16} />
+          </button>
+          {(currentUser?.role === 'admin' || currentUser?.role === 'reception') && (
+            <button
+              onClick={e => { e.stopPropagation(); setDeleteJobId(job.id); }}
+              className="p-2 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+              title="Delete job"
+            >
+              <Trash2 size={15} />
+            </button>
+          )}
+        </div>
+      </td>
+    </motion.tr>
+  );
+};
+
 export const JobsPage: React.FC = () => {
-  const { users, currentUser, slaTiers, deleteJob, addCustomer, addDevice, addJob, updateCustomer, deleteCustomer, jobRefreshTrigger, customerRefreshTrigger } = useApp();
+  const { users, currentUser, slaTiers, deleteJob, addCustomer, addDevice, addJob, updateCustomer, deleteCustomer, jobRefreshTrigger, customerRefreshTrigger, jobs: allJobs } = useApp();
   const { toast: jobsToast, show: showJobToast } = useToast();
   const showFinancials = currentUser?.role !== 'engineer';
 
@@ -54,13 +162,13 @@ export const JobsPage: React.FC = () => {
   const [jobForm, setJobForm] = useState({ problemDescription: '', estimatedCost: '', advanceAmount: '', assignedEngineerId: '', linkedJobId: '' });
 
   // ── Customer Details State (inside panel) ──
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<(Customer & { devices?: Device[] }) | null>(null);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [editForm, setEditForm] = useState({ name: '', phone: '', address: '', email: '' });
   const [showDeleteCustConfirm, setShowDeleteCustConfirm] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
 
-  const engineers = users.filter(u => u.role === 'engineer' && u.active);
+  const engineers = useMemo(() => users.filter(u => u.role === 'engineer' && u.active), [users]);
   const statuses = ['All', 'New', 'Assigned', 'In Progress', 'Completed', 'Delivered'];
 
   // ── Debounce Search Logic ──
@@ -78,8 +186,13 @@ export const JobsPage: React.FC = () => {
     return () => clearTimeout(timer);
   }, [customerSearch]);
 
-  // ── Fetch Jobs On-Demand ──
+  const jobsAbortRef = React.useRef<AbortController | null>(null);
+
   const fetchJobs = async () => {
+    jobsAbortRef.current?.abort();
+    jobsAbortRef.current = new AbortController();
+    const signal = jobsAbortRef.current.signal;
+
     setIsLoadingJobs(true);
     try {
       const params = new URLSearchParams();
@@ -89,21 +202,28 @@ export const JobsPage: React.FC = () => {
       if (engineerFilter !== 'All') params.set('engineerId', engineerFilter);
       if (debouncedCustomerNameSearch.trim()) params.set('search', debouncedCustomerNameSearch.trim());
 
-      const res = await fetch(`/api/jobs?${params.toString()}`);
-      if (res.ok) {
-        const data = await res.json();
-        setJobs(data.jobs || []);
-        setTotalJobs(data.total || 0);
-      }
-    } catch (err) {
+      const res = await fetch(`/api/jobs?${params.toString()}`, { signal });
+      if (!res.ok) return;
+      const data = await res.json();
+      setJobs(data.jobs || []);
+      setTotalJobs(data.total || 0);
+    } catch (err: any) {
+      if (err.name === 'AbortError') return;
       console.error('[fetchJobs error]', err);
     } finally {
-      setIsLoadingJobs(false);
+      if (!signal.aborted) {
+        setIsLoadingJobs(false);
+      }
     }
   };
 
-  // ── Fetch Customers On-Demand ──
+  const customersAbortRef = React.useRef<AbortController | null>(null);
+
   const fetchCustomers = async () => {
+    customersAbortRef.current?.abort();
+    customersAbortRef.current = new AbortController();
+    const signal = customersAbortRef.current.signal;
+
     setIsLoadingCustomers(true);
     try {
       const params = new URLSearchParams();
@@ -111,16 +231,18 @@ export const JobsPage: React.FC = () => {
       params.set('limit', String(customersLimit));
       if (debouncedCustomerSearch.trim()) params.set('search', debouncedCustomerSearch.trim());
 
-      const res = await fetch(`/api/customers?${params.toString()}`);
-      if (res.ok) {
-        const data = await res.json();
-        setCustomers(data.customers || []);
-        setTotalCustomers(data.total || 0);
-      }
-    } catch (err) {
+      const res = await fetch(`/api/customers?${params.toString()}`, { signal });
+      if (!res.ok) return;
+      const data = await res.json();
+      setCustomers(data.customers || []);
+      setTotalCustomers(data.total || 0);
+    } catch (err: any) {
+      if (err.name === 'AbortError') return;
       console.error('[fetchCustomers error]', err);
     } finally {
-      setIsLoadingCustomers(false);
+      if (!signal.aborted) {
+        setIsLoadingCustomers(false);
+      }
     }
   };
 
@@ -218,122 +340,6 @@ export const JobsPage: React.FC = () => {
     fetchCustomers(); // Refresh list
   };
 
-  // Customer detail drawer (inside customers panel)
-  const CustomerDetailDrawer = () => {
-    if (!selectedCustomer) return null;
-    const c = selectedCustomer;
-    // Note: jobs and devices are included or queried?
-    // Let's filter client side since we fetch limited jobs, but wait! We can fetch from API for this customer.
-    // However, to keep it simple, we can filter what's in local jobs state, or query on demand.
-    // Let's query customer specific jobs and devices on demand or filter what's in context.
-    const [custJobs, setCustJobs] = useState<JobWithDetails[]>([]);
-    const [loadingDetails, setLoadingDetails] = useState(true);
-
-    useEffect(() => {
-      const loadCustDetails = async () => {
-        setLoadingDetails(true);
-        try {
-          // Fetch customer's jobs
-          const resJobs = await fetch(`/api/jobs?limit=100&search=${encodeURIComponent(c.phone)}`);
-          if (resJobs.ok) {
-            const data = await resJobs.json();
-            // Match customer ID strictly
-            setCustJobs((data.jobs || []).filter((j: Job) => j.customerId === c.id));
-          }
-          // Fetch customer's devices (we can fetch from /api/data or fallback since all devices are small or we can fetch)
-          // For simplicity, search the devices inside context. Since it's read-only, it's fine.
-        } catch (e) {
-          console.error(e);
-        } finally {
-          setLoadingDetails(false);
-        }
-      };
-      loadCustDetails();
-    }, [c.id, c.phone]);
-
-    const completedJobs = custJobs.filter(j => ['Completed', 'Delivered'].includes(j.status));
-    const totalSpend = completedJobs.reduce((s, j) => s + (j.actualCost ?? j.estimatedCost), 0);
-    const activeJobs = custJobs.filter(j => !['Completed', 'Delivered'].includes(j.status));
-
-    return (
-      <div className="fixed inset-0 z-[70] flex items-start justify-end bg-gray-900/40 backdrop-blur-sm" onClick={() => setSelectedCustomer(null)}>
-        <div className="relative w-full max-w-xl h-full bg-white shadow-2xl flex flex-col overflow-hidden" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
-          <div className="flex items-center justify-between px-6 py-5 border-b border-gray-200 bg-white shrink-0">
-            <div className="flex items-center gap-4">
-              <div className="w-11 h-11 rounded-xl bg-teal-50 flex items-center justify-center text-[18px] font-medium text-teal-600 border border-teal-100 shrink-0">{c.name.charAt(0)}</div>
-              <div>
-                <h2 className="text-[18px] font-medium text-gray-900">{c.name}</h2>
-                <div className="flex items-center gap-3 mt-1">
-                  <span className="flex items-center gap-1 text-[12px] text-gray-500"><Phone size={11} /> {c.phone}</span>
-                  {c.address && <span className="flex items-center gap-1 text-[12px] text-gray-400"><MapPin size={11} /> {c.address}</span>}
-                </div>
-                <p className="text-[10px] text-gray-400 mt-0.5 uppercase tracking-wide">Since {new Date(c.createdAt).toLocaleDateString('en-IN', { year: 'numeric', month: 'short' })}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button onClick={() => openEditCustomer(c)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 transition-colors"><Pencil size={13} />Edit</button>
-              <button onClick={() => setShowDeleteCustConfirm(c.id)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-colors"><Trash2 size={13} />Delete</button>
-              <button onClick={() => setSelectedCustomer(null)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-900 transition-colors"><X size={16} /></button>
-            </div>
-          </div>
-
-          {loadingDetails ? (
-            <div className="flex-1 flex items-center justify-center">
-              <div className="w-8 h-8 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : (
-            <>
-              <div className="grid grid-cols-4 divide-x divide-gray-200 border-b border-gray-200 shrink-0">
-                {[
-                  { label: 'Total Jobs', value: custJobs.length, color: 'text-gray-900' },
-                  { label: 'Active', value: activeJobs.length, color: 'text-amber-600' },
-                  { label: 'Completed', value: completedJobs.length, color: 'text-green-600' },
-                  { label: 'Total Spend', value: `₹${(totalSpend / 1000).toFixed(1)}k`, color: 'text-teal-600' },
-                ].map(stat => (
-                  <div key={stat.label} className="px-5 py-4 text-center">
-                    <p className={`text-[22px] font-medium ${stat.color}`}>{stat.value}</p>
-                    <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide mt-0.5">{stat.label}</p>
-                  </div>
-                ))}
-              </div>
-              <div className="flex border-b border-gray-200 bg-white shrink-0 px-6">
-                {[{ id: 'jobs' as const, label: `Jobs (${custJobs.length})`, icon: Wrench }].map(tab => (
-                  <button key={tab.id} className="flex items-center gap-2 px-4 py-3 text-[13px] font-medium border-b-2 border-teal-500 text-teal-600 -mb-px">
-                    <tab.icon size={14} /> {tab.label}
-                  </button>
-                ))}
-              </div>
-              <div className="overflow-y-auto flex-1">
-                <div className="space-y-3 p-5">
-                  {custJobs.length === 0 ? (
-                    <div className="text-center py-10 text-gray-400"><Wrench size={28} className="mx-auto mb-2 opacity-40" /><p className="text-[13px]">No jobs yet</p></div>
-                  ) : custJobs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map(job => {
-                    const isActive = !['Completed', 'Delivered'].includes(job.status);
-                    return (
-                      <div key={job.id} className={`rounded-xl border p-4 cursor-pointer hover:shadow-sm transition-all ${isActive ? 'border-amber-200 bg-amber-50/30' : 'border-gray-200 bg-white'}`} onClick={() => { setSelectedCustomer(null); setSelectedJobId(job.id); }}>
-                        <div className="flex items-start justify-between gap-3 mb-3">
-                          <div>
-                            <div className="flex items-center gap-2 mb-1"><span className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">#{job.id}</span><StatusBadge status={job.status} /></div>
-                            <p className="text-[13px] font-medium text-gray-900">{job.problemDescription}</p>
-                          </div>
-                          <p className="text-[15px] font-medium text-gray-900 shrink-0">₹{(job.actualCost ?? job.estimatedCost).toLocaleString()}</p>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-3 text-[11px] text-gray-500">
-                          {job.device && <span className="flex items-center gap-1"><Monitor size={11} /> {job.device.brand} {job.device.model}</span>}
-                          <span className="flex items-center gap-1"><Calendar size={11} /> {new Date(job.createdAt).toLocaleDateString('en-IN')}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-    );
-  };
-
   const totalPages = Math.ceil(totalJobs / jobsLimit);
   const totalCustomerPages = Math.ceil(totalCustomers / customersLimit);
 
@@ -404,74 +410,21 @@ export const JobsPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {jobs.map((job) => {
-                const customer = job.customer;
-                const device = job.device;
-                const engineer = users.find(u => u.id === job.assignedEngineerId);
-                const ageLevel = getJobAgeLevel(job.createdAt, job.status, device?.type);
-                const rowBg = ageLevel === 'red' ? 'bg-red-50/40' : ageLevel === 'yellow' ? 'bg-amber-50/40' : '';
-                return (
-                  <tr key={job.id} onClick={() => setSelectedJobId(job.id)} className={`hover:bg-gray-50 transition-colors cursor-pointer ${rowBg}`}>
-                    <td className="pl-6 py-4"><UrgencyDot createdAt={job.createdAt} status={job.status} /></td>
-                    <td className="px-6 py-4 text-[11px] font-medium text-gray-400">#{job.id.slice(-8).toUpperCase()}</td>
-                    <td className="px-6 py-4">
-                      <p className="text-[13px] font-medium text-gray-900 mb-0.5">{customer?.name ?? 'Unknown'}</p>
-                      <p className="text-[11px] font-normal text-gray-500">{device?.brand} {device?.model}</p>
-                    </td>
-                    <td className="px-6 py-4 text-[13px] font-normal text-gray-600 max-w-[250px] truncate">{job.problemDescription}</td>
-                    <td className="px-6 py-4">
-                      {engineer ? (
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded bg-teal-50 text-teal-600 flex items-center justify-center text-[11px] font-medium border border-teal-100">{engineer.name.charAt(0)}</div>
-                          <span className="text-[13px] font-medium text-gray-900">{engineer.name}</span>
-                        </div>
-                      ) : (
-                        <span className="text-[11px] font-medium text-rose-500 bg-rose-50 border border-rose-100 px-2.5 py-1 rounded-md uppercase tracking-wide">Unassigned</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-col gap-1 items-start">
-                        <StatusBadge status={job.status} />
-                        {job.tallyStatus && <TallySyncBadge status={job.tallyStatus} />}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <SLABadge createdAt={job.createdAt} status={job.status} deviceType={device?.type} tiers={slaTiers} />
-                      {!['Completed', 'Delivered'].includes(job.status) && (
-                        <JobAgeBadge createdAt={job.createdAt} status={job.status} />
-                      )}
-                    </td>
-                    {showFinancials && (
-                      <td className="px-6 py-4">
-                        <p className="text-[13px] font-medium text-gray-900">₹{(job.estimatedCost ?? 0).toLocaleString()}</p>
-                        {(job.advanceAmount ?? 0) > 0 && (
-                          <p className="text-[10px] text-green-600 font-medium mt-0.5">Adv: ₹{(job.advanceAmount ?? 0).toLocaleString()}</p>
-                        )}
-                      </td>
-                    )}
-                    <td className="px-3 py-4">
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={e => { e.stopPropagation(); setQrJob(job); }}
-                          className="p-2 rounded-lg text-gray-400 hover:text-teal-600 hover:bg-teal-50 transition-colors"
-                          title="Show QR Code"
-                        >
-                          <QrCode size={16} />
-                        </button>
-                        {(currentUser?.role === 'admin' || currentUser?.role === 'reception') && (
-                          <button
-                            onClick={e => { e.stopPropagation(); setDeleteJobId(job.id); }}
-                            className="p-2 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                            title="Delete job"
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+              <AnimatePresence initial={false}>
+                {jobs.map((job) => (
+                  <JobRow
+                    key={job.id}
+                    job={job}
+                    onOpen={setSelectedJobId}
+                    users={users}
+                    slaTiers={slaTiers}
+                    showFinancials={showFinancials}
+                    currentUser={currentUser}
+                    setQrJob={setQrJob}
+                    setDeleteJobId={setDeleteJobId}
+                  />
+                ))}
+              </AnimatePresence>
             </tbody>
           </table>
           {jobs.length === 0 && !isLoadingJobs && (
@@ -516,7 +469,11 @@ export const JobsPage: React.FC = () => {
         const d = qrJob.device;
         return <QRModal job={qrJob} customer={c} device={d} onClose={() => setQrJob(null)} />;
       })()}
-      {selectedJobId && <JobDrawer jobId={selectedJobId} onClose={() => { setSelectedJobId(null); fetchJobs(); }} />}
+      <AnimatePresence>
+        {selectedJobId && (
+          <JobDrawer key={selectedJobId} jobId={selectedJobId} onClose={() => { setSelectedJobId(null); fetchJobs(); }} />
+        )}
+      </AnimatePresence>
 
       {/* ── Customers Sliding Panel ── */}
       {showCustomersPanel && (
@@ -551,11 +508,14 @@ export const JobsPage: React.FC = () => {
               {customers.length === 0 && !isLoadingCustomers && (
                 <p className="px-6 py-8 text-[13px] text-gray-400 text-center">No customers found.</p>
               )}
-              {customers.map(c => {
-                // Approximate jobs stats based on database, in CustomerDetailDrawer we query full info
-                return (
-                  <div key={c.id} className="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 transition-colors cursor-pointer"
-                    onClick={() => { setSelectedCustomer(c); }}>
+              <AnimatePresence initial={false}>
+                {customers.map((c, i) => (
+                  <MotionListItem
+                    key={c.id}
+                    index={i}
+                    className="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 transition-colors cursor-pointer"
+                    onClick={() => { setSelectedCustomer(c); }}
+                  >
                     <div className="w-9 h-9 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center font-medium text-[14px] shrink-0">
                       {c.name.charAt(0).toUpperCase()}
                     </div>
@@ -571,9 +531,9 @@ export const JobsPage: React.FC = () => {
                         <Trash2 size={14} />
                       </button>
                     </div>
-                  </div>
-                );
-              })}
+                  </MotionListItem>
+                ))}
+              </AnimatePresence>
             </div>
 
             {/* ── Customers Pagination ── */}
@@ -602,7 +562,22 @@ export const JobsPage: React.FC = () => {
         </div>
       )}
 
-      {selectedCustomer && <CustomerDetailDrawer />}
+      <AnimatePresence>
+        {selectedCustomer && (
+          <CustomerDetailModal
+            key={selectedCustomer.id}
+            customer={selectedCustomer}
+            onClose={() => setSelectedCustomer(null)}
+            onEdit={openEditCustomer}
+            onDelete={setShowDeleteCustConfirm}
+            onJobClick={(jobId) => {
+              setSelectedCustomer(null);
+              setSelectedJobId(jobId);
+            }}
+            allJobs={allJobs}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Edit Customer Modal */}
       {editingCustomer && (
@@ -643,185 +618,232 @@ export const JobsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Delete Customer Confirm */}
-      {showDeleteCustConfirm && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-xl w-full max-w-sm p-6 shadow-xl">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center">
-                <AlertTriangle size={18} className="text-rose-600" />
-              </div>
-              <div>
-                <h3 className="text-[16px] font-semibold text-gray-900">Delete Customer</h3>
-                <p className="text-[12px] text-gray-500 mt-0.5">This action cannot be undone.</p>
-              </div>
-            </div>
-            <p className="text-[13px] text-gray-600 mb-5">
-              Are you sure you want to delete <strong>{customers.find(c => c.id === showDeleteCustConfirm)?.name ?? 'this customer'}</strong>? All completed job history will be removed.
-            </p>
-            <div className="flex gap-3">
-              <button onClick={() => setShowDeleteCustConfirm(null)} className="flex-1 px-4 py-2 rounded-lg text-[13px] font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors">Cancel</button>
-              <button onClick={() => handleDeleteCustomer(showDeleteCustConfirm)} disabled={actionBusy} className="flex-1 px-4 py-2 rounded-lg text-[13px] font-medium text-white bg-rose-50 hover:bg-rose-600 transition-colors disabled:opacity-50">
-                {actionBusy ? 'Deleting…' : 'Delete'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── New Registration Modal ── */}
-      {showRegModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-xl w-full max-w-lg p-8 shadow-lg overflow-hidden relative">
-            <div className="flex justify-between items-center mb-6">
-              <div>
-                <h2 className="text-[18px] font-medium text-gray-900">New Registration</h2>
-                <p className="text-[11px] font-medium text-teal-600 uppercase tracking-wide mt-1">Step {regStep} of 3</p>
-              </div>
-              <button onClick={() => { setShowRegModal(false); setRegStep(1); setCustForm({ name: '', phone: '', address: '', email: '' }); setDeviceForm({ type: '', brand: '', model: '', serialNumber: '' }); setJobForm({ problemDescription: '', estimatedCost: '', advanceAmount: '', assignedEngineerId: '', linkedJobId: '' }); }} className="text-gray-400 hover:text-gray-600 transition-colors"><X size={20} /></button>
-            </div>
-
-            <div className="flex gap-2 mb-8">
-              {['Client Profile', 'Device Specs', 'Job Details'].map((label, i) => (
-                <div key={i} className="flex-1">
-                  <div className={`h-1.5 rounded-full mb-2 transition-colors ${i + 1 <= regStep ? 'bg-teal-500' : 'bg-gray-100'}`} />
-                  <p className={`text-[11px] font-medium uppercase tracking-wide ${i + 1 === regStep ? 'text-teal-600' : 'text-gray-400'}`}>{label}</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="space-y-4 mb-8">
-              {regStep === 1 && (
-                <>
-                  <div>
-                    <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5">Customer Name *</label>
-                    <input className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 focus:bg-white transition-colors" value={custForm.name} onChange={e => setCustForm({ ...custForm, name: e.target.value })} placeholder="Full Name" />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5">Phone Number *</label>
-                    <input className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 focus:bg-white transition-colors" type="tel" maxLength={15} value={custForm.phone} onChange={e => { const v = e.target.value.replace(/\D/g, ''); setCustForm({ ...custForm, phone: v }); }} placeholder="Mobile Number" />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5">Address</label>
-                    <input className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 focus:bg-white transition-colors" value={custForm.address} onChange={e => setCustForm({ ...custForm, address: e.target.value })} placeholder="Complete Address" />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5">Email Address <span className="normal-case text-gray-400 font-normal">(optional)</span></label>
-                    <input type="email" className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 focus:bg-white transition-colors" value={custForm.email} onChange={e => setCustForm({ ...custForm, email: e.target.value })} placeholder="customer@example.com" />
-                  </div>
-                </>
-              )}
-              {regStep === 2 && (
-                <>
-                  <div>
-                    <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5">Device Type *</label>
-                    <select className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 focus:bg-white transition-colors" value={deviceForm.type} onChange={e => setDeviceForm({ ...deviceForm, type: e.target.value })}>
-                      <option value="">Select Category</option>
-                      {['Laptop', 'Desktop', 'Smartphone', 'Tablet', 'Printer', 'Other'].map(v => <option key={v} value={v}>{v}</option>)}
-                    </select>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5">Brand *</label>
-                      <input className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 focus:bg-white transition-colors" value={deviceForm.brand} onChange={e => setDeviceForm({ ...deviceForm, brand: e.target.value })} placeholder="Brand" />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5">Model *</label>
-                      <input className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 focus:bg-white transition-colors" value={deviceForm.model} onChange={e => setDeviceForm({ ...deviceForm, model: e.target.value })} placeholder="Model" />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5">Serial / IMEI (Optional)</label>
-                    <input className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 focus:bg-white transition-colors" value={deviceForm.serialNumber} onChange={e => setDeviceForm({ ...deviceForm, serialNumber: e.target.value })} placeholder="Serial Number" />
-                  </div>
-                </>
-              )}
-              {regStep === 3 && (
-                <>
-                  <div>
-                    <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5">Issue Description *</label>
-                    <textarea className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 focus:bg-white transition-colors resize-none" rows={4} value={jobForm.problemDescription} onChange={e => setJobForm({ ...jobForm, problemDescription: e.target.value })} placeholder="Describe the problem in detail..." />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5">Quote Estimation (₹) *</label>
-                    <input className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 focus:bg-white transition-colors" type="number" value={jobForm.estimatedCost} onChange={e => setJobForm({ ...jobForm, estimatedCost: e.target.value })} placeholder="0.00" />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5">Advance / Deposit Collected (₹)</label>
-                    <input className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 focus:bg-white transition-colors" type="number" min="0" value={jobForm.advanceAmount} onChange={e => setJobForm({ ...jobForm, advanceAmount: e.target.value })} placeholder="0.00 (optional)" />
-                    {jobForm.advanceAmount && parseFloat(jobForm.advanceAmount) > 0 && jobForm.estimatedCost && (
-                      <p className="mt-1 text-[11px] text-teal-600 font-medium">Balance due at delivery: ₹{Math.max(parseFloat(jobForm.estimatedCost) - parseFloat(jobForm.advanceAmount), 0).toLocaleString()}</p>
-                    )}
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5">Direct Assignment</label>
-                    <select className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 focus:bg-white transition-colors" value={jobForm.assignedEngineerId} onChange={e => setJobForm({ ...jobForm, assignedEngineerId: e.target.value })}>
-                      <option value="">Leave Unassigned for now</option>
-                      {engineers.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5">Linked Warranty Job (Optional)</label>
-                    <input className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 focus:bg-white transition-colors font-mono" value={jobForm.linkedJobId} onChange={e => setJobForm({ ...jobForm, linkedJobId: e.target.value })} placeholder="e.g. j-123456" />
-                  </div>
-                </>
-              )}
-            </div>
-
-            <div className="flex gap-3">
-              {regStep > 1 && <Button text="Back" variant="outline" onClick={() => setRegStep(s => s - 1)} className="px-6" />}
-              <Button text={submitting ? 'Saving...' : regStep < 3 ? 'Continue' : 'Register'} variant="primary" onClick={handleRegNext} disabled={submitting} className="flex-1" />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Job Confirm */}
-      {deleteJobId && (() => {
-        const job = jobs.find(j => j.id === deleteJobId);
-        const customer = job?.customer;
-        return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="bg-white rounded-xl w-full max-w-sm p-6 shadow-xl">
+      <AnimatePresence>
+        {showDeleteCustConfirm && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+            <motion.div
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+              variants={backdropVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              onClick={() => setShowDeleteCustConfirm(null)}
+            />
+            <motion.div
+              className="bg-white rounded-xl w-full max-w-sm p-6 shadow-xl relative z-10"
+              variants={modalVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+            >
               <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center shrink-0">
+                <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center">
                   <AlertTriangle size={18} className="text-rose-600" />
                 </div>
                 <div>
-                  <h3 className="text-[16px] font-semibold text-gray-900">Delete Job</h3>
-                  <p className="text-[12px] text-gray-500 mt-0.5">This cannot be undone.</p>
+                  <h3 className="text-[16px] font-semibold text-gray-900">Delete Customer</h3>
+                  <p className="text-[12px] text-gray-500 mt-0.5">This action cannot be undone.</p>
                 </div>
               </div>
-              <p className="text-[13px] text-gray-600 mb-1">
-                Delete job for <strong>{customer?.name ?? 'Unknown'}</strong>?
+              <p className="text-[13px] text-gray-600 mb-5">
+                Are you sure you want to delete <strong>{customers.find(c => c.id === showDeleteCustConfirm)?.name ?? 'this customer'}</strong>? All completed job history will be removed.
               </p>
-              <p className="text-[12px] text-gray-400 mb-5 line-clamp-2">{job?.problemDescription}</p>
-              {job?.status === 'In Progress' && (
-                <p className="text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
-                  ⚠ This job is In Progress. Change its status before deleting.
-                </p>
-              )}
               <div className="flex gap-3">
-                <button onClick={() => setDeleteJobId(null)} className="flex-1 px-4 py-2 rounded-lg text-[13px] font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors">Cancel</button>
-                <button
-                  onClick={async () => {
-                    setDeletingJob(true);
-                    const result = await deleteJob(deleteJobId);
-                    setDeletingJob(false);
-                    setDeleteJobId(null);
-                    if (!result.ok) { showJobToast(result.error ?? 'Failed to delete job', 'error'); }
-                    else { showJobToast('Job deleted successfully'); fetchJobs(); }
-                  }}
-                  disabled={deletingJob || job?.status === 'In Progress'}
-                  className="flex-1 px-4 py-2 rounded-lg text-[13px] font-medium text-white bg-rose-500 hover:bg-rose-600 transition-colors disabled:opacity-50"
-                >
-                  {deletingJob ? 'Deleting…' : 'Delete'}
+                <button onClick={() => setShowDeleteCustConfirm(null)} className="flex-1 px-4 py-2 rounded-lg text-[13px] font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors">Cancel</button>
+                <button onClick={() => handleDeleteCustomer(showDeleteCustConfirm)} disabled={actionBusy} className="flex-1 px-4 py-2 rounded-lg text-[13px] font-medium text-white bg-rose-50 hover:bg-rose-600 transition-colors disabled:opacity-50">
+                  {actionBusy ? 'Deleting…' : 'Delete'}
                 </button>
               </div>
-            </div>
+            </motion.div>
           </div>
-        );
-      })()}
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showRegModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm"
+              variants={backdropVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              onClick={() => { setShowRegModal(false); setRegStep(1); setCustForm({ name: '', phone: '', address: '', email: '' }); setDeviceForm({ type: '', brand: '', model: '', serialNumber: '' }); setJobForm({ problemDescription: '', estimatedCost: '', advanceAmount: '', assignedEngineerId: '', linkedJobId: '' }); }}
+            />
+            <motion.div
+              className="bg-white rounded-xl w-full max-w-lg p-8 shadow-lg overflow-hidden relative z-10"
+              variants={modalVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <div>
+                  <h2 className="text-[18px] font-medium text-gray-900">New Registration</h2>
+                  <p className="text-[11px] font-medium text-teal-600 uppercase tracking-wide mt-1">Step {regStep} of 3</p>
+                </div>
+                <button onClick={() => { setShowRegModal(false); setRegStep(1); setCustForm({ name: '', phone: '', address: '', email: '' }); setDeviceForm({ type: '', brand: '', model: '', serialNumber: '' }); setJobForm({ problemDescription: '', estimatedCost: '', advanceAmount: '', assignedEngineerId: '', linkedJobId: '' }); }} className="text-gray-400 hover:text-gray-600 transition-colors"><X size={20} /></button>
+              </div>
+
+              <div className="flex gap-2 mb-8">
+                {['Client Profile', 'Device Specs', 'Job Details'].map((label, i) => (
+                  <div key={i} className="flex-1">
+                    <div className={`h-1.5 rounded-full mb-2 transition-colors ${i + 1 <= regStep ? 'bg-teal-500' : 'bg-gray-100'}`} />
+                    <p className={`text-[11px] font-medium uppercase tracking-wide ${i + 1 === regStep ? 'text-teal-600' : 'text-gray-400'}`}>{label}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="space-y-4 mb-8">
+                {regStep === 1 && (
+                  <>
+                    <div>
+                      <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5">Customer Name *</label>
+                      <input className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 focus:bg-white transition-colors" value={custForm.name} onChange={e => setCustForm({ ...custForm, name: e.target.value })} placeholder="Full Name" />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5">Phone Number *</label>
+                      <input className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 focus:bg-white transition-colors" type="tel" maxLength={15} value={custForm.phone} onChange={e => { const v = e.target.value.replace(/\D/g, ''); setCustForm({ ...custForm, phone: v }); }} placeholder="Mobile Number" />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5">Address</label>
+                      <input className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 focus:bg-white transition-colors" value={custForm.address} onChange={e => setCustForm({ ...custForm, address: e.target.value })} placeholder="Complete Address" />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5">Email Address <span className="normal-case text-gray-400 font-normal">(optional)</span></label>
+                      <input type="email" className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 focus:bg-white transition-colors" value={custForm.email} onChange={e => setCustForm({ ...custForm, email: e.target.value })} placeholder="customer@example.com" />
+                    </div>
+                  </>
+                )}
+                {regStep === 2 && (
+                  <>
+                    <div>
+                      <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5">Device Type *</label>
+                      <select className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 focus:bg-white transition-colors" value={deviceForm.type} onChange={e => setDeviceForm({ ...deviceForm, type: e.target.value })}>
+                        <option value="">Select Category</option>
+                        {['Laptop', 'Desktop', 'Smartphone', 'Tablet', 'Printer', 'Other'].map(v => <option key={v} value={v}>{v}</option>)}
+                      </select>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5">Brand *</label>
+                        <input className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 focus:bg-white transition-colors" value={deviceForm.brand} onChange={e => setDeviceForm({ ...deviceForm, brand: e.target.value })} placeholder="Brand" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5">Model *</label>
+                        <input className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 focus:bg-white transition-colors" value={deviceForm.model} onChange={e => setDeviceForm({ ...deviceForm, model: e.target.value })} placeholder="Model" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5">Serial / IMEI (Optional)</label>
+                      <input className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 focus:bg-white transition-colors" value={deviceForm.serialNumber} onChange={e => setDeviceForm({ ...deviceForm, serialNumber: e.target.value })} placeholder="Serial Number" />
+                    </div>
+                  </>
+                )}
+                {regStep === 3 && (
+                  <>
+                    <div>
+                      <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5">Issue Description *</label>
+                      <textarea className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 focus:bg-white transition-colors resize-none" rows={4} value={jobForm.problemDescription} onChange={e => setJobForm({ ...jobForm, problemDescription: e.target.value })} placeholder="Describe the problem in detail..." />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5">Quote Estimation (₹) *</label>
+                      <input className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 focus:bg-white transition-colors" type="number" value={jobForm.estimatedCost} onChange={e => setJobForm({ ...jobForm, estimatedCost: e.target.value })} placeholder="0.00" />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5">Advance / Deposit Collected (₹)</label>
+                      <input className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 focus:bg-white transition-colors" type="number" min="0" value={jobForm.advanceAmount} onChange={e => setJobForm({ ...jobForm, advanceAmount: e.target.value })} placeholder="0.00 (optional)" />
+                      {jobForm.advanceAmount && parseFloat(jobForm.advanceAmount) > 0 && jobForm.estimatedCost && (
+                        <p className="mt-1 text-[11px] text-teal-600 font-medium">Balance due at delivery: ₹{Math.max(parseFloat(jobForm.estimatedCost) - parseFloat(jobForm.advanceAmount), 0).toLocaleString()}</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5">Direct Assignment</label>
+                      <select className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 focus:bg-white transition-colors" value={jobForm.assignedEngineerId} onChange={e => setJobForm({ ...jobForm, assignedEngineerId: e.target.value })}>
+                        <option value="">Leave Unassigned for now</option>
+                        {engineers.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5">Linked Warranty Job (Optional)</label>
+                      <input className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-[13px] font-medium text-gray-900 focus:outline-none focus:border-teal-500 focus:bg-white transition-colors font-mono" value={jobForm.linkedJobId} onChange={e => setJobForm({ ...jobForm, linkedJobId: e.target.value })} placeholder="e.g. j-123456" />
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="flex gap-3">
+                {regStep > 1 && <Button text="Back" variant="outline" onClick={() => setRegStep(s => s - 1)} className="px-6" />}
+                <Button text={submitting ? 'Saving...' : regStep < 3 ? 'Continue' : 'Register'} variant="primary" onClick={handleRegNext} disabled={submitting} className="flex-1" />
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {deleteJobId && (() => {
+          const job = jobs.find(j => j.id === deleteJobId);
+          const customer = job?.customer;
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <motion.div
+                className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+                variants={backdropVariants}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+                onClick={() => setDeleteJobId(null)}
+              />
+              <motion.div
+                className="bg-white rounded-xl w-full max-w-sm p-6 shadow-xl relative z-10"
+                variants={modalVariants}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+              >
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center shrink-0">
+                    <AlertTriangle size={18} className="text-rose-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-[16px] font-semibold text-gray-900">Delete Job</h3>
+                    <p className="text-[12px] text-gray-500 mt-0.5">This cannot be undone.</p>
+                  </div>
+                </div>
+                <p className="text-[13px] text-gray-600 mb-1">
+                  Delete job for <strong>{customer?.name ?? 'Unknown'}</strong>?
+                </p>
+                <p className="text-[12px] text-gray-400 mb-5 line-clamp-2">{job?.problemDescription}</p>
+                {job?.status === 'In Progress' && (
+                  <p className="text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+                    ⚠ This job is In Progress. Change its status before deleting.
+                  </p>
+                )}
+                <div className="flex gap-3">
+                  <button onClick={() => setDeleteJobId(null)} className="flex-1 px-4 py-2 rounded-lg text-[13px] font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors">Cancel</button>
+                  <MotionButton
+                    loading={deletingJob}
+                    disabled={job?.status === 'In Progress'}
+                    variant="danger"
+                    className="flex-1"
+                    onClick={async () => {
+                      setDeletingJob(true);
+                      const result = await deleteJob(deleteJobId);
+                      setDeletingJob(false);
+                      setDeleteJobId(null);
+                      if (!result.ok) { showJobToast(result.error ?? 'Failed to delete job', 'error'); }
+                      else { showJobToast('Job deleted successfully'); fetchJobs(); }
+                    }}
+                  >
+                    Delete Job
+                  </MotionButton>
+                </div>
+              </motion.div>
+            </div>
+          );
+        })()}
+      </AnimatePresence>
       {jobsToast && <Toast {...jobsToast} />}
     </div>
   );

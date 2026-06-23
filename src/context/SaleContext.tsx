@@ -2,7 +2,6 @@
 
 import React, { createContext, useContext, useState } from 'react';
 import type { Sale } from '../types';
-import { useInventory } from './InventoryContext';
 import { useNotifications } from './NotificationContext';
 
 interface SaleContextType {
@@ -18,7 +17,6 @@ const SaleContext = createContext<SaleContextType | null>(null);
 
 export const SaleProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [sales, setSales] = useState<Sale[]>([]);
-  const { setInventory } = useInventory();
   const { setNotifications } = useNotifications();
 
   const addSale = async (saleData: {
@@ -29,6 +27,26 @@ export const SaleProvider: React.FC<{ children: React.ReactNode }> = ({ children
     customerId?: string;
     items: { inventoryItemId: string; quantity: number; unitPrice?: number }[];
   }): Promise<{ ok: boolean; error?: string; sale?: Sale }> => {
+    // Optimistic
+    const tempId = `tmp-${Date.now()}`;
+    const optimistic: Sale = {
+      id: tempId,
+      saleNumber: `SALE-TMP-${Date.now()}`,
+      companyName: saleData.companyName,
+      contactName: saleData.contactName,
+      phone: saleData.phone,
+      notes: saleData.notes,
+      customerId: saleData.customerId || null,
+      items: saleData.items.map(i => ({ ...i, id: `tmp-item-${Math.random()}` })) as any,
+      totalAmount: saleData.items.reduce((sum, item) => sum + (item.unitPrice ?? 0) * item.quantity, 0),
+      paidAt: null,
+      createdById: 'default',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      branchId: 'default',
+    };
+    setSales(prev => [optimistic, ...prev]);
+
     try {
       const res = await fetch('/api/sales', {
         method: 'POST',
@@ -36,26 +54,29 @@ export const SaleProvider: React.FC<{ children: React.ReactNode }> = ({ children
         body: JSON.stringify(saleData),
       });
       const data = await res.json();
-      if (!res.ok) return { ok: false, error: data.error ?? 'Failed to create sale.' };
+      if (!res.ok) {
+        setSales(prev => prev.filter(s => s.id !== tempId));
+        return { ok: false, error: data.error ?? 'Failed to create sale.' };
+      }
+      setSales(prev => prev.map(s => s.id === tempId ? data : s));
 
-      setSales(prev => [data, ...prev]);
-      
-      // Update inventory and notifications
-      fetch('/api/data')
-        .then(res => res.json())
-        .then(appData => {
-          if (appData.inventory) setInventory(appData.inventory);
-          if (appData.notifications) setNotifications(appData.notifications);
-        })
+      fetch('/api/notifications', { credentials: 'same-origin' })
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d?.notifications) setNotifications(d.notifications); })
         .catch(() => {});
 
       return { ok: true, sale: data };
     } catch {
+      setSales(prev => prev.filter(s => s.id !== tempId));
       return { ok: false, error: 'Network error. Please try again.' };
     }
   };
 
   const markSalePaid = async (saleId: string): Promise<{ ok: boolean; error?: string }> => {
+    const paidAt = new Date().toISOString();
+    const previous = sales;
+    setSales(prev => prev.map(s => s.id === saleId ? { ...s, paidAt } : s));
+
     try {
       const res = await fetch('/api/sales', {
         method: 'PATCH',
@@ -63,11 +84,14 @@ export const SaleProvider: React.FC<{ children: React.ReactNode }> = ({ children
         body: JSON.stringify({ saleId }),
       });
       const data = await res.json();
-      if (!res.ok) return { ok: false, error: data.error ?? 'Failed to mark sale as paid.' };
-
+      if (!res.ok) {
+        setSales(previous);
+        return { ok: false, error: data.error ?? 'Failed to mark sale as paid.' };
+      }
       setSales(prev => prev.map(s => s.id === saleId ? { ...s, paidAt: data.paidAt } : s));
       return { ok: true };
     } catch {
+      setSales(previous);
       return { ok: false, error: 'Network error. Please try again.' };
     }
   };

@@ -44,11 +44,11 @@ const isProd = process.env.NODE_ENV === 'production';
 function buildCsp(): string {
   const directives: Record<string, string> = {
     'default-src':     "'self'",
-    'script-src':      "'self' 'unsafe-inline'",   // tighten if you add a nonce system
+    'script-src':      isProd ? "'self' 'unsafe-inline'" : "'self' 'unsafe-inline' 'unsafe-eval'",
     'style-src':       "'self' 'unsafe-inline' https://fonts.googleapis.com",
     'font-src':        "'self' https://fonts.gstatic.com",
     'img-src':         "'self' data: blob:",
-    'connect-src':     "'self'",
+    'connect-src':     isProd ? "'self'" : "'self' ws: wss:",
     'frame-ancestors': "'none'",
     'base-uri':        "'self'",
     'form-action':     "'self'",

@@ -3,7 +3,6 @@
 import React, { createContext, useContext, useState } from 'react';
 import type { PartRequest, PartRequestStatus } from '../types';
 import { useNotifications } from './NotificationContext';
-import { useJobs } from './JobContext';
 
 interface PartRequestContextType {
   partRequests: PartRequest[];
@@ -19,7 +18,6 @@ const PartRequestContext = createContext<PartRequestContextType | null>(null);
 export const PartRequestProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [partRequests, setPartRequests] = useState<PartRequest[]>([]);
   const { setNotifications } = useNotifications();
-  const { setJobs } = useJobs();
 
   const addPartRequest = (r: Omit<PartRequest, 'id' | 'createdAt' | 'status'>) => {
     const tempId = `tmp-${Date.now()}`;
@@ -42,9 +40,9 @@ export const PartRequestProvider: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   const updatePartRequest = (id: string, status: PartRequestStatus) => {
-    setPartRequests(prev => prev.map(r => r.id === id
-      ? { ...r, status, reviewedAt: new Date().toISOString() }
-      : r
+    // Optimistic — update UI immediately
+    setPartRequests(prev => prev.map(r =>
+      r.id === id ? { ...r, status, reviewedAt: new Date().toISOString() } : r
     ));
 
     fetch(`/api/parts/${id}`, {
@@ -52,15 +50,14 @@ export const PartRequestProvider: React.FC<{ children: React.ReactNode }> = ({ c
       headers: jsonHeaders(),
       body: JSON.stringify({ status }),
     })
-      .then(() => {
-        fetch('/api/data')
-          .then(res => res.json())
-          .then(data => {
-            if (data.notifications) setNotifications(data.notifications);
-            if (status === 'Approved' && data.jobs) {
-              setJobs(data.jobs);
-            }
-          });
+      .then(res => res.ok ? res.json() : null)
+      .then(updated => {
+        if (!updated) return;
+        // Refresh only notifications
+        fetch('/api/notifications', { credentials: 'same-origin' })
+          .then(r => r.ok ? r.json() : null)
+          .then(data => { if (data?.notifications) setNotifications(data.notifications); })
+          .catch(() => {});
       })
       .catch(console.error);
   };

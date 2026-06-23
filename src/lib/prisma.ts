@@ -3,14 +3,57 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
 import crypto from 'crypto';
 
-const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
+const globalForPrisma = globalThis as unknown as { prisma: PrismaClient; pgPool: pg.Pool };
+
+function getQueryTelemetry(query: string) {
+  const clean = query.trim().replace(/["`]+/g, '');
+  const words = clean.split(/\s+/);
+  const op = words[0]?.toUpperCase() ?? 'UNKNOWN';
+  
+  let table = 'UNKNOWN';
+  if (op === 'SELECT' || op === 'DELETE') {
+    const fromIdx = words.findIndex(w => w.toUpperCase() === 'FROM');
+    if (fromIdx !== -1 && words[fromIdx + 1]) {
+      table = words[fromIdx + 1];
+    }
+  } else if (op === 'INSERT') {
+    const intoIdx = words.findIndex(w => w.toUpperCase() === 'INTO');
+    if (intoIdx !== -1 && words[intoIdx + 1]) {
+      table = words[intoIdx + 1];
+    }
+  } else if (op === 'UPDATE') {
+    table = words[1] ?? 'UNKNOWN';
+  }
+  
+  table = table.replace(/[()]+/g, '').split('.')[0];
+  return { op, table };
+}
+
+let pool: pg.Pool = null!;
 
 function createPrismaClient() {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error('DATABASE_URL environment variable is not set');
   }
-  const pool = new pg.Pool({ connectionString });
+
+  if (globalForPrisma.pgPool) {
+    pool = globalForPrisma.pgPool;
+  } else {
+    pool = new pg.Pool({
+      connectionString,
+      max: 20,                    // max simultaneous connections
+      min: 2,                     // keep 2 connections warm
+      idleTimeoutMillis: 10_000,  // release idle connections after 10s
+      connectionTimeoutMillis: 3_000, // fail fast if pool is exhausted
+      application_name: 'fixhub',
+    });
+    pool.on('error', (err) => console.error('[PG Pool] Unexpected error:', err));
+    if (process.env.NODE_ENV !== 'production') {
+      globalForPrisma.pgPool = pool;
+    }
+  }
+
   const adapter = new PrismaPg(pool);
   return new PrismaClient({
     adapter,
@@ -20,7 +63,64 @@ function createPrismaClient() {
 
 const rawPrisma = globalForPrisma.prisma ?? createPrismaClient();
 
+// Ensure pool is set even if rawPrisma was retrieved from globalForPrisma
+if (!pool) {
+  if (globalForPrisma.pgPool) {
+    pool = globalForPrisma.pgPool;
+  } else {
+    const connectionString = process.env.DATABASE_URL;
+    pool = new pg.Pool({
+      connectionString,
+      max: 20,
+      min: 2,
+      idleTimeoutMillis: 10_000,
+      connectionTimeoutMillis: 3_000,
+      application_name: 'fixhub',
+    });
+    pool.on('error', (err) => console.error('[PG Pool] Unexpected error:', err));
+    if (process.env.NODE_ENV !== 'production') {
+      globalForPrisma.pgPool = pool;
+    }
+  }
+}
+
+// Monkey-patch queries in development
+if (process.env.NODE_ENV === 'development') {
+  const originalQueryRaw = rawPrisma.$queryRawUnsafe.bind(rawPrisma);
+  rawPrisma.$queryRawUnsafe = function(query: string, ...values: any[]): any {
+    const start = performance.now();
+    const promise = originalQueryRaw(query, ...values);
+    promise.then(
+      () => {
+        const duration = (performance.now() - start).toFixed(2);
+        const { op, table } = getQueryTelemetry(query);
+        console.log(`[DB] ${table} ${op} — ${duration}ms`);
+      },
+      () => {}
+    );
+    return promise;
+  };
+
+  const originalExecuteRaw = rawPrisma.$executeRawUnsafe.bind(rawPrisma);
+  rawPrisma.$executeRawUnsafe = function(query: string, ...values: any[]): any {
+    const start = performance.now();
+    const promise = originalExecuteRaw(query, ...values);
+    promise.then(
+      () => {
+        const duration = (performance.now() - start).toFixed(2);
+        const { op, table } = getQueryTelemetry(query);
+        console.log(`[DB] ${table} ${op} — ${duration}ms`);
+      },
+      () => {}
+    );
+    return promise;
+  };
+}
+
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = rawPrisma;
+
+export { pool as pgPool };
+
 
 // SQL compiler helpers
 function compileWhere(where: any, tableName: string, params: any[]): string {

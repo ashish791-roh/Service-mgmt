@@ -117,6 +117,10 @@ export async function GET(request: Request) {
                 totalValue,
             },
             criticalItems: (criticalItemsResult ?? []).map(mapItem),
+        }, {
+            headers: {
+                'Cache-Control': 'private, max-age=0, stale-while-revalidate=30'
+            }
         });
     } catch (error) {
         console.error('[api/inventory GET]', error);

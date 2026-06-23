@@ -5,6 +5,7 @@ import { generateQRCodeDataUrl } from '@/lib/qr';
 import type { JobStatus, Job, Customer, Device } from '../types';
 import { Toast, useToast, getJobAgeLevel, SLABadge } from '../components/ui';
 import { JobDrawer } from '../components/JobDrawer';
+import { AnimatePresence } from 'framer-motion';
 
 // ── UI Component Props ───────────────────────────────────────────
 
@@ -761,7 +762,11 @@ export const MyJobsPage: React.FC = () => {
         const d = devices.find(d => d.id === qrJob.deviceId);
         return <QRModal job={qrJob} customer={c} device={d} onClose={() => setQrJob(null)} />;
       })()}
-      {selectedDrawerJobId && <JobDrawer jobId={selectedDrawerJobId} onClose={() => setSelectedDrawerJobId(null)} />}
+      <AnimatePresence>
+        {selectedDrawerJobId && (
+          <JobDrawer key={selectedDrawerJobId} jobId={selectedDrawerJobId} onClose={() => setSelectedDrawerJobId(null)} />
+        )}
+      </AnimatePresence>
       {toast && <Toast {...toast} />}
     </div>
   );

@@ -5,6 +5,24 @@ import { rateLimiter, getClientIP, RATE_LIMITS } from '@/lib/rateLimit';
 import { captureChange } from '@/lib/branchSync';
 import { withLocalBranchId } from '@/lib/branchContext';
 
+export async function GET() {
+  const auth = await requireSession();
+  if ('error' in auth) return auth.error;
+  const { user } = auth;
+
+  const notifications = await prisma.notification.findMany({
+    where: { userId: user.id },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+  });
+
+  return NextResponse.json({
+    notifications: notifications.map((n: any) => ({
+      ...n,
+      createdAt: n.createdAt.toISOString(),
+    })),
+  });
+}
 
 // POST /api/notifications — admin only: broadcast an announcement to all users
 export async function POST(request: Request) {

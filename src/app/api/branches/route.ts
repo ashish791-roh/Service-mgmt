@@ -19,7 +19,28 @@ export async function GET(request: Request) {
     const branches = await prisma.branch.findMany({
       orderBy: { createdAt: 'desc' },
     });
-    return NextResponse.json(branches);
+
+    const branchIds = branches.map((b: { id: string }) => b.id);
+    const users = await prisma.user.findMany({
+      where: {
+        branchId: { in: branchIds }
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        isActive: true,
+        branchId: true
+      }
+    });
+
+    const branchesWithUsers = branches.map((b: any) => ({
+      ...b,
+      users: users.filter((u: any) => u.branchId === b.id)
+    }));
+
+    return NextResponse.json(branchesWithUsers);
   } catch (error) {
     console.error('[GET /api/branches]', error);
     return NextResponse.json({ error: 'Failed to fetch branches' }, { status: 500 });

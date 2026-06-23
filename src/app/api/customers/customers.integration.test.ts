@@ -32,6 +32,9 @@ vi.mock('@/lib/prisma', () => ({
     job: {
       findMany: vi.fn(),
     },
+    user: {
+      findUnique: vi.fn(),
+    },
   },
 }));
 
@@ -85,6 +88,17 @@ describe('Customers API Integration', () => {
         csrfToken: 'csrf-token-123',
       } as any,
     });
+
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      id: 'user-1',
+      email: 'user@example.com',
+      name: 'Test User',
+      role,
+      isActive,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      branchId: 'default',
+    } as any);
   };
 
   it('GET block: returns 401 when no session cookie is present', async () => {

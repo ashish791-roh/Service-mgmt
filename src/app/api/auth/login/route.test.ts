@@ -7,6 +7,7 @@ vi.mock('@/lib/prisma', () => ({
   prisma: {
     user: {
       findUnique: vi.fn(),
+      update: vi.fn().mockResolvedValue({}),
     },
     session: {
       create: vi.fn(),
@@ -57,7 +58,7 @@ describe('Auth Login API', () => {
 
     const req = new Request('http://localhost/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email: 'test@example.com', password: 'wrong' }),
+      body: JSON.stringify({ email: 'test@example.com', password: 'wrongpassword' }),
     });
     const res = await POST(req);
     expect(res.status).toBe(401);
@@ -81,7 +82,7 @@ describe('Auth Login API', () => {
 
     const req = new Request('http://localhost/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email: 'test@example.com', password: 'correct' }),
+      body: JSON.stringify({ email: 'test@example.com', password: 'correctpassword' }),
     });
     const res = await POST(req);
     expect(res.status).toBe(200);

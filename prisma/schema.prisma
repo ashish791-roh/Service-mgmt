@@ -16,6 +16,8 @@ model User {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   branchId      String         @default("default")
+  failedAttempts Int           @default(0)
+  lockedUntil    DateTime?
   assignedJobs  Job[]          @relation("EngineerJobs")
   jobActivities JobActivity[]
   notifications Notification[]
@@ -39,6 +41,8 @@ model Customer {
   jobs      Job[]
 
   @@index([branchId])
+  @@index([branchId, createdAt(sort: Desc)])
+  @@index([phone])
 }
 
 model Device {
@@ -55,6 +59,7 @@ model Device {
 
   @@index([customerId])
   @@index([branchId])
+  @@index([branchId, createdAt(sort: Desc)])
 }
 
 model Job {
@@ -94,6 +99,9 @@ model Job {
   @@index([status])
   @@index([linkedJobId])
   @@index([branchId])
+  @@index([branchId, status])
+  @@index([branchId, engineerId])
+  @@index([branchId, createdAt(sort: Desc)])
 }
 
 model JobActivity {
@@ -144,6 +152,7 @@ model PartRequest {
   @@index([jobId])
   @@index([engineerId])
   @@index([branchId])
+  @@index([branchId, status])
 }
 
 model Payment {
@@ -176,6 +185,8 @@ model InventoryItem {
   branchId    String   @default("default")
 
   @@index([branchId])
+  @@index([branchId, name])
+  @@index([branchId, quantity])
 }
 
 model Notification {
@@ -191,6 +202,8 @@ model Notification {
   @@index([userId])
   @@index([jobId])
   @@index([branchId])
+  @@index([userId, branchId])
+  @@index([branchId, createdAt(sort: Desc)])
 }
 
 model Session {
@@ -266,6 +279,7 @@ model Sale {
   @@index([createdAt(sort: Desc)])
   @@index([customerId])
   @@index([branchId])
+  @@index([branchId, createdAt(sort: Desc)])
 }
 
 model SaleItem {

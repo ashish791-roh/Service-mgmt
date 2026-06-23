@@ -124,7 +124,7 @@ export const AnalyticsPage: React.FC = () => {
 
   const [activeModal, setActiveModal] = useState<AnalyticsModalType>(null);
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('overall');
-  const engineers = users.filter(u => u.role === 'engineer');
+  const engineers = useMemo(() => users.filter(u => u.role === 'engineer'), [users]);
 
 
   // ── Filtered data ────────────────────────────────────────────────────────
@@ -146,11 +146,11 @@ export const AnalyticsPage: React.FC = () => {
 
   const totalRevenue = jobRevenue + salesRevenue;
 
-  const statusBreakdown = ['New', 'Assigned', 'In Progress', 'Completed', 'Delivered'].map(s => ({
+  const statusBreakdown = useMemo(() => ['New', 'Assigned', 'In Progress', 'Completed', 'Delivered'].map(s => ({
     status: s,
     count: filteredJobs.filter(j => j.status === s).length,
     pct: Math.round((filteredJobs.filter(j => j.status === s).length / Math.max(filteredJobs.length, 1)) * 100),
-  }));
+  })), [filteredJobs]);
 
   const statusColors: Record<string, string> = {
     'New': 'bg-cyan-200',

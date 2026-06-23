@@ -34,11 +34,12 @@
  * Run: npx prisma migrate dev --name add-session-idle
  */
 
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
 import type { Prisma } from '@prisma/client';
+import { getClientIP } from './rateLimit';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -85,7 +86,9 @@ function sanitise(value: string): string {
 
 /** Create a persistent session and return { token, csrfToken }. */
 export async function createSession(
-  user: SessionUser
+  user: SessionUser,
+  userAgent?: string,
+  ip?: string
 ): Promise<{ token: string; csrfToken: string }> {
   const token     = makeToken();
   const csrfToken = makeCsrfToken();
@@ -93,11 +96,13 @@ export async function createSession(
   const expiresAt = new Date(now.getTime() + SESSION_TTL_MS);
   const idleAt    = new Date(now.getTime() + SESSION_IDLE_MS);
 
+  const uaHash = crypto.createHash('sha256').update(userAgent ?? '').digest('hex');
+
   await prisma.session.create({
     data: {
       token,
       userId:    user.id,
-      payload:   { ...user, csrfToken } as Prisma.InputJsonValue,
+      payload:   { ...user, csrfToken, uaHash, ip } as Prisma.InputJsonValue,
       expiresAt,
       idleAt,
     },
@@ -125,17 +130,38 @@ export async function destroyAllSessionsForUser(userId: string): Promise<void> {
   } catch { /**/ }
 }
 
+const failedLookups = new Map<string, number[]>();
+
 /**
  * Look up a live session by token.
  * Returns null if missing, absolutely expired, or idle-expired.
  * Side-effect: bumps idleAt on every valid lookup.
  */
 export async function getSession(
-  token: string
-): Promise<(SessionUser & { csrfToken: string }) | null> {
+  token: string,
+  ip?: string
+): Promise<(SessionUser & { csrfToken: string; uaHash?: string; ip?: string }) | null> {
+  if (ip) {
+    const now = Date.now();
+    const windowStart = now - 10 * 60 * 1000;
+    const attempts = failedLookups.get(ip) || [];
+    const recentAttempts = attempts.filter(t => t > windowStart);
+    if (recentAttempts.length >= 20) {
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+  }
+
   try {
     const session = await prisma.session.findUnique({ where: { token } });
-    if (!session) return null;
+    if (!session) {
+      if (ip) {
+        const now = Date.now();
+        const attempts = failedLookups.get(ip) || [];
+        attempts.push(now);
+        failedLookups.set(ip, attempts);
+      }
+      return null;
+    }
 
     const now = new Date();
 
@@ -157,7 +183,7 @@ export async function getSession(
       .update({ where: { token }, data: { idleAt: newIdleAt } })
       .catch(() => {});
 
-    return session.payload as unknown as SessionUser & { csrfToken: string };
+    return session.payload as unknown as SessionUser & { csrfToken: string; uaHash?: string; ip?: string };
   } catch {
     return null;
   }
@@ -263,6 +289,24 @@ export function clearCsrfCookieOptions() {
 
 // ── Route-level guard ─────────────────────────────────────────────────────────
 
+export function addSecurityHeaders(response: NextResponse): NextResponse {
+  response.headers.set('X-Content-Type-Options', 'nosniff');
+  response.headers.set('X-Frame-Options', 'DENY');
+  response.headers.set('Cache-Control', 'no-store');
+  return response;
+}
+
+export async function cleanExpiredSessions(): Promise<number> {
+  try {
+    const res = await prisma.session.deleteMany({
+      where: { expiresAt: { lt: new Date() } }
+    });
+    return res.count;
+  } catch {
+    return 0;
+  }
+}
+
 /**
  * Call at the top of every protected route handler.
  *
@@ -282,7 +326,7 @@ export function clearCsrfCookieOptions() {
 export async function requireSession(
   requestOrRoles?: NextRequest | Request | AllowedRoles,
   allowedRoles?:   AllowedRoles
-): Promise<{ user: SessionUser; rotated?: { token: string; csrfToken: string } } | { error: NextResponse }> {
+): Promise<{ user: SessionUser; ipChanged?: boolean; rotated?: { token: string; csrfToken: string } } | { error: NextResponse }> {
 
   // Support old call signature: requireSession(allowedRoles?)
   let request: NextRequest | Request | undefined;
@@ -298,21 +342,55 @@ export async function requireSession(
   const cookieStore = await cookies();
   const token       = cookieStore.get(COOKIE_NAME)?.value;
 
-  if (!token) {
-    return { error: NextResponse.json({ error: 'Authentication required.' }, { status: 401 }) };
+
+
+  let clientIP = '';
+  let userAgent = '';
+  if (request && 'headers' in request) {
+    clientIP = getClientIP(request);
+    userAgent = request.headers.get('user-agent') ?? '';
+  } else {
+    try {
+      const headersList = await headers();
+      userAgent = headersList.get('user-agent') ?? '';
+      const mockReq = {
+        headers: {
+          get: (name: string) => headersList.get(name)
+        }
+      } as unknown as Request;
+      clientIP = getClientIP(mockReq);
+    } catch (_) {}
   }
 
-  const sessionData = await getSession(token);
+  if (!token) {
+    return { error: addSecurityHeaders(NextResponse.json({ error: 'Authentication required.' }, { status: 401 })) };
+  }
+
+  const sessionData = await getSession(token, clientIP);
   if (!sessionData) {
     return {
-      error: NextResponse.json(
+      error: addSecurityHeaders(NextResponse.json(
         { error: 'Session expired or invalid. Please log in again.' },
         { status: 401 }
-      ),
+      )),
     };
   }
 
-  const { csrfToken: storedCsrf, ...user } = sessionData;
+  // Token binding verification
+  const incomingUaHash = crypto.createHash('sha256').update(userAgent).digest('hex');
+  if (sessionData.uaHash && sessionData.uaHash !== incomingUaHash) {
+    destroySession(token).catch(() => {});
+    return { error: addSecurityHeaders(NextResponse.json({ error: 'Session device mismatch.' }, { status: 401 })) };
+  }
+
+  // Soft IP locking check
+  let ipChanged = false;
+  if (sessionData.ip && clientIP && sessionData.ip !== clientIP) {
+    console.warn('[auth] IP change detected');
+    ipChanged = true;
+  }
+
+  const { csrfToken: storedCsrf, uaHash, ip, ...user } = sessionData;
 
   const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
   if (dbUser) {
@@ -322,7 +400,7 @@ export async function requireSession(
   }
 
   if (!user.isActive) {
-    return { error: NextResponse.json({ error: 'Account is disabled.' }, { status: 403 }) };
+    return { error: addSecurityHeaders(NextResponse.json({ error: 'Account is disabled.' }, { status: 403 })) };
   }
 
   const { setRequestBranchId } = await import('@/lib/branchContext');
@@ -330,10 +408,10 @@ export async function requireSession(
 
   if (roles && !roles.includes(user.role) && user.role !== 'super_admin') {
     return {
-      error: NextResponse.json(
+      error: addSecurityHeaders(NextResponse.json(
         { error: 'You do not have permission to perform this action.' },
         { status: 403 }
-      ),
+      )),
     };
   }
 
@@ -345,7 +423,7 @@ export async function requireSession(
       Buffer.from(headerCsrf.slice(0, storedCsrf.length).padEnd(storedCsrf.length, '\0'))
     )) {
       return {
-        error: NextResponse.json({ error: 'Invalid or missing CSRF token.' }, { status: 403 }),
+        error: addSecurityHeaders(NextResponse.json({ error: 'Invalid or missing CSRF token.' }, { status: 403 })),
       };
     }
   }
@@ -361,7 +439,7 @@ export async function requireSession(
     }
   }
 
-  return { user: user as SessionUser, ...(rotated ? { rotated } : {}) };
+  return { user: user as SessionUser, ipChanged, ...(rotated ? { rotated } : {}) };
 }
 
 // ── Input validation helpers ──────────────────────────────────────────────────

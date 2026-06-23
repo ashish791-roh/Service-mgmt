@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Bell, Check, Pin, CheckCircle, XCircle, RefreshCw, Wrench, Megaphone, Send, X } from 'lucide-react';
+import { AnimatePresence } from 'framer-motion';
+import { MotionListItem } from '../components/MotionListItem';
 
 const PageHeader = ({ title, subtitle, action }: { title: string, subtitle: string, action?: React.ReactNode }) => (
   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 bg-white p-6 rounded-xl border border-gray-200">
@@ -240,56 +242,59 @@ export const NotificationsPage: React.FC = () => {
         </div>
       ) : (
         <div className="space-y-3">
-          {myNotifs.map((notif) => {
-            const relatedJob = notif.jobId ? jobs.find(j => j.id === notif.jobId) : null;
-            const { Icon, colorClass } = getIconData(notif.message);
-            const isAnnouncement = notif.message.startsWith('📢');
-            return (
-              <div
-                key={notif.id}
-                className={`bg-white rounded-xl border p-4 flex items-start sm:items-center flex-col sm:flex-row gap-4 transition-colors ${
-                  isAnnouncement && !notif.read
-                    ? 'border-purple-200 bg-purple-50/30'
-                    : !notif.read
-                    ? 'border-teal-200 bg-teal-50/30'
-                    : 'border-gray-200 hover:bg-gray-50'
-                }`}
-              >
-                <div className={`w-10 h-10 rounded-lg border flex items-center justify-center shrink-0 ${!notif.read ? colorClass : 'bg-gray-50 border-gray-200 text-gray-400'}`}>
-                  <Icon size={18} strokeWidth={2} />
-                </div>
+          <AnimatePresence initial={false}>
+            {myNotifs.map((notif, i) => {
+              const relatedJob = notif.jobId ? jobs.find(j => j.id === notif.jobId) : null;
+              const { Icon, colorClass } = getIconData(notif.message);
+              const isAnnouncement = notif.message.startsWith('📢');
+              return (
+                <MotionListItem key={notif.id} index={i}>
+                  <div
+                    className={`bg-white rounded-xl border p-4 flex items-start sm:items-center flex-col sm:flex-row gap-4 transition-colors ${
+                      isAnnouncement && !notif.read
+                        ? 'border-purple-200 bg-purple-50/30'
+                        : !notif.read
+                        ? 'border-teal-200 bg-teal-50/30'
+                        : 'border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className={`w-10 h-10 rounded-lg border flex items-center justify-center shrink-0 ${!notif.read ? colorClass : 'bg-gray-50 border-gray-200 text-gray-400'}`}>
+                      <Icon size={18} strokeWidth={2} />
+                    </div>
 
-                <div className="flex-1 min-w-0">
-                  {isAnnouncement && (
-                    <span className="inline-block mb-1 px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-purple-100 text-purple-700">
-                      Announcement
-                    </span>
-                  )}
-                  <p className={`text-[13px] mb-0.5 ${!notif.read ? 'font-medium text-gray-900' : 'font-normal text-gray-600'}`}>
-                    {notif.message.replace(/^📢 Announcement: /, '')}
-                  </p>
-                  {relatedJob && (
-                    <p className="text-[11px] font-medium text-gray-500 truncate mb-1">
-                      <span className="uppercase tracking-wide">Job #{relatedJob.id}</span> · {relatedJob.problemDescription}
-                    </p>
-                  )}
-                  <p className="text-[11px] font-normal text-gray-400 uppercase tracking-wide">{getRelativeTime(notif.createdAt)}</p>
-                </div>
+                    <div className="flex-1 min-w-0">
+                      {isAnnouncement && (
+                        <span className="inline-block mb-1 px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-purple-100 text-purple-700">
+                          Announcement
+                        </span>
+                      )}
+                      <p className={`text-[13px] mb-0.5 ${!notif.read ? 'font-medium text-gray-900' : 'font-normal text-gray-600'}`}>
+                        {notif.message.replace(/^📢 Announcement: /, '')}
+                      </p>
+                      {relatedJob && (
+                        <p className="text-[11px] font-medium text-gray-500 truncate mb-1">
+                          <span className="uppercase tracking-wide">Job #{relatedJob.id}</span> · {relatedJob.problemDescription}
+                        </p>
+                      )}
+                      <p className="text-[11px] font-normal text-gray-400 uppercase tracking-wide">{getRelativeTime(notif.createdAt)}</p>
+                    </div>
 
-                <div className="flex items-center gap-4 shrink-0 w-full sm:w-auto mt-2 sm:mt-0 pt-3 sm:pt-0 border-t sm:border-t-0 border-gray-100">
-                  {!notif.read && (
-                    <Button
-                      text="Mark Read"
-                      icon={Check}
-                      variant="outline"
-                      onClick={() => markNotificationRead(notif.id)}
-                      className="w-full sm:w-auto"
-                    />
-                  )}
-                </div>
-              </div>
-            );
-          })}
+                    <div className="flex items-center gap-4 shrink-0 w-full sm:w-auto mt-2 sm:mt-0 pt-3 sm:pt-0 border-t sm:border-t-0 border-gray-100">
+                      {!notif.read && (
+                        <Button
+                          text="Mark Read"
+                          icon={Check}
+                          variant="outline"
+                          onClick={() => markNotificationRead(notif.id)}
+                          className="w-full sm:w-auto"
+                        />
+                      )}
+                    </div>
+                  </div>
+                </MotionListItem>
+              );
+            })}
+          </AnimatePresence>
         </div>
       )}
 

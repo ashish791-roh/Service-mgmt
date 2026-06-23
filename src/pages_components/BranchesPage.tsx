@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { GitBranch, Power, RefreshCw, Plus, Check, Copy } from 'lucide-react';
+import { GitBranch, Power, RefreshCw, Plus, Check, Copy, X, Key } from 'lucide-react';
 import { jsonHeaders } from '../lib/api';
 
 interface Branch {
@@ -10,6 +10,13 @@ interface Branch {
   suspended: boolean;
   createdAt: string;
   lastSeen: string | null;
+  users?: {
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    isActive: boolean;
+  }[];
 }
 
 export const BranchesPage: React.FC = () => {
@@ -23,6 +30,7 @@ export const BranchesPage: React.FC = () => {
   const [successMessage, setSuccessMessage] = useState('');
   const [createdCredentials, setCreatedCredentials] = useState<any>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [showCredsBranch, setShowCredsBranch] = useState<Branch | null>(null);
 
   const fetchBranches = async () => {
     setLoading(true);
@@ -288,6 +296,14 @@ export const BranchesPage: React.FC = () => {
                           <RefreshCw size={12} />
                           Rotate Key
                         </button>
+                        <button
+                          onClick={() => setShowCredsBranch(branch)}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-700 text-[11px] font-medium rounded-lg uppercase tracking-wide transition-colors border border-teal-200"
+                          title="View Branch Credentials"
+                        >
+                          <Key size={12} />
+                          Credentials
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -306,6 +322,104 @@ export const BranchesPage: React.FC = () => {
           )}
         </div>
       </div>
+      {showCredsBranch && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-xl w-full max-w-2xl p-6 shadow-xl relative flex flex-col max-h-[85vh]">
+            <div className="flex justify-between items-center pb-4 border-b border-gray-200 shrink-0">
+              <div>
+                <h2 className="text-[16px] font-semibold text-gray-900">Branch Credentials & Users</h2>
+                <p className="text-[12px] text-teal-600 mt-0.5">Location: {showCredsBranch.name} ({showCredsBranch.id})</p>
+              </div>
+              <button
+                onClick={() => setShowCredsBranch(null)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-6 py-4 overflow-y-auto flex-1">
+              {/* API Key */}
+              <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">API Integration Key</p>
+                <div className="flex items-center gap-3 mt-1.5 bg-white p-2 rounded-lg border border-gray-200">
+                  <code className="text-gray-805 text-[12px] font-mono break-all select-all flex-1">{showCredsBranch.apiKey}</code>
+                  <button
+                    onClick={() => handleCopyKey(showCredsBranch.apiKey, 'modal')}
+                    className="text-gray-500 hover:text-teal-600 transition-colors shrink-0 p-1 bg-gray-50 hover:bg-gray-100 rounded border border-gray-200"
+                    title="Copy API Key"
+                  >
+                    {copiedId === 'modal' ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Default Credentials */}
+              <div className="space-y-3">
+                <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">Default Login Credentials</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                    <p className="text-[11px] font-bold text-teal-600 uppercase tracking-wide">Admin Account</p>
+                    <p className="text-[13px] text-gray-800 mt-1 font-medium select-all">admin@{showCredsBranch.id}.com</p>
+                    <p className="text-[11px] text-gray-500 mt-1">Default Password: <code className="text-gray-800 bg-white px-1 py-0.5 rounded border border-gray-200 font-mono select-all">admin_{showCredsBranch.id}</code></p>
+                  </div>
+                  <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                    <p className="text-[11px] font-bold text-teal-600 uppercase tracking-wide">Reception Account</p>
+                    <p className="text-[13px] text-gray-800 mt-1 font-medium select-all">reception@{showCredsBranch.id}.com</p>
+                    <p className="text-[11px] text-gray-500 mt-1">Default Password: <code className="text-gray-800 bg-white px-1 py-0.5 rounded border border-gray-200 font-mono select-all">reception_{showCredsBranch.id}</code></p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Current Users */}
+              <div className="space-y-3">
+                <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">Currently Configured Users ({showCredsBranch.users?.length ?? 0})</p>
+                <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
+                  <table className="w-full text-left border-collapse text-[12px]">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-200 font-semibold text-gray-600">
+                        <th className="px-4 py-2">Name</th>
+                        <th className="px-4 py-2">Email</th>
+                        <th className="px-4 py-2">Role</th>
+                        <th className="px-4 py-2">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 text-gray-700">
+                      {showCredsBranch.users && showCredsBranch.users.length > 0 ? (
+                        showCredsBranch.users.map((u) => (
+                          <tr key={u.id} className="hover:bg-gray-50/50">
+                            <td className="px-4 py-2 font-medium text-gray-900">{u.name}</td>
+                            <td className="px-4 py-2 font-mono select-all">{u.email}</td>
+                            <td className="px-4 py-2 capitalize">{u.role}</td>
+                            <td className="px-4 py-2">
+                              <span className={`px-1.5 py-0.5 rounded-[4px] text-[10px] font-medium border uppercase tracking-wider ${u.isActive ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                                {u.isActive ? 'Active' : 'Inactive'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={4} className="px-4 py-6 text-center text-gray-400">No users found.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-gray-200 flex justify-end shrink-0">
+              <button
+                onClick={() => setShowCredsBranch(null)}
+                className="px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg text-[13px] font-medium transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

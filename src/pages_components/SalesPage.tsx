@@ -6,7 +6,22 @@ import {
   User, Phone, FileText, CheckCircle, Trash2,
 } from 'lucide-react';
 import { TallySyncBadge } from '../components/TallySyncBadge';
+import { SkeletonCard } from '../components/Skeleton';
 import type { Sale, Customer, User as UserType, InventoryItem, DashboardStats } from '../types';
+import { motion, AnimatePresence } from 'framer-motion';
+import { MotionButton } from '../components/MotionButton';
+
+const modalVariants = {
+  hidden:  { opacity: 0, scale: 0.94, y: 16 },
+  visible: { opacity: 1, scale: 1,    y: 0,  transition: { type: 'spring', stiffness: 480, damping: 36 } },
+  exit:    { opacity: 0, scale: 0.96, y: 8,  transition: { duration: 0.15 } },
+} as const;
+
+const backdropVariants = {
+  hidden:  { opacity: 0 },
+  visible: { opacity: 1, transition: { duration: 0.2 } },
+  exit:    { opacity: 0, transition: { duration: 0.15 } },
+} as const;
 
 type SaleWithTally = Sale & { tallyStatus?: string | null };
 
@@ -223,8 +238,22 @@ const NewSaleModal: React.FC<NewSaleModalProps> = ({ onClose, onCreated }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 overflow-y-auto">
-      <div className="bg-white rounded-xl border border-gray-200 w-full max-w-2xl my-8 shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto">
+      <motion.div
+        className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+        variants={backdropVariants}
+        initial="hidden"
+        animate="visible"
+        exit="exit"
+        onClick={onClose}
+      />
+      <motion.div
+        className="bg-white rounded-xl border border-gray-200 w-full max-w-2xl my-8 shadow-xl relative z-10"
+        variants={modalVariants}
+        initial="hidden"
+        animate="visible"
+        exit="exit"
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <div className="flex items-center gap-3">
@@ -378,15 +407,16 @@ const NewSaleModal: React.FC<NewSaleModalProps> = ({ onClose, onCreated }) => {
         {/* Footer */}
         <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-xl">
           <Button text="Cancel" variant="outline" onClick={onClose} />
-          <Button
-            text={submitting ? 'Recording Sale…' : 'Record Sale'}
-            variant="success"
-            icon={CheckCircle}
+          <MotionButton
+            loading={submitting}
+            variant="primary"
+            icon={<CheckCircle size={14} />}
             onClick={handleSubmit}
-            disabled={submitting}
-          />
+          >
+            Record Sale
+          </MotionButton>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 };
@@ -542,23 +572,34 @@ export const SalesPage: React.FC = () => {
 
   const limit = 15;
 
+  const abortRef = React.useRef<AbortController | null>(null);
+
   const fetchSalesList = async (page: number, searchTerm: string) => {
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
+    const signal = abortRef.current.signal;
+
     setLoading(true);
     try {
-      const res = await fetch(`/api/sales?page=${page}&limit=${limit}&search=${encodeURIComponent(searchTerm)}`);
+      const res = await fetch(
+        `/api/sales?page=${page}&limit=${limit}&search=${encodeURIComponent(searchTerm)}`,
+        { signal }
+      );
+      if (!res.ok) return;
       const data = await res.json();
-      if (res.ok && data.sales) {
-        setSalesList(data.sales);
-        setTotalSalesCount(data.total);
-        setTotalPages(Math.ceil(data.total / limit) || 1);
-        if (data.metrics) {
-          setMetrics(data.metrics);
-        }
+      setSalesList(data.sales || []);
+      setTotalSalesCount(data.total ?? 0);
+      setTotalPages(Math.ceil((data.total ?? 0) / limit) || 1);
+      if (data.metrics) {
+        setMetrics(data.metrics);
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (err.name === 'AbortError') return;
       console.error('Failed to fetch sales list', err);
     } finally {
-      setLoading(false);
+      if (!signal.aborted) {
+        setLoading(false);
+      }
     }
   };
 
@@ -679,8 +720,8 @@ export const SalesPage: React.FC = () => {
         </div>
 
         {loading ? (
-          <div className="flex justify-center items-center py-16 text-gray-500 text-[13px]">
-            Loading sales...
+          <div className="space-y-3 p-4">
+            {Array.from({ length: 5 }).map((_, i) => <SkeletonCard key={i} rows={2} />)}
           </div>
         ) : salesList.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-gray-400">
@@ -729,12 +770,14 @@ export const SalesPage: React.FC = () => {
         )}
       </Card>
 
-      {showModal && (
-        <NewSaleModal
-          onClose={() => setShowModal(false)}
-          onCreated={handleCreated}
-        />
-      )}
+      <AnimatePresence>
+        {showModal && (
+          <NewSaleModal
+            onClose={() => setShowModal(false)}
+            onCreated={handleCreated}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 };

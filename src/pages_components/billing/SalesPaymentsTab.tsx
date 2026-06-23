@@ -3,6 +3,19 @@ import { useApp } from '../../context/AppContext';
 import { Banknote, Hourglass, ShoppingCart, User, Phone, FileText, Package, X, Printer } from 'lucide-react';
 import type { Sale } from '../../types';
 import { printSaleInvoice } from './InvoicePrinter';
+import { motion, AnimatePresence } from 'framer-motion';
+
+const modalVariants = {
+  hidden:  { opacity: 0, scale: 0.94, y: 16 },
+  visible: { opacity: 1, scale: 1,    y: 0,  transition: { type: 'spring', stiffness: 480, damping: 36 } },
+  exit:    { opacity: 0, scale: 0.96, y: 8,  transition: { duration: 0.15 } },
+} as const;
+
+const backdropVariants = {
+  hidden:  { opacity: 0 },
+  visible: { opacity: 1, transition: { duration: 0.2 } },
+  exit:    { opacity: 0, transition: { duration: 0.15 } },
+} as const;
 
 const Card = React.forwardRef<HTMLDivElement, { children: React.ReactNode, className?: string }>(
   ({ children, className = "" }, ref) => (
@@ -215,11 +228,25 @@ export const SalesPaymentsTab: React.FC = () => {
         </div>
       </Card>
 
-      {/* ── Sale Payment Modal ── */}
-      {salePaymentModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-lg shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200">
+      <AnimatePresence>
+        {salePaymentModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm"
+              variants={backdropVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              onClick={() => setSalePaymentModal(null)}
+            />
+            <motion.div
+              className="bg-white rounded-xl w-full max-w-lg shadow-xl overflow-hidden flex flex-col max-h-[90vh] relative z-10"
+              variants={modalVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+            >
+              <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-teal-50 flex items-center justify-center">
                   <ShoppingCart size={16} className="text-teal-500" />
@@ -289,9 +316,10 @@ export const SalesPaymentsTab: React.FC = () => {
               </button>
               <Button text="Collect & Mark Paid" variant="success" onClick={() => handleMarkSalePaid(salePaymentModal)} className="w-full" />
             </div>
-          </div>
+          </motion.div>
         </div>
       )}
+      </AnimatePresence>
     </div>
   );
 };

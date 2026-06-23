@@ -1,9 +1,21 @@
-'use client';
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import type { Customer, Device, Job } from '../../../types';
 import { StatusBadge } from '../../../components/ui';
 import { Phone, MapPin, X, Pencil, Trash2, Wrench, Monitor, Calendar } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { MotionButton } from '../../../components/MotionButton';
+
+const panelVariants = {
+  hidden:  { x: '100%', opacity: 0 },
+  visible: { x: 0,      opacity: 1, transition: { type: 'spring', stiffness: 420, damping: 40 } },
+  exit:    { x: '100%', opacity: 0, transition: { duration: 0.2,  ease: [0.32, 0, 0.67, 0] } },
+} as const;
+
+const backdropVariants = {
+  hidden:  { opacity: 0 },
+  visible: { opacity: 1, transition: { duration: 0.2 } },
+  exit:    { opacity: 0, transition: { duration: 0.2 } },
+} as const;
 
 interface CustomerDetailModalProps {
   customer: Customer & { devices?: Device[] };
@@ -11,6 +23,7 @@ interface CustomerDetailModalProps {
   onEdit: (customer: Customer) => void;
   onDelete: (customerId: string) => void;
   onJobClick?: (jobId: string) => void;
+  allJobs: Job[];
 }
 
 export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
@@ -19,29 +32,14 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
   onEdit,
   onDelete,
   onJobClick,
+  allJobs,
 }) => {
   const [detailTab, setDetailTab] = useState<'jobs' | 'devices'>('jobs');
-  const [custJobs, setCustJobs] = useState<Job[]>([]);
-  const [loadingCustDetails, setLoadingCustDetails] = useState(false);
-
-  useEffect(() => {
-    const loadDetails = async () => {
-      setLoadingCustDetails(true);
-      try {
-        const res = await fetch(`/api/jobs?limit=100&search=${encodeURIComponent(customer.phone)}`);
-        if (res.ok) {
-          const data = await res.json();
-          // Filter strictly matching customerId
-          setCustJobs((data.jobs || []).filter((j: Job) => j.customerId === customer.id));
-        }
-      } catch (err) {
-        console.error('[loadDetails error]', err);
-      } finally {
-        setLoadingCustDetails(false);
-      }
-    };
-    loadDetails();
-  }, [customer]);
+  
+  const custJobs = useMemo(
+    () => allJobs.filter(j => j.customerId === customer.id),
+    [allJobs, customer.id]
+  );
 
   const completedJobs = custJobs.filter((j) => ['Completed', 'Delivered'].includes(j.status));
   const totalSpend = completedJobs.reduce((s, j) => s + (j.actualCost ?? j.estimatedCost), 0);
@@ -49,13 +47,23 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
   const cDevices = customer.devices || [];
 
   return (
-    <div
-      className="fixed inset-0 z-[51] flex items-start justify-end bg-gray-900/40 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <div
-        className="relative w-full max-w-xl h-full bg-white shadow-2xl flex flex-col overflow-hidden"
-        onClick={(e: React.MouseEvent) => e.stopPropagation()}
+    <>
+      <motion.div
+        data-drawer
+        className="fixed inset-0 z-[51] bg-gray-900/40 backdrop-blur-sm"
+        variants={backdropVariants}
+        initial="hidden"
+        animate="visible"
+        exit="exit"
+        onClick={onClose}
+      />
+      <motion.div
+        data-panel
+        className="fixed top-0 right-0 bottom-0 z-[51] w-full max-w-xl bg-white shadow-2xl flex flex-col overflow-hidden"
+        variants={panelVariants}
+        initial="hidden"
+        animate="visible"
+        exit="exit"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-gray-200 bg-white shrink-0">
@@ -81,22 +89,22 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <button
+            <MotionButton
               onClick={() => onEdit(customer)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 transition-colors"
+              variant="secondary"
+              icon={<Pencil size={13} />}
               title="Edit customer"
             >
-              <Pencil size={13} />
               Edit
-            </button>
-            <button
+            </MotionButton>
+            <MotionButton
               onClick={() => onDelete(customer.id)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-colors"
+              variant="danger"
+              icon={<Trash2 size={13} />}
               title="Delete customer"
             >
-              <Trash2 size={13} />
               Delete
-            </button>
+            </MotionButton>
             <button
               onClick={onClose}
               className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-900 transition-colors"
@@ -106,12 +114,7 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
           </div>
         </div>
 
-        {loadingCustDetails ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="w-8 h-8 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
-          </div>
-        ) : (
-          <>
+        <>
             {/* Summary stats */}
             <div className="grid grid-cols-4 divide-x divide-gray-200 border-b border-gray-200 shrink-0">
               {[
@@ -250,8 +253,7 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
               )}
             </div>
           </>
-        )}
-      </div>
-    </div>
+      </motion.div>
+    </>
   );
 };

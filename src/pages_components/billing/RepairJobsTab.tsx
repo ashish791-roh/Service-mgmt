@@ -1,8 +1,21 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Banknote, Hourglass, CheckCircle, TrendingUp, X, Wrench, Package, TrendingDown, Printer, Cloud } from 'lucide-react';
 import type { JobStatus, Job, PartRequest, InventoryItem } from '../../types';
 import { printInvoice } from './InvoicePrinter';
+import { motion, AnimatePresence } from 'framer-motion';
+
+const modalVariants = {
+  hidden:  { opacity: 0, scale: 0.94, y: 16 },
+  visible: { opacity: 1, scale: 1,    y: 0,  transition: { type: 'spring', stiffness: 480, damping: 36 } },
+  exit:    { opacity: 0, scale: 0.96, y: 8,  transition: { duration: 0.15 } },
+} as const;
+
+const backdropVariants = {
+  hidden:  { opacity: 0 },
+  visible: { opacity: 1, transition: { duration: 0.2 } },
+  exit:    { opacity: 0, transition: { duration: 0.15 } },
+};
 
 const Card = React.forwardRef<HTMLDivElement, { children: React.ReactNode, className?: string }>(
   ({ children, className = "" }, ref) => (
@@ -142,25 +155,30 @@ export const RepairJobsTab: React.FC = () => {
   };
 
   // ── Derived job lists ──────────────────────────────────────────────────────
-  const completedJobs = jobs.filter((j) => j.status === 'Completed');
-  const deliveredJobs = jobs.filter((j) => j.status === 'Delivered');
-  const allBillableJobs = jobs.filter((j) => ['Completed', 'Delivered'].includes(j.status));
+  const completedJobs = useMemo(() => jobs.filter(j => j.status === 'Completed'), [jobs]);
+  const deliveredJobs = useMemo(() => jobs.filter(j => j.status === 'Delivered'), [jobs]);
+  const allBillableJobs = useMemo(() => jobs.filter(j => ['Completed', 'Delivered'].includes(j.status)), [jobs]);
 
   // ── Aggregate financials ───────────────────────────────────────────────────
-  const totalRevenue = deliveredJobs.reduce(
-    (s: number, j) => s + (j.actualCost ?? j.estimatedCost ?? 0), 0
-  );
-  const totalPartsCost = deliveredJobs.reduce(
-    (s: number, j) => s + calcPartsCost(j.id, partRequests, inventory), 0
-  );
-  const totalProfit = totalRevenue - totalPartsCost;
-  const pendingCollection = completedJobs.reduce(
-    (s: number, j) => s + (j.actualCost ?? j.estimatedCost ?? 0), 0
-  );
-  const avgValue = allBillableJobs.length
+  const totalRevenue = useMemo(() =>
+    deliveredJobs.reduce((s: number, j) => s + (j.actualCost ?? j.estimatedCost ?? 0), 0),
+  [deliveredJobs]);
+
+  const totalPartsCost = useMemo(() =>
+    deliveredJobs.reduce((s: number, j) => s + calcPartsCost(j.id, partRequests, inventory), 0),
+  [deliveredJobs, partRequests, inventory]);
+
+  const totalProfit = useMemo(() => totalRevenue - totalPartsCost, [totalRevenue, totalPartsCost]);
+
+  const pendingCollection = useMemo(() =>
+    completedJobs.reduce((s: number, j) => s + (j.actualCost ?? j.estimatedCost ?? 0), 0),
+  [completedJobs]);
+
+  const avgValue = useMemo(() => allBillableJobs.length
     ? Math.round((totalRevenue + pendingCollection) / allBillableJobs.length)
-    : 0;
-  const profitMargin = totalRevenue > 0 ? Math.round((totalProfit / totalRevenue) * 100) : 0;
+    : 0, [allBillableJobs, totalRevenue, pendingCollection]);
+
+  const profitMargin = useMemo(() => totalRevenue > 0 ? Math.round((totalProfit / totalRevenue) * 100) : 0, [totalProfit, totalRevenue]);
 
   // ── Handlers ───────────────────────────────────────────────────────────────
   const handleReviewAndCollect = () => {
@@ -198,13 +216,11 @@ export const RepairJobsTab: React.FC = () => {
     alert('Job marked as delivered! Payment recorded successfully.');
   };
 
-  const getDisplayJobs = () => {
+  const displayJobs = useMemo(() => {
     if (filter === 'pending-billing') return completedJobs;
     if (filter === 'delivered') return deliveredJobs;
     return allBillableJobs;
-  };
-
-  const displayJobs = getDisplayJobs();
+  }, [filter, completedJobs, deliveredJobs, allBillableJobs]);
 
   // ── Modal job data ─────────────────────────────────────────────────────────
   const modalJob = billingModal ? jobs.find((j) => j.id === billingModal) : null;
@@ -483,11 +499,25 @@ export const RepairJobsTab: React.FC = () => {
         </div>
       </Card>
 
-      {/* ── Process Payment Modal ── */}
-      {billingModal && modalJob && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-lg shadow-xl overflow-hidden flex flex-col max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200">
+      <AnimatePresence>
+        {billingModal && modalJob && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm"
+              variants={backdropVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              onClick={() => setBillingModal(null)}
+            />
+            <motion.div
+              className="bg-white rounded-xl w-full max-w-lg shadow-xl overflow-hidden flex flex-col max-h-[90vh] overflow-y-auto relative z-10"
+              variants={modalVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+            >
+              <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200">
               <h2 className="text-[18px] font-medium text-gray-900">Process Payment</h2>
               <button onClick={() => setBillingModal(null)} className="text-gray-400 hover:text-gray-600 transition-colors">
                 <X size={20} />
@@ -673,9 +703,10 @@ export const RepairJobsTab: React.FC = () => {
               </button>
               <Button text="Collect & Mark Delivered" variant="success" onClick={() => handleMarkDelivered(billingModal)} className="w-full" />
             </div>
-          </div>
+          </motion.div>
         </div>
       )}
+      </AnimatePresence>
     </>
   );
 };

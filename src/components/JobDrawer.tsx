@@ -4,6 +4,20 @@ import { StatusBadge, getJobAgeLevel, SLAProgressBar, Toast, useToast } from './
 import { X, CheckCircle, Clock, User, ShieldAlert, Star, Activity, AlertCircle, Image as ImageIcon, Upload, ShieldCheck, Edit2, ArrowRightLeft, Save } from 'lucide-react';
 import type { ChecklistItem } from '../types';
 import { loadWarrantyConfig, getWarrantyDays } from '../lib/warrantyConfig';
+import { motion } from 'framer-motion';
+import { MotionButton } from './MotionButton';
+
+const drawerVariants = {
+  hidden:  { x: '100%', opacity: 0 },
+  visible: { x: 0,      opacity: 1, transition: { type: 'spring', stiffness: 400, damping: 38, mass: 0.9 } },
+  exit:    { x: '100%', opacity: 0, transition: { duration: 0.22, ease: [0.32, 0, 0.67, 0] } },
+} as const;
+
+const backdropVariants = {
+  hidden:  { opacity: 0 },
+  visible: { opacity: 1, transition: { duration: 0.2 } },
+  exit:    { opacity: 0, transition: { duration: 0.22 } },
+} as const;
 
 export const JobDrawer = ({ jobId, onClose }: { jobId: string, onClose: () => void }) => {
   const { jobs, customers, devices, users, currentUser, updateJobStatus, updateJob, uploadJobPhoto, slaTiers } = useApp();
@@ -134,8 +148,24 @@ export const JobDrawer = ({ jobId, onClose }: { jobId: string, onClose: () => vo
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex justify-end bg-gray-900/40 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-xl h-full bg-white shadow-2xl flex flex-col animate-[slideLeft_0.3s_ease]" onClick={e => e.stopPropagation()}>
+    <>
+      <motion.div
+        data-drawer
+        className="fixed inset-0 z-[100] bg-gray-900/40 backdrop-blur-sm"
+        variants={backdropVariants}
+        initial="hidden"
+        animate="visible"
+        exit="exit"
+        onClick={onClose}
+      />
+      <motion.div
+        data-drawer
+        className="fixed top-0 right-0 bottom-0 z-[100] w-full max-w-xl bg-white shadow-2xl flex flex-col overflow-hidden"
+        variants={drawerVariants}
+        initial="hidden"
+        animate="visible"
+        exit="exit"
+      >
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50 shrink-0">
           <div>
             <h2 className="text-[18px] font-medium text-gray-900 flex items-center gap-2">
@@ -538,19 +568,20 @@ export const JobDrawer = ({ jobId, onClose }: { jobId: string, onClose: () => vo
                   rows={3}
                   className="w-full text-[13px] border border-gray-200 rounded-lg px-3 py-2 mb-3 focus:border-amber-500 focus:outline-none resize-none"
                 />
-                <button
+                <MotionButton
+                  loading={saving}
+                  variant="primary"
                   onClick={handleSaveCSAT}
-                  disabled={saving}
-                  className="w-full bg-gray-900 text-white text-[13px] font-medium px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50"
+                  className="w-full"
                 >
-                  {saving ? 'Saving...' : 'Save Feedback'}
-                </button>
+                  Save Feedback
+                </MotionButton>
               </div>
             </div>
           )}
         </div>
-      </div>
+      </motion.div>
       {toast && <Toast {...toast} />}
-    </div>
+    </>
   );
 };

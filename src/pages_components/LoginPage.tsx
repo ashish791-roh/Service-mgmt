@@ -49,20 +49,10 @@ const WrenchIcon = () => (
     <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
   </svg>
 );
-const ZapIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-  </svg>
-);
 const UsersIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
     <path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
-  </svg>
-);
-const StarIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
   </svg>
 );
 const CheckCircleIcon = () => (
@@ -70,12 +60,26 @@ const CheckCircleIcon = () => (
     <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" />
   </svg>
 );
+const GitBranchIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="6" y1="3" x2="6" y2="15" />
+    <circle cx="18" cy="6" r="3" />
+    <circle cx="6" cy="18" r="3" />
+    <path d="M18 9a9 9 0 0 1-9 9" />
+  </svg>
+);
+const ShieldCheckIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    <path d="m9 11 2 2 4-4" />
+  </svg>
+);
 
 /* ─────────────────────────────────────────────────────────────
-   ANIMATED COUNTER
+   ANIMATED COUNTER (supports decimals)
 ───────────────────────────────────────────────────────────── */
-const Counter: React.FC<{ target: number; suffix?: string; duration?: number }> = ({
-  target, suffix = '', duration = 1400,
+const Counter: React.FC<{ target: number; suffix?: string; duration?: number; decimals?: number }> = ({
+  target, suffix = '', duration = 1400, decimals = 0,
 }) => {
   const [count, setCount] = useState(0);
   useEffect(() => {
@@ -84,33 +88,37 @@ const Counter: React.FC<{ target: number; suffix?: string; duration?: number }> 
       const elapsed = Date.now() - start;
       const p = Math.min(elapsed / duration, 1);
       const eased = 1 - Math.pow(1 - p, 3);
-      setCount(Math.round(eased * target));
+      setCount(eased * target);
       if (p < 1) requestAnimationFrame(tick);
     };
     const id = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(id);
   }, [target, duration]);
-  return <>{count}{suffix}</>;
+  return <>{count.toFixed(decimals)}{suffix}</>;
 };
 
 /* ─────────────────────────────────────────────────────────────
-   STAT CARD (left panel) — matches screenshot style
+   STAT CARD (left panel) — premium light card style
 ───────────────────────────────────────────────────────────── */
 const StatCard: React.FC<{
   icon: React.ReactNode; value: number; suffix?: string;
   label: string; iconColor: string; iconBg: string; delay: number;
-}> = ({ icon, value, suffix, label, iconColor, iconBg, delay }) => (
+  decimals?: number;
+}> = ({ icon, value, suffix, label, iconColor, iconBg, delay, decimals = 0 }) => (
   <motion.div
     initial={{ opacity: 0, y: 16 }}
     animate={{ opacity: 1, y: 0 }}
+    whileHover={{ scale: 1.02, y: -2, borderColor: '#cbd5e1', boxShadow: '0 8px 24px rgba(0,0,0,0.06)' }}
     transition={{ delay, duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
     style={{
       display: 'flex', alignItems: 'center', gap: 16,
       padding: '16px 20px',
       background: 'white',
       border: '1px solid #e8edf2',
-      borderRadius: 14,
-      boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+      borderRadius: 16,
+      boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+      cursor: 'pointer',
+      transition: 'border-color 0.2s, box-shadow 0.2s',
     }}
   >
     <div style={{
@@ -122,43 +130,53 @@ const StatCard: React.FC<{
       {icon}
     </div>
     <div style={{ flex: 1 }}>
-      <div style={{ color: '#111827', fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', lineHeight: 1 }}>
-        <Counter target={value} suffix={suffix ?? ''} duration={1000 + delay * 500} />
+      <div style={{ color: '#111827', fontSize: 22, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1 }}>
+        <Counter target={value} suffix={suffix ?? ''} duration={1000 + delay * 500} decimals={decimals} />
       </div>
-      <div style={{ color: '#9ca3af', fontSize: 12, fontWeight: 500, marginTop: 3 }}>
+      <div style={{ color: '#9ca3af', fontSize: 12.5, fontWeight: 500, marginTop: 4 }}>
         {label}
       </div>
     </div>
     <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
       <motion.div
-        animate={{ scale: [1, 1.5, 1], opacity: [0.6, 1, 0.6] }}
+        animate={{ scale: [1, 1.4, 1], opacity: [0.5, 1, 0.5] }}
         transition={{ duration: 2, repeat: Infinity, delay: delay * 0.5 }}
         style={{ width: 7, height: 7, borderRadius: '50%', background: '#22c55e' }}
       />
-      <span style={{ color: '#22c55e', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.05em' }}>LIVE</span>
+      <span style={{ color: '#22c55e', fontSize: 10, fontWeight: 800, letterSpacing: '0.08em' }}>LIVE</span>
     </div>
   </motion.div>
 );
 
 /* ─────────────────────────────────────────────────────────────
-   FEATURE ITEM (right panel)
+   FEATURE ITEM (right panel) - premium micro-card
 ───────────────────────────────────────────────────────────── */
 const FeatureItem: React.FC<{ text: string; delay: number }> = ({ text, delay }) => (
   <motion.div
-    initial={{ opacity: 0, x: 10 }}
-    animate={{ opacity: 1, x: 0 }}
+    initial={{ opacity: 0, y: 12 }}
+    animate={{ opacity: 1, y: 0 }}
+    whileHover={{ y: -2, scale: 1.02, borderColor: '#cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}
     transition={{ delay, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-    style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}
+    style={{
+      display: 'flex', alignItems: 'center', gap: 12,
+      padding: '12px 16px',
+      background: 'white',
+      border: '1px solid #e2e8f0',
+      borderRadius: 12,
+      boxShadow: '0 2px 6px rgba(0,0,0,0.015)',
+      transition: 'border-color 0.2s, box-shadow 0.2s',
+      cursor: 'default',
+    }}
   >
     <div style={{
-      width: 20, height: 20, borderRadius: '50%', flexShrink: 0, marginTop: 1,
-      background: 'rgba(13,148,136,0.1)',
+      width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+      background: 'rgba(13,148,136,0.08)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       color: '#0d9488',
     }}>
       <CheckCircleIcon />
     </div>
-    <span style={{ color: '#374151', fontSize: 13, fontWeight: 500, lineHeight: 1.4 }}>{text}</span>
+    <span style={{ color: '#334155', fontSize: 13, fontWeight: 600, lineHeight: 1.2 }}>{text}</span>
   </motion.div>
 );
 
@@ -180,8 +198,7 @@ export const LoginPage: React.FC = () => {
   const emailRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // Only restore the email (never the password — storing passwords in
-    // localStorage is a security risk; sessionStorage handles the session)
+    // Only restore the email (never the password)
     const savedEmail = localStorage.getItem('fixhub_remembered_email');
     if (savedEmail) {
       setEmail(savedEmail);
@@ -206,10 +223,10 @@ export const LoginPage: React.FC = () => {
   };
 
   const features = [
-    'Real-time job tracking & dispatch',
-    'Smart inventory & parts management',
-    'Automated billing & invoicing',
-    'Multi-role access control',
+    'Cross-branch job & performance visibility',
+    'Centralized settings & config management',
+    'Unified billing, parts & inventory overview',
+    'Engineer & branch access control',
   ];
 
   return (
@@ -225,11 +242,16 @@ export const LoginPage: React.FC = () => {
       `}</style>
 
       {/* ══════════════════════════════════════════════
-          LEFT PANEL — Light brand hero
+          LEFT PANEL — Light brand hero (Theme preserved)
       ══════════════════════════════════════════════ */}
       <div
         className="hidden lg:flex flex-col w-1/2 relative overflow-hidden"
-        style={{ background: '#f9fafb', padding: '48px 56px', justifyContent: 'space-between', borderRight: '1px solid #e5e7eb' }}
+        style={{
+          background: '#f9fafb',
+          padding: '48px 56px',
+          justifyContent: 'space-between',
+          borderRight: '1px solid #e5e7eb',
+        }}
       >
         {/* Subtle grid pattern */}
         <div style={{
@@ -237,6 +259,7 @@ export const LoginPage: React.FC = () => {
           backgroundImage: 'radial-gradient(#e5e7eb 1px, transparent 1px)',
           backgroundSize: '28px 28px',
           opacity: 0.5,
+          zIndex: 0
         }} />
 
         {/* Brand */}
@@ -256,7 +279,7 @@ export const LoginPage: React.FC = () => {
           <div>
             <h1 style={{ color: '#111827', fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', lineHeight: 1, margin: 0 }}>FixHub</h1>
             <p style={{ color: '#0d9488', fontSize: 9.5, fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', margin: '3px 0 0' }}>
-              SERVICE PLATFORM
+              HQ OPERATIONS CENTER
             </p>
           </div>
         </motion.div>
@@ -267,33 +290,33 @@ export const LoginPage: React.FC = () => {
           transition={{ delay: 0.14, duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
           className="relative z-10"
         >
-          {/* Badge */}
+          {/* original light/amber badge */}
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 28,
             padding: '7px 16px', borderRadius: 100,
-            background: '#fef9c3', border: '1px solid #fde68a',
+            background: '#f0f9ff', border: '1px solid #bae6fd',
           }}>
-            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#f59e0b', display: 'block', flexShrink: 0 }} />
-            <span style={{ color: '#92400e', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-              TRUSTED BY 200+ SERVICE CENTERS
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#0ea5e9', display: 'block', flexShrink: 0 }} />
+            <span style={{ color: '#0369a1', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+              HQ COMMAND CENTER
             </span>
           </div>
 
           <h2 style={{ color: '#111827', fontSize: 52, fontWeight: 800, lineHeight: 1.06, letterSpacing: '-0.04em', margin: '0 0 20px' }}>
-            Repair smarter,<br />
-            <span style={{ color: '#0d9488' }}>deliver faster.</span>
+            One command center,<br />
+            <span style={{ color: '#0d9488' }}>every branch.</span>
           </h2>
 
-          <p style={{ color: '#6b7280', fontSize: 15, lineHeight: 1.75, maxWidth: 400, margin: 0 }}>
-            One unified workspace for your entire service operation — job intake, engineer dispatch, inventory, billing, and analytics.
+          <p style={{ color: '#6b7280', fontSize: 15, lineHeight: 1.75, maxWidth: 400, margin: 0, fontWeight: 400 }}>
+            Monitor performance, push settings, and oversee every service location — all from a single HQ workspace.
           </p>
         </motion.div>
 
-        {/* Stats */}
-        <div className="relative z-10" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <StatCard icon={<ZapIcon />} value={24} suffix=" jobs" label="Completed today" iconColor="#f59e0b" iconBg="#fef3c7" delay={0.32} />
+        {/* Stats (with original card theme but polished layouts) */}
+        <div className="relative z-10" style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 440 }}>
+          <StatCard icon={<GitBranchIcon />} value={8} suffix=" branches" label="Branches connected" iconColor="#7c3aed" iconBg="#ede9fe" delay={0.32} decimals={0} />
           <StatCard icon={<UsersIcon />} value={6} suffix=" online" label="Engineers active now" iconColor="#10b981" iconBg="#d1fae5" delay={0.44} />
-          <StatCard icon={<StarIcon />} value={98} suffix="%" label="Customer satisfaction" iconColor="#6366f1" iconBg="#e0e7ff" delay={0.56} />
+          <StatCard icon={<ShieldCheckIcon />} value={99.4} suffix="%" label="SLA compliance rate" iconColor="#6366f1" iconBg="#e0e7ff" delay={0.56} decimals={1} />
         </div>
 
         {/* Footer */}
@@ -307,54 +330,76 @@ export const LoginPage: React.FC = () => {
       </div>
 
       {/* ══════════════════════════════════════════════
-          RIGHT PANEL — Light form panel
+          RIGHT PANEL — Premium light form panel
       ══════════════════════════════════════════════ */}
       <div
         className="flex-1 flex items-center justify-center relative overflow-hidden"
-        style={{ background: '#f9fafb', padding: '48px 24px' }}
+        style={{
+          background: 'linear-gradient(135deg, #f8fafc 0%, #eff6ff 100%)',
+          padding: '48px 24px'
+        }}
       >
+        {/* Soft bottom-left decorative glow overlay */}
+        <div style={{
+          position: 'absolute', bottom: '-20%', left: '-10%', width: '50%', height: '50%',
+          borderRadius: '50%', background: 'radial-gradient(circle, rgba(13,148,136,0.04) 0%, transparent 70%)',
+          filter: 'blur(40px)', pointerEvents: 'none', zIndex: 0
+        }} />
+
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
-          className="relative w-full"
+          className="relative w-full z-10"
           style={{ maxWidth: 440 }}
         >
           {/* Mobile logo */}
           <div className="flex lg:hidden items-center gap-3 justify-center" style={{ marginBottom: 32 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 12, background: 'linear-gradient(135deg, #0f766e, #0d9488)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 14px rgba(13,148,136,0.35)' }}>
+            <div style={{
+              width: 40,
+              height: 40,
+              borderRadius: 12,
+              background: 'linear-gradient(135deg, #0f766e, #0d9488)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 4px 14px rgba(13,148,136,0.3)'
+            }}>
               <span style={{ color: 'white' }}><WrenchIcon /></span>
             </div>
-            <span style={{ fontSize: 22, fontWeight: 800, color: '#111827', letterSpacing: '-0.04em' }}>FixHub</span>
+            <div>
+              <span style={{ fontSize: 22, fontWeight: 800, color: '#111827', letterSpacing: '-0.04em', display: 'block', lineHeight: 1 }}>FixHub</span>
+              <span style={{ fontSize: 10, fontWeight: 700, color: '#0369a1', letterSpacing: '0.15em', textTransform: 'uppercase', display: 'block', marginTop: 2 }}>HQ Operations</span>
+            </div>
           </div>
 
           {/* Form card */}
           <div style={{
             background: 'white',
-            border: '1px solid #e5e7eb',
-            borderRadius: 20,
-            padding: '36px 36px 30px',
-            boxShadow: '0 4px 24px rgba(0,0,0,0.08)',
+            border: '1px solid #e2e8f0',
+            borderRadius: 24,
+            padding: '40px',
+            boxShadow: '0 20px 40px -15px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.02), 0 0 0 1px rgba(0,0,0,0.01)',
           }}>
             {/* Header */}
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} style={{ marginBottom: 28 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-                <div style={{ width: 4, height: 26, borderRadius: 2, background: '#0d9488' }} />
+                <div style={{ width: 4, height: 26, borderRadius: 4, background: '#0d9488' }} />
                 <h2 style={{ color: '#111827', fontSize: 26, fontWeight: 800, letterSpacing: '-0.04em', margin: 0 }}>Welcome back</h2>
               </div>
-              <p style={{ color: '#9ca3af', fontSize: 13.5, fontWeight: 500, margin: '0 0 0 14px' }}>
-                Sign in to your FixHub workspace
+              <p style={{ color: '#64748b', fontSize: 14, fontWeight: 500, margin: '4px 0 0 14px' }}>
+                Sign in to HQ · FixHub Operations
               </p>
-              <div style={{ height: 1, background: '#f3f4f6', marginTop: 22 }} />
+              <div style={{ height: 1, background: '#f1f5f9', marginTop: 22 }} />
             </motion.div>
 
             {/* Email */}
-            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.17 }} style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontSize: 10.5, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>
+            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.17 }} style={{ marginBottom: 18 }}>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
                 EMAIL ADDRESS
               </label>
               <div style={{ position: 'relative' }}>
-                <div style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: focused === 'email' ? '#0d9488' : '#9ca3af', transition: 'color 0.2s', pointerEvents: 'none', display: 'flex' }}>
+                <div style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: focused === 'email' ? '#0d9488' : '#94a3b8', transition: 'color 0.2s', pointerEvents: 'none', display: 'flex' }}>
                   <MailIcon />
                 </div>
                 <input
@@ -367,27 +412,27 @@ export const LoginPage: React.FC = () => {
                   placeholder="you@fixhub.com"
                   style={{
                     width: '100%', boxSizing: 'border-box',
-                    paddingLeft: 44, paddingRight: 16, paddingTop: 12, paddingBottom: 12,
-                    borderRadius: 10, fontSize: 14, fontFamily: 'inherit', color: '#111827',
-                    background: focused === 'email' ? '#f0fdfa' : '#f9fafb',
-                    border: `1.5px solid ${focused === 'email' ? '#0d9488' : '#e5e7eb'}`,
-                    boxShadow: focused === 'email' ? '0 0 0 3px rgba(13,148,136,0.1)' : 'none',
-                    outline: 'none', transition: 'all 0.2s ease',
+                    paddingLeft: 44, paddingRight: 16, paddingTop: 13, paddingBottom: 13,
+                    borderRadius: 12, fontSize: 14, fontFamily: 'inherit', color: '#0f172a',
+                    background: '#ffffff',
+                    border: `1.5px solid ${focused === 'email' ? '#0d9488' : '#e2e8f0'}`,
+                    boxShadow: focused === 'email' ? '0 0 0 4px rgba(13,148,136,0.08)' : 'none',
+                    outline: 'none', transition: 'all 0.2s ease-in-out',
                   }}
                 />
               </div>
             </motion.div>
 
             {/* Password */}
-            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.23 }} style={{ marginBottom: 18 }}>
+            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.23 }} style={{ marginBottom: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <label style={{ fontSize: 10.5, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.1em' }}>PASSWORD</label>
-                <button style={{ fontSize: 12.5, fontWeight: 600, color: '#0d9488', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em' }}>PASSWORD</label>
+                <button style={{ fontSize: 12.5, fontWeight: 600, color: '#0d9488', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit', transition: 'color 0.2s' }}>
                   Forgot password?
                 </button>
               </div>
               <div style={{ position: 'relative' }}>
-                <div style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: focused === 'password' ? '#0d9488' : '#9ca3af', transition: 'color 0.2s', pointerEvents: 'none', display: 'flex' }}>
+                <div style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: focused === 'password' ? '#0d9488' : '#94a3b8', transition: 'color 0.2s', pointerEvents: 'none', display: 'flex' }}>
                   <LockIcon />
                 </div>
                 <input
@@ -400,18 +445,18 @@ export const LoginPage: React.FC = () => {
                   placeholder="Enter your password"
                   style={{
                     width: '100%', boxSizing: 'border-box',
-                    paddingLeft: 44, paddingRight: 50, paddingTop: 12, paddingBottom: 12,
-                    borderRadius: 10, fontSize: 14, fontFamily: 'inherit', color: '#111827',
-                    background: focused === 'password' ? '#f0fdfa' : '#f9fafb',
-                    border: `1.5px solid ${focused === 'password' ? '#0d9488' : '#e5e7eb'}`,
-                    boxShadow: focused === 'password' ? '0 0 0 3px rgba(13,148,136,0.1)' : 'none',
-                    outline: 'none', transition: 'all 0.2s ease',
+                    paddingLeft: 44, paddingRight: 50, paddingTop: 13, paddingBottom: 13,
+                    borderRadius: 12, fontSize: 14, fontFamily: 'inherit', color: '#0f172a',
+                    background: '#ffffff',
+                    border: `1.5px solid ${focused === 'password' ? '#0d9488' : '#e2e8f0'}`,
+                    boxShadow: focused === 'password' ? '0 0 0 4px rgba(13,148,136,0.08)' : 'none',
+                    outline: 'none', transition: 'all 0.2s ease-in-out',
                   }}
                 />
                 <button
                   onClick={() => setShowPass(v => !v)}
                   tabIndex={-1}
-                  style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', padding: 6, borderRadius: 8, display: 'flex' }}
+                  style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 6, borderRadius: 8, display: 'flex' }}
                 >
                   {showPass ? <EyeOffIcon /> : <EyeIcon />}
                 </button>
@@ -425,14 +470,14 @@ export const LoginPage: React.FC = () => {
               onClick={() => setRemember(v => !v)}
             >
               <div style={{
-                width: 18, height: 18, borderRadius: 5, flexShrink: 0,
+                width: 18, height: 18, borderRadius: 6, flexShrink: 0,
                 background: remember ? '#0d9488' : 'white',
-                border: `1.5px solid ${remember ? '#0d9488' : '#d1d5db'}`,
+                border: `1.5px solid ${remember ? '#0d9488' : '#cbd5e1'}`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s',
               }}>
                 {remember && <span style={{ color: 'white' }}><CheckIcon /></span>}
               </div>
-              <span style={{ fontSize: 13.5, color: '#374151', fontWeight: 500, userSelect: 'none' }}>Keep me signed in</span>
+              <span style={{ fontSize: 13.5, color: '#475569', fontWeight: 500, userSelect: 'none' }}>Keep me signed in</span>
             </motion.div>
 
             {/* Error */}
@@ -455,24 +500,24 @@ export const LoginPage: React.FC = () => {
             {/* Sign In Button */}
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }} style={{ marginTop: 22 }}>
               <motion.button
-                whileHover={!loading ? { scale: 1.015, y: -1 } : {}}
-                whileTap={!loading ? { scale: 0.985 } : {}}
+                whileHover={!loading ? { scale: 1.01, y: -1 } : {}}
+                whileTap={!loading ? { scale: 0.99 } : {}}
                 onClick={handleLogin}
                 disabled={loading}
                 style={{
                   width: '100%', padding: '14px 0', borderRadius: 12, border: 'none',
                   background: loginSuccess
                     ? 'linear-gradient(135deg, #059669 0%, #10b981 100%)'
-                    : '#111827',
+                    : 'linear-gradient(135deg, #0c4a6e 0%, #0369a1 100%)',
                   color: 'white', fontSize: 15, fontWeight: 700,
                   cursor: loading ? 'not-allowed' : 'pointer',
                   opacity: loading ? 0.8 : 1,
-                  transition: 'all 0.3s ease',
+                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
                   fontFamily: 'inherit', letterSpacing: '-0.01em',
                   boxShadow: loading ? 'none' : loginSuccess
                     ? '0 6px 20px rgba(16,185,129,0.4)'
-                    : '0 4px 14px rgba(17,24,39,0.25)',
+                    : '0 4px 14px rgba(3,105,161,0.30)',
                 }}
               >
                 {loading ? (
@@ -501,10 +546,8 @@ export const LoginPage: React.FC = () => {
           <motion.div
             initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.42, duration: 0.6 }}
             style={{
-              margin: '16px 0 0', padding: '20px 24px',
-              background: 'white', border: '1px solid #e5e7eb',
-              borderRadius: 16, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 20px',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+              margin: '16px 0 0',
+              display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 14px',
             }}
           >
             {features.map((f, i) => <FeatureItem key={f} text={f} delay={0.46 + i * 0.06} />)}

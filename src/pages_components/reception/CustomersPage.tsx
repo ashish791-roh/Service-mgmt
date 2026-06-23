@@ -28,6 +28,7 @@ export const CustomersPage: React.FC = () => {
     deleteCustomer,
     stats,
     customerRefreshTrigger,
+    jobs,
   } = useApp();
 
   const { toast, show } = useToast();
@@ -460,14 +461,18 @@ export const CustomersPage: React.FC = () => {
       )}
 
       {/* Details drawer */}
-      {selectedCustomer && (
-        <CustomerDetailModal
-          customer={selectedCustomer}
-          onClose={() => setSelectedCustomer(null)}
-          onEdit={openEditCustomer}
-          onDelete={setShowDeleteConfirm}
-        />
-      )}
+      <AnimatePresence>
+        {selectedCustomer && (
+          <CustomerDetailModal
+            key={selectedCustomer.id}
+            customer={selectedCustomer}
+            onClose={() => setSelectedCustomer(null)}
+            onEdit={openEditCustomer}
+            onDelete={setShowDeleteConfirm}
+            allJobs={jobs}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Edit Customer Modal */}
       {editingCustomer && (
@@ -585,16 +590,18 @@ export const CustomersPage: React.FC = () => {
       )}
 
       {/* Registration Wizard Modal */}
-      {showModal && (
-        <CustomerRegistrationWizard
-          onClose={() => setShowModal(false)}
-          onSuccess={(newJob) => {
-            setShowModal(false);
-            setCreatedJob(newJob);
-            fetchCustomers();
-          }}
-        />
-      )}
+      <AnimatePresence>
+        {showModal && (
+          <CustomerRegistrationWizard
+            onClose={() => setShowModal(false)}
+            onSuccess={(newJob) => {
+              setShowModal(false);
+              setCreatedJob(newJob);
+              fetchCustomers();
+            }}
+          />
+        )}
+      </AnimatePresence>
 
       {toast && <Toast {...toast} />}
 

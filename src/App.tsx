@@ -4,18 +4,25 @@ import { AppProvider, useApp } from './context/AppContext';
 import { useSLAWatcher } from './hooks/useSLAWatcher';
 import { LoginPage } from './pages_components/LoginPage';
 import { Sidebar } from './components/Sidebar';
-import { AdminDashboard, UserManagement, AuditLogPage } from './pages_components/AdminPages';
-import { ReceptionDashboard, JobsPage, PartsRequestPage } from './pages_components/ReceptionPages';
-import { InventoryPage } from './pages_components/InventoryPage';
-import { BillingPage } from './pages_components/BillingPage';
-import { SalesPage } from './pages_components/SalesPage';
-import { EngineerDashboard, MyJobsPage } from './pages_components/EngineersPage';
-import { AnalyticsPage } from './pages_components/AnalyticsPage';
-import { NotificationsPage } from './pages_components/NotificationsPage';
-import { AssignJobsPage } from './pages_components/AssignJobsPage';
-import { ReportsPage } from './pages_components/ReportsPage';
-import { SystemSettingsPage } from './pages_components/SystemSettingsPage';
-import { BranchesPage } from './pages_components/BranchesPage';
+import { lazy, Suspense } from 'react';
+
+const AdminDashboard     = lazy(() => import('./pages_components/AdminPages').then(m => ({ default: m.AdminDashboard })));
+const UserManagement     = lazy(() => import('./pages_components/AdminPages').then(m => ({ default: m.UserManagement })));
+const AuditLogPage       = lazy(() => import('./pages_components/AdminPages').then(m => ({ default: m.AuditLogPage })));
+const ReceptionDashboard = lazy(() => import('./pages_components/ReceptionPages').then(m => ({ default: m.ReceptionDashboard })));
+const JobsPage           = lazy(() => import('./pages_components/ReceptionPages').then(m => ({ default: m.JobsPage })));
+const PartsRequestPage   = lazy(() => import('./pages_components/ReceptionPages').then(m => ({ default: m.PartsRequestPage })));
+const InventoryPage      = lazy(() => import('./pages_components/InventoryPage').then(m => ({ default: m.InventoryPage })));
+const BillingPage        = lazy(() => import('./pages_components/BillingPage').then(m => ({ default: m.BillingPage })));
+const SalesPage          = lazy(() => import('./pages_components/SalesPage').then(m => ({ default: m.SalesPage })));
+const EngineerDashboard  = lazy(() => import('./pages_components/EngineersPage').then(m => ({ default: m.EngineerDashboard })));
+const MyJobsPage         = lazy(() => import('./pages_components/EngineersPage').then(m => ({ default: m.MyJobsPage })));
+const AnalyticsPage      = lazy(() => import('./pages_components/AnalyticsPage').then(m => ({ default: m.AnalyticsPage })));
+const NotificationsPage  = lazy(() => import('./pages_components/NotificationsPage').then(m => ({ default: m.NotificationsPage })));
+const AssignJobsPage     = lazy(() => import('./pages_components/AssignJobsPage').then(m => ({ default: m.AssignJobsPage })));
+const ReportsPage        = lazy(() => import('./pages_components/ReportsPage').then(m => ({ default: m.ReportsPage })));
+const SystemSettingsPage = lazy(() => import('./pages_components/SystemSettingsPage').then(m => ({ default: m.SystemSettingsPage })));
+const BranchesPage       = lazy(() => import('./pages_components/BranchesPage').then(m => ({ default: m.BranchesPage })));
 import { 
   LayoutDashboard, Users, BarChart3, LineChart, 
   Wrench, Pin, Nut, Box, 
@@ -206,7 +213,13 @@ function AppContent() {
               exit={{ opacity: 0, y: -12 }}
               transition={{ duration: 0.2, ease: 'easeInOut' }}
             >
-              {renderPage()}
+              <Suspense fallback={
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#9ca3af', fontSize: 14 }}>
+                  Loading…
+                </div>
+              }>
+                {renderPage()}
+              </Suspense>
             </motion.div>
           </AnimatePresence>
         </main>

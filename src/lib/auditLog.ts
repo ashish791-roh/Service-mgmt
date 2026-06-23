@@ -200,3 +200,27 @@ export async function queryAuditLogs(
         })),
     };
 }
+
+export async function createAuditLog(
+    action: string,
+    userId: string,
+    meta?: Record<string, any>
+): Promise<void> {
+    let name = 'Unknown';
+    let role = 'unknown';
+    if (userId && userId !== 'unknown') {
+        try {
+            const u = await prisma.user.findUnique({ where: { id: userId } });
+            if (u) {
+                name = u.name;
+                role = u.role;
+            }
+        } catch {}
+    }
+    await writeAuditLog({
+        actor: { id: userId, name, role },
+        action,
+        entity: 'auth',
+        meta,
+    });
+}

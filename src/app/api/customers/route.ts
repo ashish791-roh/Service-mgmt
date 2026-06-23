@@ -110,6 +110,10 @@ export async function GET(request: Request) {
             total,
             page,
             limit,
+        }, {
+            headers: {
+                'Cache-Control': 'private, max-age=0, stale-while-revalidate=30'
+            }
         });
     } catch (error) {
         console.error('[api/customers GET]', error);
