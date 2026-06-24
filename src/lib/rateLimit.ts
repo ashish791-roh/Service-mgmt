@@ -96,7 +96,11 @@ function getRedis(): Redis | null {
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
   if (url && token) {
-    _redisInstance = new Redis({ url, token });
+    try {
+      _redisInstance = new Redis({ url, token });
+    } catch (err) {
+      console.error('[Upstash Rate Limiter Init Error]', err);
+    }
   }
   return _redisInstance;
 }

@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  serverExternalPackages: ['@prisma/client', '@neondatabase/serverless'],
+  serverExternalPackages: ['@prisma/client', '@neondatabase/serverless', 'pg'],
   compress: true,
   poweredByHeader: false,
   reactStrictMode: true,
