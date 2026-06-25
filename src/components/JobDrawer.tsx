@@ -580,7 +580,7 @@ export const JobDrawer = ({ jobId, onClose }: { jobId: string, onClose: () => vo
               <div>
                 <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-2">Intake (Before)</p>
                 <div className="space-y-2">
-                  {(job.photos || []).filter(p => p.type === 'before').map(p => (
+                  {((job.photos as any[]) || []).filter((p: any) => p.type === 'before').map((p: any) => (
                     <div key={p.id} className="relative group rounded-lg overflow-hidden border border-gray-200">
                       <img src={p.url} alt="Before repair" className="w-full h-24 object-cover" />
                     </div>
@@ -601,7 +601,7 @@ export const JobDrawer = ({ jobId, onClose }: { jobId: string, onClose: () => vo
               <div>
                 <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-2">Post-Repair (After)</p>
                 <div className="space-y-2">
-                  {(job.photos || []).filter(p => p.type === 'after').map(p => (
+                  {((job.photos as any[]) || []).filter((p: any) => p.type === 'after').map((p: any) => (
                     <div key={p.id} className="relative group rounded-lg overflow-hidden border border-gray-200">
                       <img src={p.url} alt="After repair" className="w-full h-24 object-cover" />
                     </div>
@@ -626,7 +626,7 @@ export const JobDrawer = ({ jobId, onClose }: { jobId: string, onClose: () => vo
               <Clock size={16} className="text-gray-400" /> Activity Timeline
             </h3>
             <div className="space-y-4 pl-2">
-              {(job.activities || []).map((act, i) => {
+              {((job.activities as any[]) || []).map((act: any, i: number) => {
                 const actUser = users.find(u => u.id === act.userId);
                 const style = getActivityStyle(act.action);
                 const isReassignment = act.action === 'Job Reassigned';
