@@ -81,9 +81,12 @@ export const UserManagement: React.FC = () => {
     if (!editForm.name || !editForm.email) { show('Name and email are required', 'error'); return; }
     const payload: { name: string; email: string; role: Role; password?: string } = { name: editForm.name, email: editForm.email, role: editForm.role };
     if (editForm.password) payload.password = editForm.password;
+    
+    // Close edit modal immediately to ensure instant UI response
+    setEditUser(null);
+    
     const result = await updateUser(editUser.id, payload);
     if (result.ok) {
-      setEditUser(null);
       show('User updated successfully!', 'success');
     } else {
       show(result.error ?? 'Failed to update user', 'error');

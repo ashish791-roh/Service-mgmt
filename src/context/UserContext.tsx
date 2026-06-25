@@ -77,6 +77,16 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateUser = async (userId: string, data: Partial<Pick<User, 'name' | 'email' | 'role'>> & { password?: string }): Promise<{ ok: boolean; error?: string }> => {
+    const originalUsers = [...users];
+    
+    // Optimistically update local users state
+    setUsers(prev => prev.map(u => u.id === userId ? {
+      ...u,
+      name: data.name ?? u.name,
+      email: data.email ?? u.email,
+      role: data.role ?? u.role
+    } : u));
+
     try {
       const res = await fetch(`/api/users/${userId}`, {
         method: 'PUT',
@@ -84,10 +94,19 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
         body: JSON.stringify(data),
       });
       const json = await res.json();
-      if (!res.ok) return { ok: false, error: json.error ?? 'Failed to update user.' };
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, ...json } : u));
+      if (!res.ok) {
+        setUsers(originalUsers);
+        return { ok: false, error: json.error ?? 'Failed to update user.' };
+      }
+      setUsers(prev => prev.map(u => u.id === userId ? { 
+        ...u, 
+        ...json, 
+        active: json.active ?? json.isActive ?? u.active,
+        joinedAt: json.joinedAt ?? u.joinedAt
+      } : u));
       return { ok: true };
     } catch {
+      setUsers(originalUsers);
       return { ok: false, error: 'Network error.' };
     }
   };

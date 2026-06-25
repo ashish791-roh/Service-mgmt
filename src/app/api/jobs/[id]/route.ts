@@ -88,6 +88,57 @@ async function sendCustomerNotification(
     }
 }
 
+// ── GET /api/jobs/:id — authenticated users (admin, reception, engineer) ─────────
+export async function GET(
+    request: Request,
+    { params }: { params: Promise<{ id: string }> }
+) {
+    const auth = await requireSession(request, ['admin', 'reception', 'engineer']);
+    if ('error' in auth) return auth.error;
+
+    try {
+        const { id: jobId } = await params;
+        const job = await prisma.job.findUnique({
+            where: { id: jobId },
+            include: {
+                customer: true,
+                device: true,
+                activities: {
+                    orderBy: { createdAt: 'desc' },
+                },
+                photos: true,
+            },
+        });
+
+        if (!job) {
+            return NextResponse.json({ error: 'Job not found.' }, { status: 404 });
+        }
+
+        // Return a mapped job object matching the structure in other endpoints
+        return NextResponse.json({
+            ...job,
+            problemDescription: job.problemDesc,
+            assignedEngineerId: job.engineerId,
+            estimatedCost: job.estimatedCost ?? 0,
+            advanceAmount: job.advanceAmount ?? 0,
+            createdAt: job.createdAt.toISOString(),
+            updatedAt: job.updatedAt.toISOString(),
+            completedAt: job.completedAt?.toISOString() ?? undefined,
+            activities: job.activities ? job.activities.map((a: any) => ({
+                ...a,
+                createdAt: a.createdAt.toISOString(),
+            })) : [],
+            photos: job.photos ? job.photos.map((p: any) => ({
+                ...p,
+                createdAt: p.createdAt.toISOString(),
+            })) : [],
+        });
+    } catch (error) {
+        console.error('[api/jobs/[id] GET]', error);
+        return NextResponse.json({ error: 'Failed to fetch job details.' }, { status: 500 });
+    }
+}
+
 // ── PUT /api/jobs/:id — admin or reception only ───────────────────
 // Full update: can reassign engineer, change cost, update status, etc.
 export async function PUT(

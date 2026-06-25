@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { prisma } from '@/lib/prisma';
 import { GET, POST } from './route';
-import { PUT, PATCH, DELETE } from './[id]/route';
+import { GET as GETDetail, PUT, PATCH, DELETE } from './[id]/route';
 
 const getMock = vi.fn();
 
@@ -280,5 +280,45 @@ describe('Jobs API Integration', () => {
     expect(res.status).toBe(409);
     const data = await res.json();
     expect(data.error).toContain('Cannot delete a job that is In Progress');
+  });
+
+  it('GET /api/jobs/[id]: fetches full job details on success', async () => {
+    setupMockSession('admin-1', 'admin');
+
+    const mockJob = {
+      id: 'job-123',
+      customerId: 'c-1',
+      deviceId: 'd-1',
+      engineerId: 'engineer-1',
+      problemDesc: 'Broken screen',
+      status: 'Assigned',
+      estimatedCost: 1500,
+      advanceAmount: 200,
+      createdAt: new Date('2026-06-25T12:00:00Z'),
+      updatedAt: new Date('2026-06-25T13:00:00Z'),
+      completedAt: null,
+      customer: { id: 'c-1', name: 'John Doe', phone: '9876543210' },
+      device: { id: 'd-1', brand: 'Apple', model: 'iPhone 13', type: 'Phone' },
+      activities: [
+        { id: 'act-1', action: 'Created Job', createdAt: new Date('2026-06-25T12:00:00Z') }
+      ],
+      photos: [
+        { id: 'photo-1', url: 'http://example.com/1.jpg', type: 'before', createdAt: new Date('2026-06-25T12:05:00Z') }
+      ],
+    };
+
+    vi.mocked(prisma.job.findUnique).mockResolvedValue(mockJob as any);
+
+    const req = new Request('http://localhost/api/jobs/job-123');
+    const res = await GETDetail(req, { params: Promise.resolve({ id: 'job-123' }) });
+    expect(res.status).toBe(200);
+
+    const data = await res.json();
+    expect(data.id).toBe('job-123');
+    expect(data.problemDescription).toBe('Broken screen');
+    expect(data.customer.name).toBe('John Doe');
+    expect(data.device.model).toBe('iPhone 13');
+    expect(data.activities[0].action).toBe('Created Job');
+    expect(data.photos[0].url).toBe('http://example.com/1.jpg');
   });
 });

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { StatusBadge, getJobAgeLevel, SLAProgressBar, Toast, useToast } from './ui';
 import { X, CheckCircle, Clock, User, ShieldAlert, Star, Activity, AlertCircle, Image as ImageIcon, Upload, ShieldCheck, Edit2, ArrowRightLeft, Save } from 'lucide-react';
@@ -6,6 +6,7 @@ import type { ChecklistItem } from '../types';
 import { loadWarrantyConfig, getWarrantyDays } from '../lib/warrantyConfig';
 import { motion } from 'framer-motion';
 import { MotionButton } from './MotionButton';
+import { getCached, cachedFetch, setCached } from '../lib/detailCache';
 
 const drawerVariants = {
   hidden:  { x: '100%', opacity: 0 },
@@ -23,23 +24,29 @@ export const JobDrawer = ({ jobId, onClose }: { jobId: string, onClose: () => vo
   const { jobs, customers, devices, users, currentUser, updateJobStatus, updateJob, uploadJobPhoto, slaTiers } = useApp();
   const { toast, show } = useToast();
   
-  const job = jobs.find(j => j.id === jobId);
-  
-  // Need this hook before early return
-  const [checklist, setChecklist] = useState<ChecklistItem[]>(job?.checklist || []);
+  const fallbackJob = jobs.find(j => j.id === jobId);
+  const cachedData = getCached<any>(`/api/jobs/${jobId}`);
+  const initialJob = cachedData || fallbackJob;
+
+  const [jobState, setJobState] = useState<any>(initialJob);
+  const [loading, setLoading] = useState(!initialJob);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  // Need this hook before early return/conditional checks
+  const [checklist, setChecklist] = useState<ChecklistItem[]>(initialJob?.checklist || []);
   const [newChecklistItem, setNewChecklistItem] = useState('');
   
-  const [rating, setRating] = useState<number>(job?.rating || 0);
-  const [feedback, setFeedback] = useState<string>(job?.feedback || '');
+  const [rating, setRating] = useState<number>(initialJob?.rating || 0);
+  const [feedback, setFeedback] = useState<string>(initialJob?.feedback || '');
   const [saving, setSaving] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   // ── Job Edit State (admin/reception) ─────────────────────────────
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState({
-    problemDescription: job?.problemDescription ?? '',
-    estimatedCost: job?.estimatedCost?.toString() ?? '',
-    advanceAmount: job?.advanceAmount?.toString() ?? '',
+    problemDescription: initialJob?.problemDescription ?? '',
+    estimatedCost: initialJob?.estimatedCost?.toString() ?? '',
+    advanceAmount: initialJob?.advanceAmount?.toString() ?? '',
   });
   const [editSaving, setEditSaving] = useState(false);
 
@@ -49,10 +56,81 @@ export const JobDrawer = ({ jobId, onClose }: { jobId: string, onClose: () => vo
   const [reassignReason, setReassignReason] = useState('');
   const [reassignSaving, setReassignSaving] = useState(false);
 
-  if (!job || !currentUser) return null;
+  useEffect(() => {
+    let active = true;
+    const fetchDetails = async () => {
+      if (!initialJob) {
+        setLoading(true);
+      }
+      try {
+        const data = await cachedFetch<any>(`/api/jobs/${jobId}`);
+        if (data && active) {
+          setJobState(data);
+          setLoading(false);
+          if (data.checklist) setChecklist(data.checklist);
+          if (data.rating) setRating(data.rating);
+          if (data.feedback) setFeedback(data.feedback);
+          setEditForm({
+            problemDescription: data.problemDescription ?? '',
+            estimatedCost: data.estimatedCost?.toString() ?? '',
+            advanceAmount: data.advanceAmount?.toString() ?? '',
+          });
+        }
+      } catch (err) {
+        console.error('[JobDrawer load error]', err);
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    fetchDetails();
+    return () => {
+      active = false;
+    };
+  }, [jobId, refreshTrigger]);
+
+  if (!currentUser) return null;
+
+  const job = jobState || fallbackJob;
+
+  if (loading && !job) {
+    return (
+      <>
+        <motion.div
+          data-drawer
+          className="fixed inset-0 z-[100] bg-gray-900/40 backdrop-blur-sm"
+          variants={backdropVariants}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
+          onClick={onClose}
+        />
+        <motion.div
+          data-drawer
+          className="fixed top-0 right-0 bottom-0 z-[100] w-full max-w-xl bg-white shadow-2xl flex flex-col overflow-hidden"
+          variants={drawerVariants}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
+        >
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50 shrink-0">
+            <h2 className="text-[18px] font-medium text-gray-900">Loading Job Details...</h2>
+            <button onClick={onClose} className="p-2 rounded-lg text-gray-400 hover:text-gray-900 hover:bg-gray-200 transition-colors">
+              <X size={20} />
+            </button>
+          </div>
+          <div className="flex-1 p-6 space-y-6 flex flex-col items-center justify-center">
+            <div className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full animate-spin" />
+            <p className="text-gray-500 text-sm">Fetching complete details from server...</p>
+          </div>
+        </motion.div>
+      </>
+    );
+  }
+
+  if (!job) return null;
   
-  const customer = customers.find(c => c.id === job.customerId);
-  const device = devices.find(d => d.id === job.deviceId);
+  const customer = job.customer || customers.find(c => c.id === job.customerId);
+  const device = job.device || devices.find(d => d.id === job.deviceId);
   const engineer = users.find(u => u.id === job.assignedEngineerId);
   const ageLevel = getJobAgeLevel(job.createdAt, job.status, device?.type);
 
@@ -70,7 +148,13 @@ export const JobDrawer = ({ jobId, onClose }: { jobId: string, onClose: () => vo
     if (!canEditChecklist) return;
     const updated = checklist.map(item => item.id === id ? { ...item, done: !item.done } : item);
     setChecklist(updated);
-    await updateJobStatus(job.id, job.status, job.repairNotes, updated, job.rating, job.feedback, job.linkedJobId);
+    const updatedJob = { ...job, checklist: updated };
+    setJobState(updatedJob);
+    setCached(`/api/jobs/${job.id}`, updatedJob);
+    const res = await updateJobStatus(job.id, job.status, job.repairNotes, updated, job.rating, job.feedback, job.linkedJobId);
+    if (res.ok) {
+      setRefreshTrigger(prev => prev + 1);
+    }
   };
 
   const handleAddChecklist = async () => {
@@ -78,14 +162,26 @@ export const JobDrawer = ({ jobId, onClose }: { jobId: string, onClose: () => vo
     const updated = [...checklist, { id: Date.now().toString(), text: newChecklistItem, done: false }];
     setChecklist(updated);
     setNewChecklistItem('');
-    await updateJobStatus(job.id, job.status, job.repairNotes, updated, job.rating, job.feedback, job.linkedJobId);
+    const updatedJob = { ...job, checklist: updated };
+    setJobState(updatedJob);
+    setCached(`/api/jobs/${job.id}`, updatedJob);
+    const res = await updateJobStatus(job.id, job.status, job.repairNotes, updated, job.rating, job.feedback, job.linkedJobId);
+    if (res.ok) {
+      setRefreshTrigger(prev => prev + 1);
+    }
   };
 
   const handleSaveCSAT = async () => {
     setSaving(true);
+    const updatedJob = { ...job, rating, feedback };
+    setJobState(updatedJob);
+    setCached(`/api/jobs/${job.id}`, updatedJob);
     const res = await updateJobStatus(job.id, job.status, job.repairNotes, checklist, rating, feedback, job.linkedJobId);
     setSaving(false);
-    if (res.ok) show('Feedback saved!');
+    if (res.ok) {
+      show('Feedback saved!');
+      setRefreshTrigger(prev => prev + 1);
+    }
     else show(res.error || 'Failed to save', 'error');
   };
 
@@ -99,6 +195,7 @@ export const JobDrawer = ({ jobId, onClose }: { jobId: string, onClose: () => vo
 
     if (res.ok) {
       show(`${type === 'before' ? 'Intake' : 'Post-Repair'} photo uploaded successfully!`);
+      setRefreshTrigger(prev => prev + 1);
     } else {
       show(res.error || 'Failed to upload photo', 'error');
     }
@@ -106,15 +203,26 @@ export const JobDrawer = ({ jobId, onClose }: { jobId: string, onClose: () => vo
 
   const handleEditSave = async () => {
     setEditSaving(true);
+    const cost = parseFloat(editForm.estimatedCost) || 0;
+    const adv = editForm.advanceAmount ? parseFloat(editForm.advanceAmount) : undefined;
+    const updatedJob = {
+      ...job,
+      problemDescription: editForm.problemDescription,
+      estimatedCost: cost,
+      advanceAmount: adv ?? job.advanceAmount
+    };
+    setJobState(updatedJob);
+    setCached(`/api/jobs/${job.id}`, updatedJob);
     const res = await updateJob(job.id, {
       problemDescription: editForm.problemDescription,
-      estimatedCost: parseFloat(editForm.estimatedCost) || 0,
-      advanceAmount: editForm.advanceAmount ? parseFloat(editForm.advanceAmount) : undefined,
+      estimatedCost: cost,
+      advanceAmount: adv,
     });
     setEditSaving(false);
     if (res.ok) {
       show('Job details updated successfully!');
       setEditOpen(false);
+      setRefreshTrigger(prev => prev + 1);
     } else {
       show(res.error || 'Failed to update job details', 'error');
     }
@@ -123,6 +231,9 @@ export const JobDrawer = ({ jobId, onClose }: { jobId: string, onClose: () => vo
   const handleReassign = async () => {
     if (!reassignEngineerId) return;
     setReassignSaving(true);
+    const updatedJob = { ...job, assignedEngineerId: reassignEngineerId };
+    setJobState(updatedJob);
+    setCached(`/api/jobs/${job.id}`, updatedJob);
     const res = await updateJob(job.id, {
       assignedEngineerId: reassignEngineerId,
       reassignReason: reassignReason.trim() || undefined,
@@ -134,6 +245,7 @@ export const JobDrawer = ({ jobId, onClose }: { jobId: string, onClose: () => vo
       setReassignOpen(false);
       setReassignEngineerId('');
       setReassignReason('');
+      setRefreshTrigger(prev => prev + 1);
     } else {
       show(res.error || 'Failed to reassign job', 'error');
     }
