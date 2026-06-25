@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { GitBranch, Power, RefreshCw, Plus, Check, Copy, X, Key } from 'lucide-react';
+import { GitBranch, Power, RefreshCw, Plus, Check, Copy, X, Key, Trash2 } from 'lucide-react';
 import { jsonHeaders } from '../lib/api';
 
 interface Branch {
@@ -116,6 +116,26 @@ export const BranchesPage: React.FC = () => {
       }
     } catch (err) {
       console.error('Failed to rotate branch key:', err);
+    }
+  };
+
+  const handleDeleteBranch = async (branchId: string) => {
+    if (!window.confirm('Are you sure you want to delete this branch? This action is permanent and cannot be undone.')) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/branches/${branchId}`, {
+        method: 'DELETE',
+        headers: jsonHeaders(),
+      });
+      if (res.ok) {
+        fetchBranches();
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Failed to delete branch');
+      }
+    } catch (err) {
+      console.error('Failed to delete branch:', err);
     }
   };
 
@@ -288,6 +308,16 @@ export const BranchesPage: React.FC = () => {
                           <Power size={12} />
                           {branch.suspended ? 'Unsuspend' : 'Suspend'}
                         </button>
+                        {branch.suspended && (
+                          <button
+                            onClick={() => handleDeleteBranch(branch.id)}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 text-[11px] font-medium rounded-lg uppercase tracking-wide transition-colors border border-red-200"
+                            title="Delete Branch"
+                          >
+                            <Trash2 size={12} />
+                            Delete
+                          </button>
+                        )}
                         <button
                           onClick={() => handleRotateKey(branch.id)}
                           className="flex items-center gap-1 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-[11px] font-medium rounded-lg uppercase tracking-wide transition-colors border border-gray-200"

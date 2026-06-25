@@ -47,3 +47,42 @@ export async function PUT(
     return NextResponse.json({ error: 'Failed to update branch' }, { status: 500 });
   }
 }
+
+// DELETE /api/branches/[id] — delete branch
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const auth = await requireSession(request, ['super_admin']);
+  if ('error' in auth) {
+    if (getDeploymentRole() !== 'hq') {
+      return new NextResponse('Not Found', { status: 404 });
+    }
+    return auth.error;
+  }
+
+  try {
+    const { id } = await params;
+
+    const branch = await prisma.branch.findUnique({
+      where: { id },
+    });
+
+    if (!branch) {
+      return NextResponse.json({ error: 'Branch not found' }, { status: 404 });
+    }
+
+    if (!branch.suspended) {
+      return NextResponse.json({ error: 'Only suspended branches can be deleted' }, { status: 400 });
+    }
+
+    await prisma.branch.delete({
+      where: { id },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('[DELETE /api/branches/[id]]', error);
+    return NextResponse.json({ error: 'Failed to delete branch' }, { status: 500 });
+  }
+}
