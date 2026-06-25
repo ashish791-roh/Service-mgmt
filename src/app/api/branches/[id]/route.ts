@@ -76,7 +76,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Only suspended branches can be deleted' }, { status: 400 });
     }
 
-    await prisma.branch.delete({
+    await prisma.branch.deleteMany({
       where: { id },
     });
 
