@@ -31,6 +31,12 @@ interface RateLimiterAdapter {
 }
 
 // ── In-memory adapter (dev / single-instance) ────────────────────────────────
+// WARNING: This in-memory rate limiter is NOT production-safe for multi-instance
+// deployments (e.g. serverless functions, container clusters, load-balanced servers).
+// In-memory state is local to each process/instance and does not synchronize, allowing
+// client requests to bypass rate limits across different instances.
+// For production, configure UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN
+// to use the Redis-backed rate limiter.
 
 interface InMemoryStore { [key: string]: number[] }
 
@@ -109,6 +115,9 @@ class UpstashRateLimiter implements RateLimiterAdapter {
   async check(identifier: string, config: RateLimitConfig): Promise<RateLimitResult> {
     const redis = getRedis();
     if (!redis) {
+      if (process.env.NODE_ENV === 'production') {
+        console.warn('[RateLimiter] WARNING: Running with In-Memory Rate Limiter in production! Redis is required for multi-instance deployments.');
+      }
       return _inMemoryAdapter.check(identifier, config);
     }
 

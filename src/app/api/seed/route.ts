@@ -52,7 +52,7 @@ const INVENTORY = [
 
 async function runSeed() {
   const hashed = await Promise.all(
-    USERS.map(async (u) => ({ ...u, password: await bcrypt.hash(u.password, 10) }))
+    USERS.map(async (u) => ({ ...u, password: await bcrypt.hash(u.password, 12) }))
   );
   const createdUsers = await Promise.all(
     hashed.map((u) => prisma.user.create({ data: u }))

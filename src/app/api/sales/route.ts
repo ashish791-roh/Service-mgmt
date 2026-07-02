@@ -7,6 +7,7 @@ import { validateBody, SaleCreateSchema } from '@/lib/validation';
 import type { Prisma, SaleItem } from '@prisma/client';
 import { captureChange } from '@/lib/branchSync';
 import { withLocalBranchId } from '@/lib/branchContext';
+import { writeAuditLog } from '@/lib/auditLog';
 
 
 type SaleWithItems = Prisma.SaleGetPayload<{ include: { items: true } }>;
@@ -77,10 +78,7 @@ export async function GET(request: Request) {
             ];
         }
 
-        const todayStart = new Date();
-        todayStart.setHours(0,0,0,0);
-
-        const [sales, total, totalRevenueResult, todayMetricsResult] = await Promise.all([
+        const [sales, total] = await Promise.all([
             prisma.sale.findMany({
                 where,
                 orderBy: { createdAt: 'desc' },
@@ -89,26 +87,31 @@ export async function GET(request: Request) {
                 include: { items: true },
             }),
             prisma.sale.count({ where }),
-            prisma.sale.aggregate({
-                _sum: { totalAmount: true },
-            }),
-            prisma.sale.aggregate({
-                where: {
-                    createdAt: {
-                        gte: todayStart,
-                    }
-                },
-                _sum: { totalAmount: true },
-                _count: { id: true },
-            }),
         ]);
 
-        const totalRevenue = totalRevenueResult._sum.totalAmount ?? 0;
-        const todaySalesCount = todayMetricsResult._count.id ?? 0;
-        const todayRevenue = todayMetricsResult._sum.totalAmount ?? 0;
+        // Fetch metrics only on page 1 (first load) — pass ?metrics=1 from the client
+        // when page === 1, skip on subsequent pages to avoid the expensive aggregates.
+        const wantMetrics = searchParams.get('metrics') !== '0';
+        let totalRevenue = 0, todaySalesCount = 0, todayRevenue = 0;
+
+        if (wantMetrics) {
+            const todayStart = new Date();
+            todayStart.setHours(0, 0, 0, 0);
+            const [rev, today] = await Promise.all([
+                prisma.sale.aggregate({ _sum: { totalAmount: true } }),
+                prisma.sale.aggregate({
+                    where: { createdAt: { gte: todayStart } },
+                    _sum: { totalAmount: true },
+                    _count: { id: true },
+                }),
+            ]);
+            totalRevenue = rev._sum.totalAmount ?? 0;
+            todaySalesCount = today._count.id ?? 0;
+            todayRevenue = today._sum.totalAmount ?? 0;
+        }
 
         const saleIds = sales.map((s: any) => s.id);
-        const queueItems = prisma.tallyQueueItem
+        const queueItems = saleIds.length > 0 && prisma.tallyQueueItem
             ? await prisma.tallyQueueItem.findMany({
                 where: {
                     entityType: 'sale',
@@ -144,6 +147,10 @@ export async function GET(request: Request) {
                 todaySalesCount,
                 todayRevenue,
             }
+        }, {
+            headers: {
+                'Cache-Control': 'private, max-age=15, stale-while-revalidate=30',
+            },
         });
     } catch (error) {
         console.error('[api/sales GET]', error);
@@ -321,6 +328,13 @@ export async function POST(request: Request) {
             }
         }
 
+        // ── Audit log — sale created ────────────────────────────
+        writeAuditLog({
+            actor: { id: auth.user.id, name: auth.user.name, role: auth.user.role },
+            action: 'create', entity: 'sale', entityId: createdSale.id,
+            meta: { saleNumber: createdSale.saleNumber, totalAmount: createdSale.totalAmount, itemsCount: createdSale.items?.length ?? 0 },
+        }).catch(() => { });
+
         return NextResponse.json(mapSale(createdSale), { status: 201 });
     } catch (error) {
         console.error('[api/sales POST]', error);
@@ -376,6 +390,14 @@ export async function PATCH(request: Request) {
             payload: updated,
         }).catch(err => console.error('[SyncOutbox] Sale update error:', err));
 
+
+        // ── Audit log — sale marked as paid ─────────────────────────
+        writeAuditLog({
+            actor: { id: auth.user.id, name: auth.user.name, role: auth.user.role },
+            action: 'update', entity: 'sale', entityId: updated.id, field: 'paidAt',
+            oldValue: sale.paidAt ? sale.paidAt.toISOString() : null,
+            newValue: updated.paidAt ? updated.paidAt.toISOString() : null,
+        }).catch(() => {});
 
         return NextResponse.json(mapSale(updated));
     } catch (error) {

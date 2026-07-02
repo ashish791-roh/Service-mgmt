@@ -68,8 +68,18 @@ export async function PUT(
         if (body.name)  updateData.name  = body.name.trim();
         if (body.email) updateData.email = body.email.trim().toLowerCase();
         if (body.role)  updateData.role  = body.role;
-        if (body.password && body.password.length >= 4) {
-            updateData.password = await bcrypt.hash(body.password, 10);
+        if (body.password) {
+            if (typeof body.password !== 'string') {
+                return NextResponse.json({ error: 'Invalid password format.' }, { status: 400 });
+            }
+            // Password strength: minimum 8 chars, at least 1 uppercase, 1 digit, 1 special char
+            const strongPassword = /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/;
+            if (!strongPassword.test(body.password)) {
+                return NextResponse.json({
+                    error: 'Password must be at least 8 characters and include one uppercase letter, one digit, and one special character.'
+                }, { status: 400 });
+            }
+            updateData.password = await bcrypt.hash(body.password, 12);
         }
 
         const user = await prisma.user.update({

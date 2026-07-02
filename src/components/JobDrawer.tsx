@@ -580,11 +580,21 @@ export const JobDrawer = ({ jobId, onClose }: { jobId: string, onClose: () => vo
               <div>
                 <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-2">Intake (Before)</p>
                 <div className="space-y-2">
-                  {((job.photos as any[]) || []).filter((p: any) => p.type === 'before').map((p: any) => (
-                    <div key={p.id} className="relative group rounded-lg overflow-hidden border border-gray-200">
-                      <img src={p.url} alt="Before repair" className="w-full h-24 object-cover" />
-                    </div>
-                  ))}
+                  {((job.photos as any[]) || []).filter((p: any) => p.type === 'before').map((p: any) => {
+                    const getSecurePhotoUrl = (url: string) => {
+                      if (url.startsWith('http')) return url;
+                      let clean = url;
+                      if (clean.startsWith('/uploads/')) clean = clean.substring(9);
+                      else if (clean.startsWith('uploads/')) clean = clean.substring(8);
+                      else if (clean.startsWith('/')) clean = clean.substring(1);
+                      return `/api/uploads/${clean}`;
+                    };
+                    return (
+                      <div key={p.id} className="relative group rounded-lg overflow-hidden border border-gray-200">
+                        <img src={getSecurePhotoUrl(p.url)} alt="Before repair" className="w-full h-24 object-cover" />
+                      </div>
+                    );
+                  })}
                   {isEngineer && (
                     <label className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors ${uploadingPhoto ? 'opacity-50 pointer-events-none' : ''}`}>
                       <div className="flex flex-col items-center justify-center pt-5 pb-6">
@@ -601,11 +611,21 @@ export const JobDrawer = ({ jobId, onClose }: { jobId: string, onClose: () => vo
               <div>
                 <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-2">Post-Repair (After)</p>
                 <div className="space-y-2">
-                  {((job.photos as any[]) || []).filter((p: any) => p.type === 'after').map((p: any) => (
-                    <div key={p.id} className="relative group rounded-lg overflow-hidden border border-gray-200">
-                      <img src={p.url} alt="After repair" className="w-full h-24 object-cover" />
-                    </div>
-                  ))}
+                  {((job.photos as any[]) || []).filter((p: any) => p.type === 'after').map((p: any) => {
+                    const getSecurePhotoUrl = (url: string) => {
+                      if (url.startsWith('http')) return url;
+                      let clean = url;
+                      if (clean.startsWith('/uploads/')) clean = clean.substring(9);
+                      else if (clean.startsWith('uploads/')) clean = clean.substring(8);
+                      else if (clean.startsWith('/')) clean = clean.substring(1);
+                      return `/api/uploads/${clean}`;
+                    };
+                    return (
+                      <div key={p.id} className="relative group rounded-lg overflow-hidden border border-gray-200">
+                        <img src={getSecurePhotoUrl(p.url)} alt="After repair" className="w-full h-24 object-cover" />
+                      </div>
+                    );
+                  })}
                   {isEngineer && (
                     <label className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors ${uploadingPhoto ? 'opacity-50 pointer-events-none' : ''}`}>
                       <div className="flex flex-col items-center justify-center pt-5 pb-6">

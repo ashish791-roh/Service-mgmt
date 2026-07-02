@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { getSettings } from './pages_components/SystemSettingsPage';
 import { AppProvider, useApp } from './context/AppContext';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { Toast } from './components/ui';
 import { useSLAWatcher } from './hooks/useSLAWatcher';
 import { LoginPage } from './pages_components/LoginPage';
 import { Sidebar } from './components/Sidebar';
@@ -54,6 +56,61 @@ function AppContent() {
   useSLAWatcher();
   const [activePage, setActivePage] = useState<string>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
+  const [globalToast, setGlobalToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  useEffect(() => {
+    if (globalToast) {
+      const timer = setTimeout(() => setGlobalToast(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [globalToast]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleGlobalToast = (e: Event) => {
+      const customEvent = e as CustomEvent<{ message: string; type?: 'success' | 'error' | 'info' }>;
+      setGlobalToast({
+        message: customEvent.detail.message,
+        type: customEvent.detail.type ?? 'error',
+      });
+    };
+    window.addEventListener('fixhub:toast', handleGlobalToast as EventListener);
+
+    const originalFetch = window.fetch;
+    const interceptedFetch = async function (
+      input: RequestInfo | URL,
+      init?: RequestInit
+    ): Promise<Response> {
+      try {
+        const response = await originalFetch(input, init);
+        if (!response.ok && response.status >= 500) {
+          window.dispatchEvent(
+            new CustomEvent('fixhub:toast', {
+              detail: { message: 'Server error. Failed to sync data with the server.', type: 'error' },
+            })
+          );
+        }
+        return response;
+      } catch (err) {
+        window.dispatchEvent(
+          new CustomEvent('fixhub:toast', {
+            detail: { message: 'Network connection error. Please check your network and try again.', type: 'error' },
+          })
+        );
+        throw err;
+      }
+    };
+
+    if (!(window as any).__fetch_intercepted__) {
+      (window as any).__fetch_intercepted__ = true;
+      window.fetch = interceptedFetch;
+    }
+
+    return () => {
+      window.removeEventListener('fixhub:toast', handleGlobalToast as EventListener);
+    };
+  }, []);
 
   useEffect(() => {
     const applyTheme = () => {
@@ -143,11 +200,11 @@ function AppContent() {
   const renderPage = () => {
     switch (activePage) {
       case 'dashboard':
-        if (isAdmin)            return <AdminDashboard onNavigate={setActivePage} />;
+        if (isAdmin || currentUser?.role === 'super_admin') return <AdminDashboard onNavigate={setActivePage} />;
         if (isAdminOrReception) return <ReceptionDashboard onNavigate={setActivePage} />;
         return <EngineerDashboard />;
       case 'users':         return isAdmin            ? <UserManagement />     : <AccessDenied />;
-      case 'analytics':     return isAdmin            ? <AnalyticsPage />      : <AccessDenied />;
+      case 'analytics':     return (isAdmin || currentUser?.role === 'super_admin') ? <AnalyticsPage /> : <AccessDenied />;
       case 'reports':       return isAdminOrReception ? <ReportsPage />        : <AccessDenied />;
       case 'jobs':          return isAdminOrReception ? <JobsPage />           : <AccessDenied />;
       case 'assign':        return isAdminOrReception ? <AssignJobsPage />     : <AccessDenied />;
@@ -224,6 +281,12 @@ function AppContent() {
           </AnimatePresence>
         </main>
       </div>
+      {globalToast && (
+        <Toast
+          message={globalToast.message}
+          type={globalToast.type}
+        />
+      )}
     </div>
   );
 }
@@ -233,8 +296,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 export default function App() {
   return (
-    <AppProvider>
-      <AppContent />
-    </AppProvider>
+    <ErrorBoundary>
+      <AppProvider>
+        <AppContent />
+      </AppProvider>
+    </ErrorBoundary>
   );
 }

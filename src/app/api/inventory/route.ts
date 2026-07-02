@@ -119,7 +119,7 @@ export async function GET(request: Request) {
             criticalItems: (criticalItemsResult ?? []).map(mapItem),
         }, {
             headers: {
-                'Cache-Control': 'private, max-age=0, stale-while-revalidate=30'
+                'Cache-Control': 'private, max-age=15, stale-while-revalidate=30'
             }
         });
     } catch (error) {

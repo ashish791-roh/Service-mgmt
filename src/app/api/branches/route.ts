@@ -4,6 +4,7 @@ import { requireSession } from '@/lib/auth';
 import { getDeploymentRole } from '@/lib/branchContext';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
+import { writeAuditLog } from '@/lib/auditLog';
 
 // GET /api/branches — super_admin only on HQ
 export async function GET(request: Request) {
@@ -87,12 +88,12 @@ export async function POST(request: Request) {
       },
     });
 
-    // Generate credentials
-    const adminPassword = `admin_${cleanId}`;
-    const receptionPassword = `reception_${cleanId}`;
+    // Generate credentials (must satisfy password complexity requirements)
+    const adminPassword = `Admin_${cleanId}_1!`;
+    const receptionPassword = `Reception_${cleanId}_1!`;
 
-    const adminHashed = await bcrypt.hash(adminPassword, 10);
-    const receptionHashed = await bcrypt.hash(receptionPassword, 10);
+    const adminHashed = await bcrypt.hash(adminPassword, 12);
+    const receptionHashed = await bcrypt.hash(receptionPassword, 12);
 
     const adminEmail = `admin@${cleanId}.com`;
     const receptionEmail = `reception@${cleanId}.com`;
@@ -140,6 +141,15 @@ export async function POST(request: Request) {
         },
       ],
     });
+
+    // ── Audit log — branch registered ───────────────────────────
+    writeAuditLog({
+      actor: { id: auth.user.id, name: auth.user.name, role: auth.user.role },
+      action: 'create',
+      entity: 'branch',
+      entityId: branch.id,
+      meta: { name: branch.name }
+    }).catch(() => {});
 
     return NextResponse.json({
       success: true,

@@ -20,7 +20,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'reports', label: 'Reports', icon: LineChart, roles: ['admin', 'reception'] },
   { id: 'customers', label: 'Customers', icon: UserSquare2, roles: ['admin', 'reception'] },
   { id: 'jobs', label: 'Jobs', icon: Wrench, roles: ['admin', 'reception'] },
-  { id: 'assign', label: 'Assign Jobs', icon: Pin, roles: ['reception'] },
+  { id: 'assign', label: 'Assign Jobs', icon: Pin, roles: ['admin', 'reception'] },
   { id: 'parts', label: 'Parts Requests', icon: Nut, roles: ['admin', 'reception'] },
   { id: 'inventory', label: 'Inventory', icon: Box, roles: ['admin', 'reception'] },
   { id: 'billing', label: 'Billing', icon: Wallet, roles: ['admin', 'reception'] },
@@ -37,7 +37,7 @@ const NAV_ITEMS: NavItem[] = [
 const SECTIONS = [
   { label: 'Overview', ids: ['dashboard', 'analytics', 'reports'] },
   { label: 'Operations', ids: ['jobs', 'assign', 'my-jobs', 'parts'] },
-  { label: 'Management', ids: ['users', 'inventory','sales', 'billing'] },
+  { label: 'Management', ids: ['users', 'inventory', 'sales', 'billing'] },
   { label: 'System', ids: ['notifications', 'tally', 'branches', 'settings', 'audit-log'] },
 ];
 
@@ -55,8 +55,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activePage, onNavigate, isOpen
   if (!currentUser) return null;
 
   const unread = getUnreadCount(currentUser.id);
+  const SUPER_ADMIN_ALLOWED = ['dashboard', 'analytics', 'branches', 'notifications'];
   const filtered = NAV_ITEMS.filter(item => {
-    if (currentUser.role === 'super_admin') return true;
+    if (currentUser.role === 'super_admin') return SUPER_ADMIN_ALLOWED.includes(item.id);
     if (item.id === 'branches' && !isHQ) return false;
     return item.roles.includes(currentUser.role as Role);
   });

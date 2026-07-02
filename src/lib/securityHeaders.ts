@@ -5,6 +5,9 @@ export const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'Strict-Transport-Security': 'max-age=63072000; includeSubDomains; preload',
+  'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self';",
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
 };
 
 export function addSecurityHeaders(response: NextResponse, options?: { cache?: boolean }): NextResponse {
@@ -12,10 +15,16 @@ export function addSecurityHeaders(response: NextResponse, options?: { cache?: b
     response.headers.set(key, val);
   });
 
-  if (options?.cache) {
-    response.headers.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
-  } else {
-    response.headers.set('Cache-Control', 'no-store');
+  if (!response.headers.has('X-Request-Id')) {
+    response.headers.set('X-Request-Id', crypto.randomUUID());
+  }
+
+  if (!response.headers.has('Cache-Control')) {
+    if (options?.cache) {
+      response.headers.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+    } else {
+      response.headers.set('Cache-Control', 'no-store');
+    }
   }
 
   return response;

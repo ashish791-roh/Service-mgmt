@@ -486,19 +486,30 @@ function JobDetail({ jobId, onBack }: { jobId: string; onBack: () => void }) {
                                                 </p>
                                                 <div className="space-y-2">
                                                     {filtered.length > 0 ? (
-                                                        filtered.map((p) => (
-                                                            <button
-                                                                key={p.id}
-                                                                onClick={() => setLightboxUrl(p.url)}
-                                                                className="w-full"
-                                                            >
-                                                                <img
-                                                                    src={p.url}
-                                                                    alt={`${type} repair`}
-                                                                    className="w-full h-24 object-cover rounded-xl border border-slate-200 hover:opacity-90 transition-opacity cursor-zoom-in"
-                                                                />
-                                                            </button>
-                                                        ))
+                                                        filtered.map((p) => {
+                                                            const getSecurePhotoUrl = (url: string) => {
+                                                                if (url.startsWith('http')) return url;
+                                                                let clean = url;
+                                                                if (clean.startsWith('/uploads/')) clean = clean.substring(9);
+                                                                else if (clean.startsWith('uploads/')) clean = clean.substring(8);
+                                                                else if (clean.startsWith('/')) clean = clean.substring(1);
+                                                                return `/api/uploads/${clean}`;
+                                                            };
+                                                            const secureUrl = getSecurePhotoUrl(p.url);
+                                                            return (
+                                                                <button
+                                                                    key={p.id}
+                                                                    onClick={() => setLightboxUrl(secureUrl)}
+                                                                    className="w-full"
+                                                                >
+                                                                    <img
+                                                                        src={secureUrl}
+                                                                        alt={`${type} repair`}
+                                                                        className="w-full h-24 object-cover rounded-xl border border-slate-200 hover:opacity-90 transition-opacity cursor-zoom-in"
+                                                                    />
+                                                                </button>
+                                                            );
+                                                        })
                                                     ) : (
                                                         <div className="w-full h-24 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-center text-[10px] text-slate-400">
                                                             No photos yet

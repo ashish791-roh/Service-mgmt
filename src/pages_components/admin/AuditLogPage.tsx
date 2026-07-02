@@ -84,24 +84,60 @@ function formatTs(ts: string): { date: string; time: string } {
 }
 
 function exportToCsv(rows: AuditLogRow[]) {
-  const headers = ['Timestamp','User','Role','Action','Entity','EntityId','Field','OldValue','NewValue','Meta'];
-  const escape = (v: string | null) => `"${(v ?? '').replace(/"/g, '""')}"`;
+  const headers = ['Timestamp', 'User', 'Role', 'Action', 'Entity', 'Entity ID', 'Field', 'Old Value', 'New Value', 'Metadata'];
+  
+  const escape = (v: string | null) => {
+    const clean = (v ?? '').replace(/\r?\n/g, ' ').replace(/"/g, '""');
+    return `"${clean}"`;
+  };
+
+  const capitalize = (s: string | null) => {
+    if (!s) return '';
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  };
+
+  const formatCsvValue = (raw: string | null): string => {
+    if (!raw) return '';
+    try {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed === 'object' && parsed !== null) {
+        return Object.entries(parsed)
+          .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`)
+          .join('; ');
+      }
+      return String(parsed);
+    } catch {
+      return raw;
+    }
+  };
+
+  const formatTimestampForCsv = (ts: string) => {
+    const d = new Date(ts);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const dateStr = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const timeStr = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    return `${dateStr} ${timeStr}`;
+  };
+
   const lines = [
     headers.join(','),
     ...rows.map(r => [
-      escape(r.timestamp),
+      escape(formatTimestampForCsv(r.timestamp)),
       escape(r.userName),
-      escape(r.userRole),
-      escape(r.action),
-      escape(r.entity),
+      escape(capitalize(r.userRole)),
+      escape(capitalize(r.action)),
+      escape(capitalize(r.entity)),
       escape(r.entityId),
       escape(r.field),
-      escape(r.oldValue),
-      escape(r.newValue),
-      escape(r.meta),
+      escape(formatCsvValue(r.oldValue)),
+      escape(formatCsvValue(r.newValue)),
+      escape(formatCsvValue(r.meta)),
     ].join(',')),
   ];
-  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+
+  const bom = '\ufeff';
+  const csvContent = bom + lines.join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

@@ -57,7 +57,7 @@ export async function GET(request: Request) {
             ];
         }
 
-        const [jobs, total] = await Promise.all([
+        const [jobs, total, queueItems] = await Promise.all([
             prisma.job.findMany({
                 where,
                 orderBy: { createdAt: 'desc' },
@@ -66,24 +66,22 @@ export async function GET(request: Request) {
                 include: { customer: true, device: true },
             }),
             prisma.job.count({ where }),
+            prisma.tallyQueueItem
+                ? prisma.tallyQueueItem.findMany({
+                    where: {
+                        entityType: 'job',
+                    },
+                    select: {
+                        entityId: true,
+                        status: true,
+                    },
+                    orderBy: {
+                        createdAt: 'desc',
+                    },
+                    take: 150,
+                })
+                : Promise.resolve([]),
         ]);
-
-        const jobIds = jobs.map((j: any) => j.id);
-        const queueItems = prisma.tallyQueueItem
-            ? await prisma.tallyQueueItem.findMany({
-                where: {
-                    entityType: 'job',
-                    entityId: { in: jobIds },
-                },
-                select: {
-                    entityId: true,
-                    status: true,
-                },
-                orderBy: {
-                    createdAt: 'desc',
-                },
-            })
-            : [];
 
         const statusMap = new Map<string, string>();
         for (const item of queueItems) {
@@ -115,6 +113,10 @@ export async function GET(request: Request) {
             total,
             page,
             limit,
+        }, {
+            headers: {
+                'Cache-Control': 'private, max-age=15, stale-while-revalidate=30',
+            },
         });
     } catch (error) {
         console.error('[api/jobs GET]', error);

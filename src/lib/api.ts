@@ -15,3 +15,13 @@ export function jsonHeaders(): Record<string, string> {
     ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
   };
 }
+
+export function triggerGlobalToast(message: string, type: 'success' | 'error' | 'info' = 'error') {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('fixhub:toast', {
+        detail: { message, type },
+      })
+    );
+  }
+}

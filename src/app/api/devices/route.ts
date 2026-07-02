@@ -4,6 +4,7 @@ import { requireSession, LIMITS, checkLengths } from '@/lib/auth';
 import { rateLimiter, getClientIP, RATE_LIMITS } from '@/lib/rateLimit';
 import { captureChange } from '@/lib/branchSync';
 import { withLocalBranchId } from '@/lib/branchContext';
+import { writeAuditLog } from '@/lib/auditLog';
 
 // POST /api/devices — admin or reception
 export async function POST(request: Request) {
@@ -58,6 +59,21 @@ export async function POST(request: Request) {
             action: 'create',
             payload: device,
         }).catch(err => console.error('[SyncOutbox] Device create error:', err));
+
+        // ── Audit log — device created ──────────────────────────────
+        writeAuditLog({
+            actor: { id: auth.user.id, name: auth.user.name, role: auth.user.role },
+            action: 'create',
+            entity: 'device',
+            entityId: device.id,
+            meta: {
+                customerId: device.customerId,
+                type: device.type,
+                brand: device.brand,
+                model: device.model,
+                serialNo: device.serialNo,
+            }
+        }).catch(() => {});
 
         return NextResponse.json({
             ...device,

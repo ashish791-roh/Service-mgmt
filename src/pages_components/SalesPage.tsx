@@ -582,7 +582,7 @@ export const SalesPage: React.FC = () => {
     setLoading(true);
     try {
       const res = await fetch(
-        `/api/sales?page=${page}&limit=${limit}&search=${encodeURIComponent(searchTerm)}`,
+        `/api/sales?page=${page}&limit=${limit}&search=${encodeURIComponent(searchTerm)}&metrics=${page === 1 ? '1' : '0'}`,
         { signal }
       );
       if (!res.ok) return;

@@ -21,6 +21,10 @@ export async function GET() {
       ...n,
       createdAt: n.createdAt.toISOString(),
     })),
+  }, {
+    headers: {
+      'Cache-Control': 'private, max-age=15, stale-while-revalidate=30'
+    }
   });
 }
 

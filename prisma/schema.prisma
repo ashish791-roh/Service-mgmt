@@ -102,6 +102,9 @@ model Job {
   @@index([branchId, status])
   @@index([branchId, engineerId])
   @@index([branchId, createdAt(sort: Desc)])
+  @@index([engineerId, branchId, createdAt(sort: Desc)])
+  @@index([branchId, status, createdAt(sort: Desc)])
+  @@index([branchId, engineerId, createdAt(sort: Desc)])
 }
 
 model JobActivity {
@@ -280,6 +283,7 @@ model Sale {
   @@index([customerId])
   @@index([branchId])
   @@index([branchId, createdAt(sort: Desc)])
+  @@index([branchId, customerId, createdAt(sort: Desc)])
 }
 
 model SaleItem {

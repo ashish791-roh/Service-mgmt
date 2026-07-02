@@ -40,6 +40,7 @@ import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
 import type { Prisma } from '@prisma/client';
 import { getClientIP } from './rateLimit';
+import { addSecurityHeaders as applySecurityHeaders } from './securityHeaders';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -290,10 +291,7 @@ export function clearCsrfCookieOptions() {
 // ── Route-level guard ─────────────────────────────────────────────────────────
 
 export function addSecurityHeaders(response: NextResponse): NextResponse {
-  response.headers.set('X-Content-Type-Options', 'nosniff');
-  response.headers.set('X-Frame-Options', 'DENY');
-  response.headers.set('Cache-Control', 'no-store');
-  return response;
+  return applySecurityHeaders(response);
 }
 
 export async function cleanExpiredSessions(): Promise<number> {

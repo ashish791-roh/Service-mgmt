@@ -51,7 +51,19 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: lengthError }, { status: 400 });
         }
 
-        const hashedPassword = await bcrypt.hash(body.password || 'fixhub123', 10);
+        if (!body.password || typeof body.password !== 'string') {
+            return NextResponse.json({ error: 'Password is required.' }, { status: 400 });
+        }
+
+        // Password strength: minimum 8 chars, at least 1 uppercase, 1 digit, 1 special char
+        const strongPassword = /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/;
+        if (!strongPassword.test(body.password)) {
+            return NextResponse.json({
+                error: 'Password must be at least 8 characters and include one uppercase letter, one digit, and one special character.'
+            }, { status: 400 });
+        }
+
+        const hashedPassword = await bcrypt.hash(body.password, 12); // bump cost to 12
 
         // Fast pre-check — avoids a slow Prisma constraint violation
         const existing = await prisma.user.findUnique({

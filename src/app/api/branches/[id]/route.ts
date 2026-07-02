@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { requireSession } from '@/lib/auth';
 import { getDeploymentRole } from '@/lib/branchContext';
 import crypto from 'crypto';
+import { writeAuditLog } from '@/lib/auditLog';
 
 // PUT /api/branches/[id] — update (suspend/unsuspend, rotate API key)
 export async function PUT(
@@ -22,6 +23,11 @@ export async function PUT(
     const body = await request.json();
     const { name, suspended, rotateKey } = body;
 
+    const oldBranch = await prisma.branch.findUnique({ where: { id } });
+    if (!oldBranch) {
+      return NextResponse.json({ error: 'Branch not found' }, { status: 404 });
+    }
+
     const updateData: any = {};
     if (name !== undefined) updateData.name = name.trim();
     if (suspended !== undefined) updateData.suspended = !!suspended;
@@ -36,6 +42,27 @@ export async function PUT(
       where: { id },
       data: updateData,
     });
+
+    // ── Audit log — branch updated ──────────────────────────────
+    const actor = { id: auth.user.id, name: auth.user.name, role: auth.user.role };
+    if (name !== undefined && oldBranch.name !== updated.name) {
+      writeAuditLog({
+        actor, action: 'update', entity: 'branch', entityId: id, field: 'name',
+        oldValue: oldBranch.name, newValue: updated.name
+      }).catch(() => {});
+    }
+    if (suspended !== undefined && oldBranch.suspended !== updated.suspended) {
+      writeAuditLog({
+        actor, action: 'update', entity: 'branch', entityId: id, field: 'suspended',
+        oldValue: String(oldBranch.suspended), newValue: String(updated.suspended)
+      }).catch(() => {});
+    }
+    if (rotateKey) {
+      writeAuditLog({
+        actor, action: 'update', entity: 'branch', entityId: id, field: 'apiKey',
+        oldValue: '[redacted]', newValue: '[rotated]'
+      }).catch(() => {});
+    }
 
     return NextResponse.json({
       success: true,
@@ -79,6 +106,14 @@ export async function DELETE(
     await prisma.branch.deleteMany({
       where: { id },
     });
+
+    // ── Audit log — branch deleted ──────────────────────────────
+    writeAuditLog({
+      actor: { id: auth.user.id, name: auth.user.name, role: auth.user.role },
+      action: 'delete',
+      entity: 'branch',
+      entityId: id,
+    }).catch(() => {});
 
     return NextResponse.json({ success: true });
   } catch (error) {
