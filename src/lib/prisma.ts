@@ -45,7 +45,7 @@ function createPrismaClient() {
       max: 20,                    // max simultaneous connections
       min: 2,                     // keep 2 connections warm
       idleTimeoutMillis: 10_000,  // release idle connections after 10s
-      connectionTimeoutMillis: 3_000, // fail fast if pool is exhausted
+      connectionTimeoutMillis: 10_000, // fail fast if pool is exhausted (increased to support serverless cold starts)
       application_name: 'fixhub',
     });
     pool.on('error', (err) => console.error('[PG Pool] Unexpected error:', err));
@@ -74,7 +74,7 @@ if (!pool) {
       max: 20,
       min: 2,
       idleTimeoutMillis: 10_000,
-      connectionTimeoutMillis: 3_000,
+      connectionTimeoutMillis: 10_000,
       application_name: 'fixhub',
     });
     pool.on('error', (err) => console.error('[PG Pool] Unexpected error:', err));
@@ -500,4 +500,189 @@ function createPrismaProxy(client: any): any {
   });
 }
 
-export const prisma = createPrismaProxy(rawPrisma);
+function notifyRealtime(type: 'jobs' | 'notifications' | 'partRequests') {
+  import('./events')
+    .then(({ UpdatesEmitter }) => UpdatesEmitter.publish(type))
+    .catch((err) => console.error('[Realtime Publish Error]', err));
+}
+
+const extendedPrisma = rawPrisma.$extends({
+  query: {
+    job: {
+      async findMany({ args, query }) {
+        args.where = { deletedAt: null, ...args.where };
+        return query(args);
+      },
+      async findFirst({ args, query }) {
+        args.where = { deletedAt: null, ...args.where };
+        return query(args);
+      },
+      async findUnique({ args, query }) {
+        const record = await query(args);
+        if (record && record.deletedAt !== null) return null;
+        return record;
+      },
+      async count({ args, query }) {
+        args.where = { deletedAt: null, ...args.where };
+        return query(args);
+      },
+      async create({ args, query }) {
+        const result = await query(args);
+        notifyRealtime('jobs');
+        return result;
+      },
+      async update({ args, query }) {
+        const result = await query(args);
+        notifyRealtime('jobs');
+        return result;
+      },
+      async updateMany({ args, query }) {
+        const result = await query(args);
+        notifyRealtime('jobs');
+        return result;
+      },
+      async upsert({ args, query }) {
+        const result = await query(args);
+        notifyRealtime('jobs');
+        return result;
+      },
+      async delete({ args }) {
+        const result = await (rawPrisma as any).job.update({
+          where: args.where,
+          data: { deletedAt: new Date() }
+        });
+        notifyRealtime('jobs');
+        return result;
+      },
+      async deleteMany({ args }) {
+        const result = await (rawPrisma as any).job.updateMany({
+          where: args.where,
+          data: { deletedAt: new Date() }
+        });
+        notifyRealtime('jobs');
+        return result;
+      }
+    },
+    customer: {
+      async findMany({ args, query }) {
+        args.where = { deletedAt: null, ...args.where };
+        return query(args);
+      },
+      async findFirst({ args, query }) {
+        args.where = { deletedAt: null, ...args.where };
+        return query(args);
+      },
+      async findUnique({ args, query }) {
+        const record = await query(args);
+        if (record && record.deletedAt !== null) return null;
+        return record;
+      },
+      async count({ args, query }) {
+        args.where = { deletedAt: null, ...args.where };
+        return query(args);
+      },
+      async create({ args, query }) {
+        const result = await query(args);
+        notifyRealtime('jobs');
+        return result;
+      },
+      async update({ args, query }) {
+        const result = await query(args);
+        notifyRealtime('jobs');
+        return result;
+      },
+      async updateMany({ args, query }) {
+        const result = await query(args);
+        notifyRealtime('jobs');
+        return result;
+      },
+      async upsert({ args, query }) {
+        const result = await query(args);
+        notifyRealtime('jobs');
+        return result;
+      },
+      async delete({ args }) {
+        const result = await (rawPrisma as any).customer.update({
+          where: args.where,
+          data: { deletedAt: new Date() }
+        });
+        notifyRealtime('jobs');
+        return result;
+      },
+      async deleteMany({ args }) {
+        const result = await (rawPrisma as any).customer.updateMany({
+          where: args.where,
+          data: { deletedAt: new Date() }
+        });
+        notifyRealtime('jobs');
+        return result;
+      }
+    },
+    notification: {
+      async create({ args, query }) {
+        const result = await query(args);
+        notifyRealtime('notifications');
+        return result;
+      },
+      async update({ args, query }) {
+        const result = await query(args);
+        notifyRealtime('notifications');
+        return result;
+      },
+      async updateMany({ args, query }) {
+        const result = await query(args);
+        notifyRealtime('notifications');
+        return result;
+      },
+      async upsert({ args, query }) {
+        const result = await query(args);
+        notifyRealtime('notifications');
+        return result;
+      },
+      async delete({ args, query }) {
+        const result = await query(args);
+        notifyRealtime('notifications');
+        return result;
+      },
+      async deleteMany({ args, query }) {
+        const result = await query(args);
+        notifyRealtime('notifications');
+        return result;
+      }
+    },
+    partRequest: {
+      async create({ args, query }) {
+        const result = await query(args);
+        notifyRealtime('partRequests');
+        return result;
+      },
+      async update({ args, query }) {
+        const result = await query(args);
+        notifyRealtime('partRequests');
+        return result;
+      },
+      async updateMany({ args, query }) {
+        const result = await query(args);
+        notifyRealtime('partRequests');
+        return result;
+      },
+      async upsert({ args, query }) {
+        const result = await query(args);
+        notifyRealtime('partRequests');
+        return result;
+      },
+      async delete({ args, query }) {
+        const result = await query(args);
+        notifyRealtime('partRequests');
+        return result;
+      },
+      async deleteMany({ args, query }) {
+        const result = await query(args);
+        notifyRealtime('partRequests');
+        return result;
+      }
+    }
+  }
+});
+
+export const prisma = createPrismaProxy(extendedPrisma);

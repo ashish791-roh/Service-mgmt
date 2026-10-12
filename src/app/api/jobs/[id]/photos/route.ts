@@ -4,6 +4,7 @@ import { requireSession } from '@/lib/auth';
 import { promises as fs } from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { scanBuffer } from '@/lib/virusScan';
 
 export async function POST(
     request: Request,
@@ -28,6 +29,15 @@ export async function POST(
         }
 
         const buffer = Buffer.from(await file.arrayBuffer());
+
+        // Scan for malware/viruses
+        const scan = await scanBuffer(buffer);
+        if (scan.isInfected) {
+            return NextResponse.json(
+                { error: `File rejected: Malware detected (${scan.virusName}).` },
+                { status: 400 }
+            );
+        }
 
         // Validate magic bytes
         const isJpg = buffer.length > 2 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;

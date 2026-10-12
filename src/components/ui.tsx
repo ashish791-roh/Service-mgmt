@@ -261,25 +261,78 @@ export const JobAgeBadge: React.FC<{ createdAt: string; status: JobStatus }> = (
 
 // ── Modal ─────────────────────────────────────────────────────
 interface ModalProps { title: string; onClose: () => void; children: React.ReactNode; }
-export const Modal: React.FC<ModalProps> = ({ title, onClose, children }) => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
-    <div className="relative bg-slate-900/95 rounded-2xl shadow-2xl shadow-slate-900/50 w-full max-w-lg max-h-[90vh] overflow-y-auto animate-slide-up border border-slate-700/80" style={{ background: 'linear-gradient(135deg, rgba(15,23,42,0.95), rgba(13,18,32,0.95))', backdropFilter: 'blur(12px)' }}>
-      <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/50 sticky top-0 bg-slate-900/50 rounded-t-2xl z-10">
-        <h3 className="text-base font-bold text-white font-display">{title}</h3>
-        <button
-          onClick={onClose}
-          className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-700 text-slate-400 hover:text-slate-300 transition-colors"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+export const Modal: React.FC<ModalProps> = ({ title, onClose, children }) => {
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    // Focus trapping
+    const modalElement = document.querySelector('[data-modal-container]');
+    if (modalElement) {
+      const focusableElements = modalElement.querySelectorAll(
+        'button, [href], input, select, textarea, [tabindex="0"]'
+      );
+      const firstElement = focusableElements[0] as HTMLElement;
+      const lastElement = focusableElements[focusableElements.length - 1] as HTMLElement;
+
+      const handleTabKey = (e: KeyboardEvent) => {
+        if (e.key !== 'Tab') return;
+
+        if (e.shiftKey) {
+          if (document.activeElement === firstElement) {
+            lastElement.focus();
+            e.preventDefault();
+          }
+        } else {
+          if (document.activeElement === lastElement) {
+            firstElement.focus();
+            e.preventDefault();
+          }
+        }
+      };
+
+      modalElement.addEventListener('keydown', handleTabKey as any);
+      firstElement?.focus();
+
+      return () => {
+        window.removeEventListener('keydown', handleKeyDown);
+        modalElement.removeEventListener('keydown', handleTabKey as any);
+      };
+    }
+
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
+      <div
+        data-modal-container
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="relative bg-slate-900/95 rounded-2xl shadow-2xl shadow-slate-900/50 w-full max-w-lg max-h-[90vh] overflow-y-auto animate-slide-up border border-slate-700/80"
+        style={{ background: 'linear-gradient(135deg, rgba(15,23,42,0.95), rgba(13,18,32,0.95))', backdropFilter: 'blur(12px)' }}
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/50 sticky top-0 bg-slate-900/50 rounded-t-2xl z-10">
+          <h3 className="text-base font-bold text-white font-display">{title}</h3>
+          <button
+            onClick={onClose}
+            aria-label="Close modal"
+            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-700 text-slate-400 hover:text-slate-300 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div className="p-6">{children}</div>
       </div>
-      <div className="p-6">{children}</div>
     </div>
-  </div>
-);
+  );
+};
 
 // ── StatCard ──────────────────────────────────────────────────
 interface StatCardProps { label: string; value: number | string; icon: string; color: string; sub?: string; }

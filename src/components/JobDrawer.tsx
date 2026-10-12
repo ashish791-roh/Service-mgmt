@@ -88,6 +88,56 @@ export const JobDrawer = ({ jobId, onClose }: { jobId: string, onClose: () => vo
     };
   }, [jobId, refreshTrigger]);
 
+  // ── Keyboard accessibility (Escape key to close, and Focus Trap) ──
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    // Focus trapping
+    const drawerElement = document.querySelector('[data-drawer-container]');
+    if (drawerElement) {
+      const focusableElements = drawerElement.querySelectorAll(
+        'button, [href], input, select, textarea, [tabindex="0"]'
+      );
+      const firstElement = focusableElements[0] as HTMLElement;
+      const lastElement = focusableElements[focusableElements.length - 1] as HTMLElement;
+
+      const handleTabKey = (e: KeyboardEvent) => {
+        if (e.key !== 'Tab') return;
+
+        if (e.shiftKey) {
+          if (document.activeElement === firstElement) {
+            lastElement.focus();
+            e.preventDefault();
+          }
+        } else {
+          if (document.activeElement === lastElement) {
+            firstElement.focus();
+            e.preventDefault();
+          }
+        }
+      };
+
+      drawerElement.addEventListener('keydown', handleTabKey as any);
+      
+      // Focus on first element
+      firstElement?.focus();
+
+      return () => {
+        window.removeEventListener('keydown', handleKeyDown);
+        drawerElement.removeEventListener('keydown', handleTabKey as any);
+      };
+    }
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onClose, loading, jobState]);
+
   if (!currentUser) return null;
 
   const job = jobState || fallbackJob;
@@ -106,6 +156,10 @@ export const JobDrawer = ({ jobId, onClose }: { jobId: string, onClose: () => vo
         />
         <motion.div
           data-drawer
+          data-drawer-container
+          role="dialog"
+          aria-modal="true"
+          aria-label="Loading job details"
           className="fixed top-0 right-0 bottom-0 z-[100] w-full max-w-xl bg-white shadow-2xl flex flex-col overflow-hidden"
           variants={drawerVariants}
           initial="hidden"
@@ -114,7 +168,7 @@ export const JobDrawer = ({ jobId, onClose }: { jobId: string, onClose: () => vo
         >
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50 shrink-0">
             <h2 className="text-[18px] font-medium text-gray-900">Loading Job Details...</h2>
-            <button onClick={onClose} className="p-2 rounded-lg text-gray-400 hover:text-gray-900 hover:bg-gray-200 transition-colors">
+            <button onClick={onClose} aria-label="Close loading panel" className="p-2 rounded-lg text-gray-400 hover:text-gray-900 hover:bg-gray-200 transition-colors">
               <X size={20} />
             </button>
           </div>
@@ -272,6 +326,10 @@ export const JobDrawer = ({ jobId, onClose }: { jobId: string, onClose: () => vo
       />
       <motion.div
         data-drawer
+        data-drawer-container
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Job details for job #${job.id.slice(-6).toUpperCase()}`}
         className="fixed top-0 right-0 bottom-0 z-[100] w-full max-w-xl bg-white shadow-2xl flex flex-col overflow-hidden"
         variants={drawerVariants}
         initial="hidden"
@@ -292,6 +350,7 @@ export const JobDrawer = ({ jobId, onClose }: { jobId: string, onClose: () => vo
             {canEditJob && (
               <button
                 onClick={() => { setEditForm({ problemDescription: job.problemDescription ?? '', estimatedCost: job.estimatedCost?.toString() ?? '', advanceAmount: job.advanceAmount?.toString() ?? '' }); setEditOpen(v => !v); setReassignOpen(false); }}
+                aria-label="Edit job details"
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors ${editOpen ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600 hover:bg-blue-50 hover:text-blue-700'}`}
               >
                 <Edit2 size={13} /> Edit
@@ -300,12 +359,13 @@ export const JobDrawer = ({ jobId, onClose }: { jobId: string, onClose: () => vo
             {canReassign && (
               <button
                 onClick={() => { setReassignEngineerId(job.assignedEngineerId ?? ''); setReassignReason(''); setReassignOpen(v => !v); setEditOpen(false); }}
+                aria-label={engineer ? 'Reassign engineer' : 'Assign engineer'}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors ${reassignOpen ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-600 hover:bg-orange-50 hover:text-orange-700'}`}
               >
                 <ArrowRightLeft size={13} /> {engineer ? 'Reassign' : 'Assign'}
               </button>
             )}
-            <button onClick={onClose} className="p-2 rounded-lg text-gray-400 hover:text-gray-900 hover:bg-gray-200 transition-colors">
+            <button onClick={onClose} aria-label="Close job details panel" className="p-2 rounded-lg text-gray-400 hover:text-gray-900 hover:bg-gray-200 transition-colors">
               <X size={20} />
             </button>
           </div>

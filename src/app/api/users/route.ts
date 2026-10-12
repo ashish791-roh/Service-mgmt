@@ -6,6 +6,8 @@ import { writeAuditLog } from '@/lib/auditLog';
 import { rateLimiter, RATE_LIMITS } from '@/lib/rateLimit';
 import { captureChange } from '@/lib/branchSync';
 import { withLocalBranchId } from '@/lib/branchContext';
+import crypto from 'crypto';
+import { sendMail } from '@/lib/mail';
 
 
 // POST /api/users — admin only
@@ -74,6 +76,8 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'A user with this email already exists.' }, { status: 409 });
         }
 
+        const verificationToken = crypto.randomBytes(32).toString('hex');
+
         const user = await prisma.user.create({
             data: withLocalBranchId({
                 name: body.name.trim(),
@@ -81,8 +85,29 @@ export async function POST(request: Request) {
                 password: hashedPassword,
                 role: body.role,
                 isActive: body.isActive ?? true,
+                verificationToken,
+                emailVerified: false,
             }),
         });
+
+        // Send email in background/async
+        const baseUrl = process.env.HQ_BASE_URL || 'http://localhost:3000';
+        const verifyUrl = `${baseUrl}/api/auth/verify-email?token=${verificationToken}`;
+        sendMail({
+            to: user.email,
+            subject: 'Verify your email - FixHub',
+            html: `
+                <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+                    <h2 style="color: #0f172a;">Welcome to FixHub</h2>
+                    <p>Hi ${user.name},</p>
+                    <p>Your account has been created by an administrator. Please click the button below to verify your email address:</p>
+                    <div style="text-align: center; margin: 30px 0;">
+                        <a href="${verifyUrl}" style="background-color: #0d9488; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Verify Email</a>
+                    </div>
+                    <p style="color: #64748b; font-size: 0.875rem;">If you did not expect this invitation, you can ignore this email.</p>
+                </div>
+            `
+        }).catch(err => console.error('[Mail] Failed to send verification email:', err));
 
         // ── Outbox Sync ──────────────────────────────────────────────
         captureChange({

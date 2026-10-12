@@ -97,18 +97,30 @@ const _inMemoryAdapter = new InMemoryRateLimiter();
 // ── Upstash Redis adapter (serverless / lazy init) ───────────────────────────
 
 let _redisInstance: Redis | null = null;
-function getRedis(): Redis | null {
+
+export function getRedis(): Redis {
   if (_redisInstance) return _redisInstance;
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (url && token) {
-    try {
-      _redisInstance = new Redis({ url, token });
-    } catch (err) {
-      console.error('[Upstash Rate Limiter Init Error]', err);
+  const isProd = process.env.NODE_ENV === 'production';
+
+  if (!url || !token) {
+    if (isProd) {
+      throw new Error('[RateLimiter] CRITICAL: Upstash Redis credentials (UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN) are missing in production! Redis rate limiter is mandatory.');
+    }
+    return null as any;
+  }
+
+  try {
+    _redisInstance = new Redis({ url, token });
+  } catch (err) {
+    console.error('[Upstash Rate Limiter Init Error]', err);
+    if (isProd) {
+      throw new Error(`[RateLimiter] CRITICAL: Failed to initialize Upstash Redis: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-  return _redisInstance;
+
+  return _redisInstance!;
 }
 
 class UpstashRateLimiter implements RateLimiterAdapter {
@@ -116,7 +128,7 @@ class UpstashRateLimiter implements RateLimiterAdapter {
     const redis = getRedis();
     if (!redis) {
       if (process.env.NODE_ENV === 'production') {
-        console.warn('[RateLimiter] WARNING: Running with In-Memory Rate Limiter in production! Redis is required for multi-instance deployments.');
+        throw new Error('[RateLimiter] CRITICAL: Redis instance is not available in production!');
       }
       return _inMemoryAdapter.check(identifier, config);
     }
@@ -148,6 +160,9 @@ class UpstashRateLimiter implements RateLimiterAdapter {
       };
     } catch (err) {
       console.error('[Upstash Rate Limiter Error]', err);
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(`[RateLimiter] CRITICAL: Redis error in production: ${err instanceof Error ? err.message : String(err)}`);
+      }
       return _inMemoryAdapter.check(identifier, config);
     }
   }
@@ -175,8 +190,9 @@ function getAdapter(): RateLimiterAdapter {
   if (_adapter) return _adapter;
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  const isProd = process.env.NODE_ENV === 'production';
 
-  _adapter = (url && token)
+  _adapter = (isProd || (url && token))
     ? new UpstashRateLimiter()
     : _inMemoryAdapter;
 

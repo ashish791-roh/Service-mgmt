@@ -14,8 +14,6 @@ import { SLAProvider, useSLA } from './SLAContext';
 import { fetchSLATiersFromAPI } from '../lib/sla';
 import type { DashboardStats } from '../types';
 
-const REFRESH_INTERVAL_MS = 90_000;
-
 interface GlobalStateContextType {
   isLoading: boolean;
   error: string | null;
@@ -174,52 +172,67 @@ const AppLoader: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth.currentUser]);
 
-  // Background refresh every 90 seconds when tab is visible
+  // Real-time updates via Server-Sent Events (SSE)
   useEffect(() => {
     if (!auth.currentUser || !dataLoaded) return;
 
-    let intervalId: any = null;
+    let eventSource: EventSource | null = null;
+    let reconnectTimeout: any = null;
 
-    const startRefreshTimer = () => {
-      if (intervalId) clearInterval(intervalId);
-      intervalId = setInterval(async () => {
-        if (document.visibilityState === 'visible') {
-          try {
-            const res = await fetch('/api/data?phase=1', { credentials: 'same-origin' });
-            if (res.ok) {
-              const data = await res.json();
-              if (data.jobs) jobs.setJobs(data.jobs);
-              if (data.customers) customers.setCustomers(data.customers);
-              if (data.devices) devices.setDevices(data.devices);
-              if (data.notifications) notification.setNotifications(data.notifications);
-              if (data.stats) setStats(data.stats);
-              if (data.isHQ !== undefined) setIsHQ(data.isHQ);
-              if (data.branches) setBranches(data.branches);
-              setShowStaleBanner(false);
-            } else {
-              setShowStaleBanner(true);
-            }
-          } catch (e) {
-            setShowStaleBanner(true);
-          }
-        }
-      }, REFRESH_INTERVAL_MS);
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        startRefreshTimer();
-      } else {
-        if (intervalId) clearInterval(intervalId);
+    const connectSSE = () => {
+      if (eventSource) {
+        eventSource.close();
       }
+
+      eventSource = new EventSource('/api/notifications/stream');
+
+      eventSource.addEventListener('update', (event: MessageEvent) => {
+        try {
+          const update = JSON.parse(event.data);
+          
+          // Trigger a refresh of Phase 1 data on updates
+          if (update.type === 'jobs' || update.type === 'notifications' || update.type === 'partRequests') {
+            fetch('/api/data?phase=1', { credentials: 'same-origin' })
+              .then(res => {
+                if (res.ok) return res.json();
+                throw new Error('Sync failed');
+              })
+              .then(data => {
+                if (data.jobs) jobs.setJobs(data.jobs);
+                if (data.customers) customers.setCustomers(data.customers);
+                if (data.devices) devices.setDevices(data.devices);
+                if (data.notifications) notification.setNotifications(data.notifications);
+                if (data.stats) setStats(data.stats);
+                if (data.isHQ !== undefined) setIsHQ(data.isHQ);
+                if (data.branches) setBranches(data.branches);
+                setShowStaleBanner(false);
+              })
+              .catch(() => setShowStaleBanner(true));
+          }
+        } catch (e) {
+          console.error('[SSE] Failed to parse event data:', e);
+        }
+      });
+
+      eventSource.onerror = () => {
+        setShowStaleBanner(true);
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+        reconnectTimeout = setTimeout(connectSSE, 5000);
+      };
     };
 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    startRefreshTimer();
+    connectSSE();
 
     return () => {
-      if (intervalId) clearInterval(intervalId);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (eventSource) {
+        eventSource.close();
+      }
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth.currentUser, dataLoaded]);

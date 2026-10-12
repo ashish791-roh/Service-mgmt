@@ -18,6 +18,12 @@ model User {
   branchId      String         @default("default")
   failedAttempts Int           @default(0)
   lockedUntil    DateTime?
+  mfaSecret      String?
+  mfaEnabled     Boolean        @default(false)
+  emailVerified  Boolean        @default(false)
+  verificationToken String?
+  resetToken      String?
+  resetTokenExpires DateTime?
   assignedJobs  Job[]          @relation("EngineerJobs")
   jobActivities JobActivity[]
   notifications Notification[]
@@ -25,6 +31,7 @@ model User {
   tallyDocuments TallyDocument[]
 
   @@index([branchId])
+  @@index([role])
 }
 
 model Customer {
@@ -37,12 +44,16 @@ model Customer {
   email     String?  @db.VarChar(254)
   gstin     String?
   branchId  String   @default("default")
+  deletedAt DateTime?
   devices   Device[]
   jobs      Job[]
 
   @@index([branchId])
   @@index([branchId, createdAt(sort: Desc)])
   @@index([phone])
+  @@index([email])
+  @@index([name])
+  @@index([deletedAt])
 }
 
 model Device {
@@ -60,6 +71,7 @@ model Device {
   @@index([customerId])
   @@index([branchId])
   @@index([branchId, createdAt(sort: Desc)])
+  @@index([serialNo])
 }
 
 model Job {
@@ -83,6 +95,7 @@ model Job {
   invoiceNumber String?       @unique
   paymentMethod String?
   branchId      String        @default("default")
+  deletedAt     DateTime?
   customer      Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
   device        Device        @relation(fields: [deviceId], references: [id], onDelete: Cascade)
   engineer      User?         @relation("EngineerJobs", fields: [engineerId], references: [id])
@@ -105,6 +118,8 @@ model Job {
   @@index([engineerId, branchId, createdAt(sort: Desc)])
   @@index([branchId, status, createdAt(sort: Desc)])
   @@index([branchId, engineerId, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  @@index([deletedAt])
 }
 
 model JobActivity {
@@ -172,6 +187,8 @@ model Payment {
 
   @@index([jobId])
   @@index([branchId])
+  @@index([status])
+  @@index([createdAt(sort: Desc)])
 }
 
 model InventoryItem {

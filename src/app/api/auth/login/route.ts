@@ -13,6 +13,7 @@ import {
 } from '@/lib/auth';
 import { rateLimiter, getClientIP, RATE_LIMITS } from '@/lib/rateLimit';
 import { createAuditLog } from '@/lib/auditLog';
+import { generateTempMfaToken } from '@/lib/totp';
 
 export async function POST(request: Request) {
   const startTime = performance.now();
@@ -102,7 +103,22 @@ export async function POST(request: Request) {
       );
     }
 
-    // Reset attempts on successful login
+    // Check if MFA is enabled
+    if (user.mfaEnabled) {
+      const tempToken = generateTempMfaToken(user.id);
+      await createAuditLog('LOGIN_MFA_REQUIRED', user.id, { ip: clientIP, userAgent, timestamp: new Date().toISOString() });
+      
+      const response = NextResponse.json({
+        mfaRequired: true,
+        tempToken,
+      });
+
+      const elapsed = performance.now() - startTime;
+      await new Promise(resolve => setTimeout(resolve, Math.max(0, 300 - elapsed)));
+      return response;
+    }
+
+    // Reset attempts on successful login (no MFA)
     await prisma.user.update({
       where: { id: user.id },
       data: { failedAttempts: 0, lockedUntil: null },
@@ -121,7 +137,7 @@ export async function POST(request: Request) {
 
     await createAuditLog('LOGIN_SUCCESS', user.id, { ip: clientIP, userAgent, timestamp: new Date().toISOString() });
 
-    const { password: _, ...safeUser } = user;
+    const { password: _, mfaSecret: __, ...safeUser } = user;
     const response = NextResponse.json({
       user: {
         ...safeUser,

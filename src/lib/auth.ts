@@ -337,10 +337,62 @@ export async function requireSession(
     roles   = allowedRoles;
   }
 
+  // Attempt header-based verification from middleware injection
+  let headersList: any = null;
+  if (request && 'headers' in request) {
+    headersList = request.headers;
+  } else {
+    try {
+      headersList = await headers();
+    } catch (_) {}
+  }
+
+  const headerUserId = headersList?.get('x-user-id');
+  if (headerUserId) {
+    const user: SessionUser = {
+      id:       headerUserId,
+      email:    headersList.get('x-user-email') ?? '',
+      name:     headersList.get('x-user-name') ?? '',
+      role:     headersList.get('x-user-role') as any,
+      isActive: headersList.get('x-user-is-active') === 'true',
+      branchId: headersList.get('x-user-branch-id') ?? 'default',
+    };
+
+    if (!user.isActive) {
+      return { error: addSecurityHeaders(NextResponse.json({ error: 'Account is disabled.' }, { status: 403 })) };
+    }
+
+    const { setRequestBranchId } = await import('@/lib/branchContext');
+    setRequestBranchId(user.branchId);
+
+    if (roles && !roles.includes(user.role) && user.role !== 'super_admin') {
+      return {
+        error: addSecurityHeaders(NextResponse.json(
+          { error: 'You do not have permission to perform this action.' },
+          { status: 403 }
+        )),
+      };
+    }
+
+    // Verify CSRF on mutating methods
+    if (request && MUTATING_METHODS.has(request.method?.toUpperCase() ?? '')) {
+      const headerCsrf = request.headers.get('x-csrf-token');
+      const cookieCsrf = headersList.get('x-csrf-token') || (await cookies()).get(CSRF_COOKIE)?.value;
+      if (!cookieCsrf || !headerCsrf || !crypto.timingSafeEqual(
+        Buffer.from(cookieCsrf),
+        Buffer.from(headerCsrf.slice(0, cookieCsrf.length).padEnd(cookieCsrf.length, '\0'))
+      )) {
+        return {
+          error: addSecurityHeaders(NextResponse.json({ error: 'Invalid or missing CSRF token.' }, { status: 403 })),
+        };
+      }
+    }
+
+    return { user };
+  }
+
   const cookieStore = await cookies();
   const token       = cookieStore.get(COOKIE_NAME)?.value;
-
-
 
   let clientIP = '';
   let userAgent = '';
